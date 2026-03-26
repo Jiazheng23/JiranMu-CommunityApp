@@ -1,7 +1,7 @@
 import 'package:assignment/main.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'home_page.dart';
+import 'admin_Dashboard.dart';
 
 class LoginPage extends StatefulWidget {
   @override
@@ -31,7 +31,7 @@ class _LoginPageState extends State<LoginPage> {
         children: [
           TextField(
             controller: usernameController,
-            decoration: InputDecoration(labelText: "Resident ID"),
+            decoration: InputDecoration(labelText: "ID"),
           ),
           TextField(
             controller: passwordController,
@@ -56,7 +56,7 @@ class _LoginPageState extends State<LoginPage> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => MyHomePage(title: "Admin Home"),
+                    builder: (context) => AdminDashboard(),
                   ),
                 );
                 return;
