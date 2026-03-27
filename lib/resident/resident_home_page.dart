@@ -444,6 +444,16 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
   }
 
   Widget buildChatsTab() {
+    return Center(
+      child: Text(
+        "Chats Page",
+        style: TextStyle(
+          fontSize: 20,
+          fontWeight: FontWeight.bold,
+          color: primaryColor,
+        ),
+      ),
+    );
   }
 
   Widget buildAccountTab() {
