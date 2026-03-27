@@ -1,7 +1,7 @@
 import 'package:assignment/main.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'admin_Dashboard.dart';
+import 'admin_dashboard.dart';
 
 class LoginPage extends StatefulWidget {
   @override
@@ -53,6 +53,7 @@ class _LoginPageState extends State<LoginPage> {
                   .maybeSingle();
 
               if (admin != null) {
+
                 Navigator.push(
                   context,
                   MaterialPageRoute(

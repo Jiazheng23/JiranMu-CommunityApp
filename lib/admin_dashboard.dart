@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'package:assignment/emergency_list_page.dart';
 import 'package:flutter/material.dart';
 import 'dashboard_page.dart';
+import 'admin_emergency_page.dart';
 import 'admin_emergency_page.dart';
 
 
@@ -24,7 +26,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     Center(child: Text("Requests")),
     Center(child: Text("Users")),
     Center(child: Text("Notices")),
-    AdminEmergencyPage(profile: const {}),
+    EmergencyListPage(),
   ];
 
   void resetState() {
