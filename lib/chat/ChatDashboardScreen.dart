@@ -142,6 +142,7 @@ class _ChatDashboardScreenState extends State<ChatDashboardScreen> {
                           builder: (context) => CommunityChatScreen(
                             roomId: room.id,
                             communityName: room.name,
+                            currentUserId: supabase.auth.currentUser!.id,
                             currentUser: widget.currentUser,
                           ),
                         ),
