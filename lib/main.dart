@@ -7,10 +7,13 @@ const supabaseKey = 'sb_publishable_jO5Lkks7maYrgqJp3IA-3g_04wY0JRb';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // 1. Initialize Supabase first
   await Supabase.initialize(
     url: supabaseUrl,
     anonKey: supabaseKey,
   );
+
   runApp(const MyApp());
 }
 

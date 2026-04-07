@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class DashboardPage extends StatelessWidget{
   const DashboardPage({super.key});
@@ -21,7 +23,6 @@ class DashboardPage extends StatelessWidget{
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // 标题
           Text(
             title,
             style: const TextStyle(
@@ -30,8 +31,6 @@ class DashboardPage extends StatelessWidget{
               color: Colors.black,
             ),
           ),
-
-          // 数字（右下角）
           Align(
             alignment: Alignment.bottomRight,
             child: Text(
