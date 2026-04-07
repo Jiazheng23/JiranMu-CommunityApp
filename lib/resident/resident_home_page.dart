@@ -15,7 +15,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
 
   final Color bgColor = const Color(0xFFF5F1ED);
   final Color primaryColor = const Color(0xFF9A4B3C);
-  final Color accentColor = const Color(0xFFF26A3D);
+  final Color accentColor = const Color(0xFFFC9D7E);
   final Color softYellow = const Color(0xFFF0E6B8);
   final Color textDark = const Color(0xFF2B2B2B);
 

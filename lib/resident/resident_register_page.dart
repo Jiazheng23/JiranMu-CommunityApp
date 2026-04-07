@@ -79,77 +79,52 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
       return;
     }
 
-    if (!email.contains('@')) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please enter a valid email")),
-      );
-      return;
-    }
-
-    if (password.length < 6) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Password must be at least 6 characters")),
-      );
-      return;
-    }
-
     if (password != confirmPassword) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Passwords do not match")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Passwords do not match")),
+      );
       return;
     }
 
-    setState(() {
-      isLoading = true;
-    });
+    setState(() => isLoading = true);
 
     try {
-      final AuthResponse response = await supabase.auth.signUp(
+      final response = await supabase.auth.signUp(
         email: email,
         password: password,
       );
 
       final user = response.user;
-
       if (user == null) {
         throw Exception("User registration failed");
       }
 
-      await supabase.from('profiles').insert({
+      await supabase.from('resident').insert({
         'id': user.id,
         'email': email,
         'full_name': fullName,
         'phone_number': phone,
-        'role': 'resident',
-        'status': 'pending',
         'block': block,
         'unit_number': unit,
+        'role': 'resident',
+        'status': 'pending',
       });
 
       if (!mounted) return;
-
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Resident account registered successfully"),
-        ),
+        const SnackBar(content: Text("Resident account registered successfully")),
       );
-
       Navigator.pop(context);
     } on AuthException catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.message)));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Error: $e")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error: $e")),
+      );
     } finally {
-      if (mounted) {
-        setState(() {
-          isLoading = false;
-        });
-      }
+      if (mounted) setState(() => isLoading = false);
     }
   }
 
