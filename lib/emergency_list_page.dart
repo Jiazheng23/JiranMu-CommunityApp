@@ -12,8 +12,9 @@ class EmergencyListPage extends StatefulWidget {
 class _EmergencyListPageState extends State<EmergencyListPage> {
   final supabase = Supabase.instance.client;
 
-  List emergencies = [];
+  List<Map<String, dynamic>> emergencies = [];
   String filter = "all";
+  bool isLoading = true;
 
   @override
   void initState() {
@@ -22,27 +23,44 @@ class _EmergencyListPageState extends State<EmergencyListPage> {
   }
 
   Future<void> fetchEmergency() async {
-    var query = supabase.from('emergency').select('*, profiles(*)');
+    setState(() {
+      isLoading = true;
+    });
 
-    if (filter != "all") {
-      query = query.eq('status', filter);
+    try {
+      final supabase = Supabase.instance.client;
+
+      final data = await supabase
+          .from('emergency')
+          .select('*, admin(*)')
+          .match(filter == "all" ? {} : {'status': filter}) // 🔥 用 match 代替 eq
+          .order('created_at', ascending: false);
+
+      setState(() {
+        emergencies = List<Map<String, dynamic>>.from(data);
+      });
+
+    } catch (e) {
+      print("Fetch error: $e");
     }
 
-    final data = await query;
-
     setState(() {
-      emergencies = data;
+      isLoading = false;
     });
   }
+
+
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("Emergency List")),
+      appBar: AppBar(title: const Text("Emergency List")),
 
       body: Column(
         children: [
-          // 🔥 filter buttons
+          const SizedBox(height: 10),
+
+          // 🔥 FILTER BUTTONS
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
@@ -52,32 +70,81 @@ class _EmergencyListPageState extends State<EmergencyListPage> {
             ],
           ),
 
+          const SizedBox(height: 10),
+
+          // 🔥 LIST
           Expanded(
-            child: ListView.builder(
+            child: isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : emergencies.isEmpty
+                ? const Center(child: Text("No emergency found"))
+                : ListView.builder(
               itemCount: emergencies.length,
               itemBuilder: (context, index) {
                 final e = emergencies[index];
-                final profiles = e['profiles'];
+                final resident = e['admin'];
 
-                if (profiles == null) {
-                  return const ListTile(title: Text("Error: Profile data missing"));
+                // 🔥 防止 join 不到 crash
+                if (resident == null) {
+                  return const ListTile(
+                    title: Text("Missing resident data"),
+                  );
                 }
 
                 return Card(
+                  margin: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 6),
+
                   child: ListTile(
-                    title: Text(profiles['full_name']),
+                    leading: CircleAvatar(
+                      backgroundColor: Colors.red[100],
+                      child: const Icon(Icons.warning,
+                          color: Colors.red),
+                    ),
+
+                    title: Text(
+                      resident['full_name'] ?? "Unknown",
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold),
+                    ),
+
                     subtitle: Text(
-                        "Block ${profiles['block']} - ${profiles['unit_number']}"),
-                    trailing: Text(e['status']),
+                      "Block ${resident['block']} - ${resident['unit_number']}",
+                    ),
+
+                    trailing: Column(
+                      mainAxisAlignment:
+                      MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          e['status'],
+                          style: TextStyle(
+                            color: e['status'] == 'active'
+                                ? Colors.red
+                                : Colors.green,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          e['type'],
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ],
+                    ),
 
                     onTap: () {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
                           builder: (_) =>
-                              AdminEmergencyPage(profiles: profiles),
+                              AdminEmergencyPage(
+                                  emergency: e),
                         ),
-                      );
+                      ).then((_) {
+                        // 🔥 回来自动 refresh
+                        fetchEmergency();
+                      });
                     },
                   ),
                 );
@@ -89,15 +156,24 @@ class _EmergencyListPageState extends State<EmergencyListPage> {
     );
   }
 
+  // 🔥 FILTER BUTTON
   Widget filterButton(String value) {
+    final isSelected = filter == value;
+
     return ElevatedButton(
+      style: ElevatedButton.styleFrom(
+        backgroundColor:
+        isSelected ? Colors.red : Colors.grey[300],
+        foregroundColor:
+        isSelected ? Colors.white : Colors.black,
+      ),
       onPressed: () {
         setState(() {
           filter = value;
         });
         fetchEmergency();
       },
-      child: Text(value),
+      child: Text(value.toUpperCase()),
     );
   }
 }

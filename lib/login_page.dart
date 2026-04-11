@@ -2,6 +2,8 @@ import 'package:assignment/main.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'admin_dashboard.dart';
+import 'package:geolocator/geolocator.dart';
+import 'location.dart';
 
 class LoginPage extends StatefulWidget {
   @override
@@ -14,6 +16,41 @@ class _LoginPageState extends State<LoginPage> {
   final TextEditingController passwordController = TextEditingController();
 
   //Why this not put in the build because build need to recall many time
+
+  // Inside your LoginPage State class
+  Future<void> _checkLocationPermission() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    // Test if location services are enabled.
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      return Future.error('Location services are disabled.');
+    }
+
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        return Future.error('Location permissions are denied');
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      return Future.error('Permissions are permanently denied.');
+    }
+
+    // ONLY AFTER PERMISSION IS GRANTED, you can get the position
+    final position = await Geolocator.getCurrentPosition();
+    print(position);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // Delay the call so it doesn't block the initial app build
+    Future.delayed(Duration.zero, () => _checkLocationPermission());
+  }
 
   @override
   void dispose() {
@@ -53,11 +90,11 @@ class _LoginPageState extends State<LoginPage> {
                   .maybeSingle();
 
               if (admin != null) {
-
+                await updateLocation('admin', id);
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => AdminDashboard(),
+                    builder: (context) => AdminDashboard(user: admin),
                   ),
                 );
                 return;
@@ -71,6 +108,7 @@ class _LoginPageState extends State<LoginPage> {
                   .maybeSingle();
 
               if (resident != null) {
+                await updateLocation('residence', id);
                 Navigator.push(
                   context,
                   MaterialPageRoute(
