@@ -1,8 +1,12 @@
 import 'dart:async';
-import 'package:assignment/emergency_list_page.dart';
+import 'package:assignment/admin/request/admin_request_page.dart';
+
+import '../emergency/emergency_list_page.dart';
 import 'package:flutter/material.dart';
 import 'dashboard_page.dart';
-import 'package:assignment/location.dart';
+import '../request/request_list_page.dart';
+import '../request/admin_register_page.dart';
+import '../user/user_management.dart';
 
 class AdminDashboard extends StatefulWidget {
   final Map<String, dynamic> user;
@@ -23,8 +27,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   final List<Widget> pages = [
     DashboardPage(),
-    const Center(child: Text("Users")),
-    const Center(child: Text("Requests")),
+    const UserManagementPage(),
+    const AdminRequestsPage(),
     const Center(child: Text("Chat")),
     EmergencyListPage(),
   ];

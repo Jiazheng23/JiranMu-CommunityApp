@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'admin_dashboard_page.dart';
+import 'dashboard/admin_dashboard.dart';
 
 class AdminLoginPage extends StatefulWidget {
   const AdminLoginPage({super.key});
@@ -70,21 +70,14 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
         throw Exception("Admin login failed");
       }
 
-      final data = await supabase
-          .from('profiles')
+      final admin = await supabase
+          .from('admin_new')
           .select()
           .eq('id', user.id)
-          .single();
+          .maybeSingle();
 
-      final role = data['role'];
-      final status = data['status'];
-
-      if (role != 'admin') {
-        throw Exception("This is not an admin account");
-      }
-
-      if (status != 'active') {
-        throw Exception("Admin account is not active");
+      if (admin == null) {
+        throw Exception("Account not approved yet");
       }
 
       if (!mounted) return;
@@ -95,7 +88,9 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
 
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => const AdminDashboardPage()),
+        MaterialPageRoute(
+          builder: (_) => AdminDashboard(user: admin),
+        ),
       );
     } on AuthException catch (e) {
       if (!mounted) return;

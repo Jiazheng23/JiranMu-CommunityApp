@@ -94,9 +94,9 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
     }
 
     if (password != confirmPassword) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Passwords do not match")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Passwords do not match")),
+      );
       return;
     }
 
@@ -105,6 +105,7 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
     });
 
     try {
+      // ===== STEP 1: CREATE AUTH USER =====
       final AuthResponse response = await supabase.auth.signUp(
         email: email,
         password: password,
@@ -116,13 +117,23 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
         throw Exception("User registration failed");
       }
 
-      await supabase.from('profiles').insert({
-        'id': user.id,
-        'email': email,
+      // ===== STEP 2: INSERT MAIN REQUEST =====
+      final requestData = await supabase.from('requests').insert({
+        'user_id': user.id,
+        'type': 'resident',
+        'title': 'Resident Registration',
+        'description': 'Block $block, Unit $unit',
+      }).select('request_id').single();
+
+      final String requestId = requestData['request_id'];
+
+      // ===== STEP 3: INSERT SUB-REQUEST =====
+      await supabase.from('resident_requests').insert({
+        'request_id': requestId,
         'full_name': fullName,
+        'email': email,
         'phone_number': phone,
         'role': 'resident',
-        'status': 'pending',
         'block': block,
         'unit_number': unit,
       });
@@ -131,19 +142,19 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text("Resident account registered successfully"),
+          content: Text("Registration submitted. Waiting for Admin approval."),
         ),
       );
 
       Navigator.pop(context);
     } on AuthException catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.message)));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Error: $e")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error: $e")),
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -270,20 +281,20 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
                   ),
                   child: isLoading
                       ? const SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.5,
-                            color: Colors.white,
-                          ),
-                        )
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      color: Colors.white,
+                    ),
+                  )
                       : const Text(
-                          "Register",
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
+                    "Register",
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
               ),
             ],
