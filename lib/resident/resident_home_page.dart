@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../admin/request/event/event_calendar_screen.dart';
 
 class ResidentHomePage extends StatefulWidget {
   const ResidentHomePage({super.key});
@@ -254,8 +255,12 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                   width: double.infinity,
                   child: ElevatedButton(
                     onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text("View Event clicked")),
+                      // 🔥 跳转到 EventCalendarScreen
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => EventCalendarScreen(),
+                        ),
                       );
                     },
                     style: ElevatedButton.styleFrom(
@@ -399,8 +404,12 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                 color: const Color(0xFF758BFD),
                 label: "Events",
                 onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Events clicked")),
+                  // 🔥 跳转到 EventCalendarScreen
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => EventCalendarScreen(),
+                    ),
                   );
                 },
               ),
