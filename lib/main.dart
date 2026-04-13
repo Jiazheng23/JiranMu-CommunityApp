@@ -1,6 +1,7 @@
 import 'package:assignment/login_page.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:assignment/event_calendar_screen.dart';
 
 const supabaseUrl = 'https://xgttjcpvjweueoaeufac.supabase.co';
 const supabaseKey = 'sb_publishable_jO5Lkks7maYrgqJp3IA-3g_04wY0JRb';
@@ -20,7 +21,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      home: LoginPage(),
+      home: EventCalendarScreen(),
     );
   }
 }
