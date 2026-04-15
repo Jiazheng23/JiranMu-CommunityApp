@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'resident/resident_login_page.dart';
 import 'resident/resident_register_page.dart';
 import 'admin/admin_login_page.dart';
-import 'admin/admin_register_page.dart';
+import 'admin/request/admin_register_page.dart';
 
 class WelcomePage extends StatelessWidget {
   const WelcomePage({super.key});

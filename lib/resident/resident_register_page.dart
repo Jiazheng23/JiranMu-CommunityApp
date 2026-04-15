@@ -86,10 +86,20 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
       return;
     }
 
-    setState(() => isLoading = true);
+    if (password != confirmPassword) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Passwords do not match")),
+      );
+      return;
+    }
+
+    setState(() {
+      isLoading = true;
+    });
 
     try {
-      final response = await supabase.auth.signUp(
+      // ===== STEP 1: CREATE AUTH USER =====
+      final AuthResponse response = await supabase.auth.signUp(
         email: email,
         password: password,
       );
@@ -99,11 +109,23 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
         throw Exception("User registration failed");
       }
 
-      await supabase.from('resident').insert({
-        'id': user.id,
-        'email': email,
+      // ===== STEP 2: INSERT MAIN REQUEST =====
+      final requestData = await supabase.from('requests').insert({
+        'user_id': user.id,
+        'type': 'resident',
+        'title': 'Resident Registration',
+        'description': 'Block $block, Unit $unit',
+      }).select('request_id').single();
+
+      final String requestId = requestData['request_id'];
+
+      // ===== STEP 3: INSERT SUB-REQUEST =====
+      await supabase.from('resident_requests').insert({
+        'request_id': requestId,
         'full_name': fullName,
+        'email': email,
         'phone_number': phone,
+        'role': 'resident',
         'block': block,
         'unit_number': unit,
         'role': 'resident',
@@ -112,7 +134,9 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Resident account registered successfully")),
+        const SnackBar(
+          content: Text("Registration submitted. Waiting for Admin approval."),
+        ),
       );
       Navigator.pop(context);
     } on AuthException catch (e) {
@@ -245,20 +269,20 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
                   ),
                   child: isLoading
                       ? const SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.5,
-                            color: Colors.white,
-                          ),
-                        )
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      color: Colors.white,
+                    ),
+                  )
                       : const Text(
-                          "Register",
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
+                    "Register",
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
               ),
             ],
