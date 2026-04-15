@@ -79,16 +79,9 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
       return;
     }
 
-    if (!email.contains('@')) {
+    if (password != confirmPassword) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please enter a valid email")),
-      );
-      return;
-    }
-
-    if (password.length < 6) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Password must be at least 6 characters")),
+        const SnackBar(content: Text("Passwords do not match")),
       );
       return;
     }
@@ -112,7 +105,6 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
       );
 
       final user = response.user;
-
       if (user == null) {
         throw Exception("User registration failed");
       }
@@ -136,16 +128,16 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
         'role': 'resident',
         'block': block,
         'unit_number': unit,
+        'role': 'resident',
+        'status': 'pending',
       });
 
       if (!mounted) return;
-
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text("Registration submitted. Waiting for Admin approval."),
         ),
       );
-
       Navigator.pop(context);
     } on AuthException catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -156,11 +148,7 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
         SnackBar(content: Text("Error: $e")),
       );
     } finally {
-      if (mounted) {
-        setState(() {
-          isLoading = false;
-        });
-      }
+      if (mounted) setState(() => isLoading = false);
     }
   }
 
