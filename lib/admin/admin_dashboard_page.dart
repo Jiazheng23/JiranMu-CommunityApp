@@ -1,9 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'approve_resident_page.dart';
+import 'AdminGroupInviteScreen.dart';
 
-class AdminDashboardPage extends StatelessWidget {
+class AdminDashboardPage extends StatefulWidget {
   const AdminDashboardPage({super.key});
+
+  @override
+  State<AdminDashboardPage> createState() => _AdminDashboardPageState();
+}
+
+class _AdminDashboardPageState extends State<AdminDashboardPage> {
+  int currentIndex = 0;
+
+  final Color bgColor = const Color(0xFFF5F1ED);
+  final Color primaryColor = const Color(0xFF9A4B3C);
+  final Color accentColor = const Color(0xFFF26A3D);
+  final Color softYellow = const Color(0xFFF0E6B8);
+  final Color textDark = const Color(0xFF2B2B2B);
+
 
   Future<void> logout(BuildContext context) async {
     await Supabase.instance.client.auth.signOut();
@@ -176,6 +191,64 @@ class AdminDashboardPage extends StatelessWidget {
           ),
         ),
       ),
+        bottomNavigationBar: Container(
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.08),
+                  blurRadius: 18,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(24),
+              child: BottomNavigationBar(
+                currentIndex: currentIndex,
+                onTap: (index) {
+                  setState(() {
+                    currentIndex = index;
+                  });
+                  if (index == 2) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const AdminGroupInviteScreen(),
+                      ),
+                    );
+                  }
+                },
+                type: BottomNavigationBarType.fixed,
+                backgroundColor: Colors.white,
+                selectedItemColor: primaryColor,
+                unselectedItemColor: Colors.black38,
+                selectedFontSize: 12,
+                unselectedFontSize: 12,
+                elevation: 0,
+                items: const [
+                  BottomNavigationBarItem(
+                    icon: Icon(Icons.home_rounded),
+                    label: "Home",
+                  ),
+                  BottomNavigationBarItem(
+                    icon: Icon(Icons.groups_rounded),
+                    label: "Community",
+                  ),
+                  BottomNavigationBarItem(
+                    icon: Icon(Icons.chat_bubble_outline_rounded),
+                    label: "Chats",
+                  ),
+                  BottomNavigationBarItem(
+                    icon: Icon(Icons.person_outline_rounded),
+                    label: "Account",
+                  ),
+                ],
+              ),
+            ),
+        ),
     );
   }
 }
