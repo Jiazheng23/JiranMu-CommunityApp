@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../resident/ResidentInvitationsWidget.dart';
 import 'CommunityChatScreen.dart';
 
 final supabase = Supabase.instance.client;
 
-// ─────────────────────────────────────────────
-// Models
-// ─────────────────────────────────────────────
 
 class ResidentProfile {
   final String id;
@@ -108,7 +106,7 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen> {
     try {
       // 1. Get current user's block — select full_name, email, block
       final myProfile = await supabase
-          .from('profiles')
+          .from('resident')
           .select('full_name, email, block') // ✅ full_name not name
           .eq('id', _currentUserId)
           .maybeSingle();
@@ -130,7 +128,7 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen> {
 
       // 2. ALL neighbours in same block
       final neighboursData = await supabase
-          .from('profiles')
+          .from('resident')
           .select('id, full_name, email, block') // ✅ full_name not name
           .eq('block', myBlock)
           .neq('id', _currentUserId);
@@ -286,7 +284,12 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen> {
             _buildDivider(),
             _buildSearchBar(),
             const SizedBox(height: 4),
+            ResidentInvitationsWidget(       // ← add this
+              currentUserId: _currentUserId,
+              currentUser: _currentUserEmail,
+            ),
             Expanded(child: _buildConversationList()),
+            const SizedBox(height: 4),
           ],
         ),
       ),
