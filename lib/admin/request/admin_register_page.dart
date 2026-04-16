@@ -61,6 +61,7 @@ class _AdminRegisterPageState extends State<AdminRegisterPage> {
     final password = passwordController.text.trim();
     final confirmPassword = confirmPasswordController.text.trim();
 
+    // ===== VALIDATION =====
     if (fullName.isEmpty ||
         email.isEmpty ||
         phone.isEmpty ||
@@ -75,7 +76,7 @@ class _AdminRegisterPageState extends State<AdminRegisterPage> {
 
     if (!email.contains('@')) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please enter a valid email")),
+        const SnackBar(content: Text("Invalid email")),
       );
       return;
     }
@@ -95,59 +96,72 @@ class _AdminRegisterPageState extends State<AdminRegisterPage> {
     }
 
     if (password != confirmPassword) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Passwords do not match")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Passwords do not match")),
+      );
       return;
     }
 
-    setState(() {
-      isLoading = true;
-    });
+    setState(() => isLoading = true);
 
     try {
-      final AuthResponse response = await supabase.auth.signUp(
+      // ===== STEP 1: CREATE AUTH USER =====
+      final res = await supabase.auth.signUp(
         email: email,
         password: password,
       );
 
-      final user = response.user;
+      final user = res.user;
 
       if (user == null) {
-        throw Exception("Admin registration failed");
+        throw Exception("Sign up failed");
       }
 
-      await supabase.from('profiles').insert({
-        'id': user.id,
-        'email': email,
+      print("USER CREATED: ${user.id}");
+
+      // ===== STEP 2: INSERT MAIN REQUEST =====
+      final requestData = await supabase.from('requests').insert({
+        'user_id': user.id,
+        'type': 'admin',
+        'title': 'Admin Registration',
+        'description': 'Secret Code Used',
+      }).select('request_id').single();
+
+      final String requestId = requestData['request_id'];
+
+      print("REQUEST CREATED: $requestId");
+
+      // ===== STEP 3: INSERT SUB-REQUEST =====
+      await supabase.from('admin_requests').insert({
+        'request_id': requestId,
         'full_name': fullName,
-        'phone_number': phone,
-        'role': 'admin',
-        'status': 'active',
+        'email': email,
+        'phone': phone,
       });
 
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Admin account registered successfully")),
+        const SnackBar(
+          content: Text("Registration submitted. Waiting for Super Admin approval."),
+        ),
       );
 
       Navigator.pop(context);
+
     } on AuthException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.message)));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Error: $e")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error: $e")),
+      );
     } finally {
       if (mounted) {
-        setState(() {
-          isLoading = false;
-        });
+        setState(() => isLoading = false);
       }
     }
   }
@@ -263,20 +277,20 @@ class _AdminRegisterPageState extends State<AdminRegisterPage> {
                   ),
                   child: isLoading
                       ? const SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.5,
-                            color: Colors.white,
-                          ),
-                        )
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      color: Colors.white,
+                    ),
+                  )
                       : const Text(
-                          "Register",
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
+                    "Register",
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
               ),
             ],
