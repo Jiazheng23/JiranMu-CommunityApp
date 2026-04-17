@@ -1,3 +1,5 @@
+import 'package:assignment/chat/CommunityChatScreen.dart';
+import 'package:assignment/chat/CommunityChatsListScreen.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -13,7 +15,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
 
   final Color bgColor = const Color(0xFFF5F1ED);
   final Color primaryColor = const Color(0xFF9A4B3C);
-  final Color accentColor = const Color(0xFFF26A3D);
+  final Color accentColor = const Color(0xFFFC9D7E);
   final Color softYellow = const Color(0xFFF0E6B8);
   final Color textDark = const Color(0xFF2B2B2B);
 
@@ -444,16 +446,17 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
   }
 
   Widget buildChatsTab() {
-    return Center(
-      child: Text(
-        "Chats Page",
-        style: TextStyle(
-          fontSize: 20,
-          fontWeight: FontWeight.bold,
-          color: primaryColor,
-        ),
-      ),
-    );
+    // const String roomId = 'community_chat';
+    // const String communityName = 'Condo Community';
+    // final String currentUser = Supabase.instance.client.auth.currentUser?.email ?? 'guest';
+    //
+    // return CommunityChatScreen(
+    //   roomId: roomId,
+    //   communityName: communityName,
+    //   currentUserId: currentUser,
+    //   currentUser: currentUser,
+    // );
+    return CommunityChatsListScreen();
   }
 
   Widget buildAccountTab() {
