@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'event_model.dart';
 import 'event_service.dart';
-import 'create_event_screen.dart'; // Make sure to import your new form!
+import 'create_event_screen.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class EventCalendarScreen extends StatefulWidget {
+  const EventCalendarScreen({super.key});
+
   @override
   _EventCalendarScreenState createState() => _EventCalendarScreenState();
 }
@@ -18,22 +21,33 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
 
-  // --- MOCK DATA FOR TESTING ---
-  // Flip this to 'admin' to see how the form behaves differently
+  // Use your teammate's test role logic here
   String currentRole = 'resident';
-  String currentEmail = 'yuxin@gmail.com';
+  String currentUserId = Supabase.instance.client.auth.currentUser?.id ?? '';
   String currentName = 'Yu Xin';
 
   List<CommunityEvent> _allEvents = [];
   final EventService _eventService = EventService();
+  late Future<List<CommunityEvent>> _eventsFuture;
 
   @override
   void initState() {
     super.initState();
     _selectedDay = _focusedDay;
+    _refreshEvents();
+  }
+
+  void _refreshEvents() {
+    setState(() {
+      // Logic: Admins see pending proposals, Residents see approved events
+      _eventsFuture = currentRole == 'admin'
+          ? _eventService.fetchPendingEvents()
+          : _eventService.fetchAllEvents();
+    });
   }
 
   List<CommunityEvent> _getEventsForDay(DateTime day) {
+    // Use event.eventDate instead of event.date
     return _allEvents.where((event) => isSameDay(event.eventDate, day)).toList();
   }
 
@@ -46,9 +60,7 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
         title: const Text('JiranMu Events',
             style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         backgroundColor: cork,
-        elevation: 0,
         centerTitle: true,
-        // --- ADDED: TEST SWITCHER ---
         actions: [
           IconButton(
             icon: Icon(currentRole == 'admin' ? Icons.admin_panel_settings : Icons.person),
@@ -56,6 +68,7 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
               setState(() {
                 currentRole = (currentRole == 'resident') ? 'admin' : 'resident';
               });
+              _refreshEvents();
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(content: Text("Switched to $currentRole mode")),
               );
@@ -63,7 +76,6 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
           )
         ],
       ),
-      // --- ADDED: FLOATING ACTION BUTTON ---
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
           Navigator.push(
@@ -71,11 +83,13 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
             MaterialPageRoute(
               builder: (context) => CreateEventScreen(
                 userRole: currentRole,
-                userEmail: currentEmail,
+                userEmail: "wongkz2003@gmail.com", // Updated to your test email
                 userName: currentName,
               ),
             ),
-          ).then((_) => setState(() {})); // Refresh calendar when coming back
+          ).then((value) {
+            if (value == true) _refreshEvents();
+          });
         },
         backgroundColor: apricot,
         icon: const Icon(Icons.add, color: Colors.white),
@@ -102,54 +116,27 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
                 todayDecoration: BoxDecoration(color: apricot.withOpacity(0.5), shape: BoxShape.circle),
                 selectedDecoration: BoxDecoration(color: cork, shape: BoxShape.circle),
                 markerDecoration: BoxDecoration(color: apricot, shape: BoxShape.circle),
-                markersAlignment: Alignment.bottomCenter,
-                outsideDaysVisible: false,
               ),
-              headerStyle: HeaderStyle(
-                formatButtonVisible: false,
-                titleCentered: true,
-                titleTextStyle: TextStyle(color: cork, fontWeight: FontWeight.bold, fontSize: 20),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20.0),
-              child: Divider(color: cork.withOpacity(0.2), thickness: 1),
             ),
             Expanded(
               child: FutureBuilder<List<CommunityEvent>>(
-                // Logic: Admin sees all (or pending), Resident sees approved
-                future: currentRole == 'admin'
-                    ? _eventService.fetchPendingEvents() // Or show everything
-                    : _eventService.fetchAllEvents(),
+                future: _eventsFuture,
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return Center(child: CircularProgressIndicator(color: apricot));
                   }
                   if (snapshot.hasError) {
-                    return Center(child: Text("Error: ${snapshot.error}", style: TextStyle(color: cork)));
-                  }
-                  if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                    return Center(child: Text("No events found.", style: TextStyle(color: cork)));
+                    return Center(child: Text("Error loading events"));
                   }
 
-                  _allEvents = snapshot.data!;
+                  _allEvents = snapshot.data ?? [];
+                  // Use event.eventDate instead of event.date
                   final dayEvents = _allEvents.where((event) => isSameDay(event.eventDate, _selectedDay)).toList();
 
-                  if (dayEvents.isEmpty) {
-                    return Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.calendar_today_outlined, color: cork.withOpacity(0.3), size: 50),
-                          const SizedBox(height: 10),
-                          Text("No events for this day.", style: TextStyle(color: cork.withOpacity(0.5), fontSize: 16)),
-                        ],
-                      ),
-                    );
-                  }
+                  if (dayEvents.isEmpty) return _buildEmptyState();
 
                   return ListView.builder(
-                    padding: const EdgeInsets.only(bottom: 80), // Space for FAB
+                    padding: const EdgeInsets.only(bottom: 80),
                     itemCount: dayEvents.length,
                     itemBuilder: (context, index) => _buildEventCard(dayEvents[index]),
                   );
@@ -163,81 +150,104 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
   }
 
   Widget _buildEventCard(CommunityEvent event) {
-    // Determine if the "Join" button should show (e.g. only for approved events)
-    bool isApproved = event.status == 'approved';
+    // Logic for Capacity Bar
+    double occupancy = event.participants / event.maxCapacity;
+    bool isFull = event.participants >= event.maxCapacity;
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      color: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       elevation: 4,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // SHOW IMAGE IF EXISTS, ELSE SHOW PLACEHOLDER
+          // Event Image
           ClipRRect(
             borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-            child: event.imageUrl != null && event.imageUrl!.isNotEmpty
-                ? Image.network(
-              event.imageUrl!,
-              height: 150,
-              width: double.infinity,
-              fit: BoxFit.cover,
-            )
-                : Container(
-              height: 150,
-              width: double.infinity,
-              color: cork.withOpacity(0.1),
-              child: Icon(Icons.image, color: cork, size: 50),
-            ),
+            child: event.imageUrl != null
+                ? Image.network(event.imageUrl!, height: 150, width: double.infinity, fit: BoxFit.cover)
+                : Container(height: 150, color: cork.withOpacity(0.1), child: Icon(Icons.image, color: cork)),
           ),
           ListTile(
             title: Text(event.title, style: TextStyle(color: cork, fontWeight: FontWeight.bold)),
-            subtitle: Text("${event.startTime} @ ${event.location}"),
-            trailing: currentRole == 'admin'
-                ? Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: event.status == 'pending' ? apricot.withOpacity(0.2) : Colors.green.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                event.status.toUpperCase(),
-                style: TextStyle(color: event.status == 'pending' ? cork : Colors.green, fontSize: 10, fontWeight: FontWeight.bold),
-              ),
-            )
-                : null,
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text("SDG 11: Sustainable Community", style: TextStyle(fontSize: 10, color: Colors.grey)),
-
-                // Only show "Join" if it's an approved event and I'm a resident
-                if (isApproved && currentRole == 'resident')
-                  ElevatedButton(
-                    onPressed: () => _eventService.joinEvent(event.id, currentEmail),
-                    style: ElevatedButton.styleFrom(backgroundColor: apricot),
-                    child: const Text("Join Now", style: TextStyle(color: Colors.white)),
-                  ),
-
-                // If Admin is looking at a pending event, show Approve button
-                if (currentRole == 'admin' && event.status == 'pending')
-                  ElevatedButton(
-                    onPressed: () async {
-                      await _eventService.updateEventStatus(event.id, 'approved');
-                      setState(() {}); // Refresh UI
-                    },
-                    style: ElevatedButton.styleFrom(backgroundColor: cork),
-                    child: const Text("Approve", style: TextStyle(color: Colors.white)),
-                  ),
+                _buildInfoRow(Icons.location_on, event.location),
+                const SizedBox(height: 4),
+                // NEW: Capacity Display
+                _buildInfoRow(Icons.people, "Capacity: ${event.participants} / ${event.maxCapacity}"),
+                const SizedBox(height: 8),
+                // Visual Progress Bar for Capacity
+                LinearProgressIndicator(
+                  value: occupancy,
+                  backgroundColor: Colors.grey[200],
+                  color: isFull ? Colors.red : apricot,
+                  minHeight: 6,
+                ),
               ],
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                if (currentRole == 'admin' && event.status == 'pending')
+                  _buildAdminActionButtons(event)
+                else if (currentRole == 'resident' && event.status == 'approved')
+                  _buildJoinButton(event, isFull),
+                if (currentRole == 'admin') _buildStatusBadge(event.status),
+              ],
+            ),
+          )
         ],
       ),
     );
+  }
+
+  Widget _buildInfoRow(IconData icon, String label) {
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: apricot),
+        const SizedBox(width: 5),
+        Text(label, style: const TextStyle(fontSize: 13)),
+      ],
+    );
+  }
+
+  Widget _buildJoinButton(CommunityEvent event, bool isFull) {
+    return ElevatedButton(
+      onPressed: isFull ? null : () async {
+        try {
+          await _eventService.joinEvent(event.id, currentUserId);
+          _refreshEvents();
+        } catch (e) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+        }
+      },
+      style: ElevatedButton.styleFrom(backgroundColor: isFull ? Colors.grey : apricot),
+      child: Text(isFull ? "Event Full" : "Join Event", style: const TextStyle(color: Colors.white)),
+    );
+  }
+
+  Widget _buildStatusBadge(String status) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(color: status == 'pending' ? Colors.orange[100] : Colors.green[100], borderRadius: BorderRadius.circular(10)),
+      child: Text(status.toUpperCase(), style: TextStyle(color: status == 'pending' ? Colors.orange : Colors.green, fontSize: 10, fontWeight: FontWeight.bold)),
+    );
+  }
+
+  Widget _buildAdminActionButtons(CommunityEvent event) {
+    return Row(
+      children: [
+        TextButton(onPressed: () => _eventService.rejectRequest(event.id, "Rejected"), child: const Text("Reject", style: TextStyle(color: Colors.red))),
+        ElevatedButton(onPressed: () => _eventService.approveAndPromoteRequest(event.id).then((_) => _refreshEvents()), style: ElevatedButton.styleFrom(backgroundColor: cork), child: const Text("Approve", style: TextStyle(color: Colors.white))),
+      ],
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return const Center(child: Text("No events scheduled for this day."));
   }
 }
