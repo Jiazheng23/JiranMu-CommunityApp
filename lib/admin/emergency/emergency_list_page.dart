@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../emergency//admin_emergency_page.dart';
+import '../emergency/admin_emergency_page.dart';
 
 class EmergencyListPage extends StatefulWidget {
   const EmergencyListPage({super.key});
@@ -28,28 +28,54 @@ class _EmergencyListPageState extends State<EmergencyListPage> {
     });
 
     try {
-      final supabase = Supabase.instance.client;
-
+      // 🔥 1. 只查 emergency 表本身，去掉会导致崩溃的连表查询
       final data = await supabase
           .from('emergency')
-          .select('*, admin(*)')
-          .match(filter == "all" ? {} : {'status': filter}) // 🔥 用 match 代替 eq
+          .select('*')
+          .match(filter == "all" ? {} : {'status': filter})
           .order('created_at', ascending: false);
 
-      setState(() {
-        emergencies = List<Map<String, dynamic>>.from(data);
-      });
+      List<Map<String, dynamic>> processedEmergencies = [];
+
+      // 🔥 2. 手动匹配用户信息 (兼容 Resident 和 Admin)
+      for (var e in data) {
+        final userId = e['user_id']; // 从之前建好的表里拿到 user_id
+        Map<String, dynamic>? userData;
+
+        if (userId != null) {
+          // 先去 resident 表找找看是不是住户求救
+          userData = await supabase.from('resident').select().eq('id', userId).maybeSingle();
+
+          // 如果 resident 表里没这个人，那可能是 Admin 自己按的求救
+          if (userData == null) {
+            // ⚠️ 注意：如果你的 admin 表主键叫 admin_id，把这里改成 eq('admin_id', userId)
+            userData = await supabase.from('admin_new').select().eq('id', userId).maybeSingle();
+          }
+        }
+
+        // 把拼装好的数据放进列表
+        processedEmergencies.add({
+          ...e,
+          'user_data': userData, // 我们统一叫 user_data
+        });
+      }
+
+      if (mounted) {
+        setState(() {
+          emergencies = processedEmergencies;
+        });
+      }
 
     } catch (e) {
       print("Fetch error: $e");
     }
 
-    setState(() {
-      isLoading = false;
-    });
+    if (mounted) {
+      setState(() {
+        isLoading = false;
+      });
+    }
   }
-
-
 
   @override
   Widget build(BuildContext context) {
@@ -82,14 +108,24 @@ class _EmergencyListPageState extends State<EmergencyListPage> {
               itemCount: emergencies.length,
               itemBuilder: (context, index) {
                 final e = emergencies[index];
-                final resident = e['admin'];
+                final user = e['user_data'];
 
-                // 🔥 防止 join 不到 crash
-                if (resident == null) {
-                  return const ListTile(
-                    title: Text("Missing resident data"),
+                // 🔥 防御性代码：如果连用户都被删了，给个默认显示
+                if (user == null) {
+                  return const Card(
+                    margin: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    child: ListTile(
+                      leading: Icon(Icons.warning, color: Colors.grey),
+                      title: Text("Unknown User"),
+                      subtitle: Text("User data not found or deleted"),
+                    ),
                   );
                 }
+
+                // 🔥 兼容住户和 Admin 的显示：Admin 可能没有 Block 和 Unit Number
+                final name = user['full_name'] ?? user['username'] ?? "Unknown";
+                final block = user['block'] ?? "-";
+                final unit = user['unit_number'] ?? "Admin";
 
                 return Card(
                   margin: const EdgeInsets.symmetric(
@@ -103,13 +139,13 @@ class _EmergencyListPageState extends State<EmergencyListPage> {
                     ),
 
                     title: Text(
-                      resident['full_name'] ?? "Unknown",
+                      name,
                       style: const TextStyle(
                           fontWeight: FontWeight.bold),
                     ),
 
                     subtitle: Text(
-                      "Block ${resident['block']} - ${resident['unit_number']}",
+                      "Block $block - $unit",
                     ),
 
                     trailing: Column(
@@ -142,7 +178,7 @@ class _EmergencyListPageState extends State<EmergencyListPage> {
                                   emergency: e),
                         ),
                       ).then((_) {
-                        // 🔥 回来自动 refresh
+                        // 回来自动 refresh
                         fetchEmergency();
                       });
                     },
