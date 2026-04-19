@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:assignment/chat/user_session.dart';
 import '../resident/ResidentInvitationsWidget.dart';
 import 'CommunityChatScreen.dart';
 
 final supabase = Supabase.instance.client;
 
+// ─────────────────────────────────────────────
+// Models
+// ─────────────────────────────────────────────
 
 class ResidentProfile {
   final String id;
@@ -21,7 +25,7 @@ class ResidentProfile {
 
   factory ResidentProfile.fromMap(Map<String, dynamic> map) => ResidentProfile(
     id: map['id']?.toString() ?? '',
-    name: map['full_name']?.toString() ?? 'Unknown', // ✅ correct column
+    name: map['full_name']?.toString() ?? 'Unknown',
     block: map['block']?.toString() ?? '',
     email: map['email']?.toString() ?? '',
   );
@@ -57,6 +61,24 @@ class ConversationPreview {
   });
 }
 
+class GroupChatPreview {
+  final String groupId;
+  final String roomId;
+  final String name;
+  final String block;
+  final String lastMessage;
+  final DateTime lastTime;
+
+  GroupChatPreview({
+    required this.groupId,
+    required this.roomId,
+    required this.name,
+    required this.block,
+    required this.lastMessage,
+    required this.lastTime,
+  });
+}
+
 // ─────────────────────────────────────────────
 // Screen
 // ─────────────────────────────────────────────
@@ -69,85 +91,97 @@ class CommunityChatsListScreen extends StatefulWidget {
       _CommunityChatsListScreenState();
 }
 
-class _CommunityChatsListScreenState extends State<CommunityChatsListScreen> {
+class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
+    with SingleTickerProviderStateMixin {
   static const Color _bg = Color(0xFFF5F1ED);
   static const Color _primary = Color(0xFF9A4B3C);
   static const Color _accent = Color(0xFFF26A3D);
   static const Color _textDark = Color(0xFF2B2B2B);
 
-  List<ResidentProfile> _blockNeighbours = [];
-  List<ConversationPreview> _conversations = [];
-  bool _loading = true;
+  bool get _isAdmin => UserSession.isAdmin;
+  bool get _isResident => UserSession.isResident;
 
+  bool _loading = true;
   late final String _currentUserId;
   late final String _currentUserEmail;
 
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  String _filter = 'All';
+
+  // ── Resident state ──────────────────────────
+  List<ResidentProfile> _blockNeighbours = [];
+  List<ConversationPreview> _conversations = [];
+  List<GroupChatPreview> _residentGroupChats = [];
+
+  // ── Admin state ─────────────────────────────
+  List<String> _adminBlocks = [];
+  String? _selectedAdminBlock;
+  List<GroupChatPreview> _adminGroupChats = [];
+
+  late final TabController _tabController;
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     _currentUserId = supabase.auth.currentUser?.id ?? '';
     _currentUserEmail = supabase.auth.currentUser?.email ?? '';
-    _loadData();
+    if (_isAdmin) {
+      _loadAdminData();
+    } else if (_isResident) {
+      _loadResidentData();
+    }
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _tabController.dispose();
     super.dispose();
   }
 
-  // ── Data loading ──────────────────────────────
+  // ══════════════════════════════════════════════
+  // RESIDENT – data loading
+  // ══════════════════════════════════════════════
 
-  Future<void> _loadData() async {
+  Future<void> _loadResidentData() async {
     setState(() => _loading = true);
     try {
-      // 1. Get current user's block — select full_name, email, block
       final myProfile = await supabase
           .from('resident')
-          .select('full_name, email, block') // ✅ full_name not name
+          .select('full_name, email, block')
           .eq('id', _currentUserId)
           .maybeSingle();
 
       if (myProfile == null) {
-        debugPrint('⚠️ No profile found for user $_currentUserId');
         setState(() => _loading = false);
         return;
       }
 
       final myBlock = myProfile['block'] as String? ?? '';
-      debugPrint('✅ My block: $myBlock');
-
       if (myBlock.isEmpty) {
-        debugPrint('⚠️ Block is empty — check profiles table has block set');
         setState(() => _loading = false);
         return;
       }
 
-      // 2. ALL neighbours in same block
+      // Neighbours in same block
       final neighboursData = await supabase
           .from('resident')
-          .select('id, full_name, email, block') // ✅ full_name not name
+          .select('id, full_name, email, block')
           .eq('block', myBlock)
           .neq('id', _currentUserId);
-
-      debugPrint('✅ Neighbours found: ${(neighboursData as List).length}');
 
       final neighbours = (neighboursData as List<dynamic>)
           .map((e) => ResidentProfile.fromMap(e as Map<String, dynamic>))
           .toList();
 
-      // 3. Rooms the current user belongs to
+      // 1-on-1 chat rooms
       final roomsData = await supabase
           .from('chat_rooms')
           .select('room_id, user1_id, user2_id')
           .or('user1_id.eq.$_currentUserId,user2_id.eq.$_currentUserId');
 
-      debugPrint('✅ Rooms found: ${(roomsData as List).length}');
-
-      // Map: otherUserId → roomId
       final Map<String, String> userRoomMap = {};
       for (final row in (roomsData as List<dynamic>)) {
         final roomId = row['room_id'] as String;
@@ -157,7 +191,6 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen> {
         userRoomMap[otherId] = roomId;
       }
 
-      // 4. Build conversation previews for neighbours with existing rooms
       final convos = <ConversationPreview>[];
       for (final neighbour in neighbours) {
         final roomId = userRoomMap[neighbour.id];
@@ -170,11 +203,12 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen> {
             .order('created_at', ascending: false)
             .limit(1);
 
-        final lastMsg = (msgs as List<dynamic>).isNotEmpty
-            ? msgs[0]['content'] as String
+        final msgList = msgs as List<dynamic>;
+        final lastMsg = msgList.isNotEmpty
+            ? msgList[0]['content'] as String
             : 'Tap to start chatting';
-        final lastTime = msgs.isNotEmpty
-            ? DateTime.parse(msgs[0]['created_at'] as String)
+        final lastTime = msgList.isNotEmpty
+            ? DateTime.parse(msgList[0]['created_at'] as String)
             : DateTime.now().subtract(const Duration(days: 999));
 
         convos.add(ConversationPreview(
@@ -184,22 +218,65 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen> {
           roomId: roomId,
         ));
       }
-
       convos.sort((a, b) => b.lastTime.compareTo(a.lastTime));
+
+      // Accepted group chats
+      final invitations = await supabase
+          .from('group_chat_invitations')
+          .select('group_chat_id, status')
+          .eq('invited_user_id', _currentUserId)
+          .eq('status', 'accepted');
+
+      final groupChats = <GroupChatPreview>[];
+      for (final inv in (invitations as List<dynamic>)) {
+        final groupChatId = inv['group_chat_id'] as String;
+
+        final groupData = await supabase
+            .from('group_chats')
+            .select('id, room_id, block, name')
+            .eq('id', groupChatId)
+            .maybeSingle();
+
+        if (groupData == null) continue;
+
+        final roomId = groupData['room_id'] as String;
+        final msgs = await supabase
+            .from('messages')
+            .select('content, created_at')
+            .eq('room_id', roomId)
+            .order('created_at', ascending: false)
+            .limit(1);
+
+        final msgList = msgs as List<dynamic>;
+        final lastMsg = msgList.isNotEmpty
+            ? msgList[0]['content'] as String
+            : 'No messages yet';
+        final lastTime = msgList.isNotEmpty
+            ? DateTime.parse(msgList[0]['created_at'] as String)
+            : DateTime.now().subtract(const Duration(days: 999));
+
+        groupChats.add(GroupChatPreview(
+          groupId: groupData['id'] as String,
+          roomId: roomId,
+          name: groupData['name'] as String? ?? 'Block ${groupData['block']}',
+          block: groupData['block']?.toString() ?? '',
+          lastMessage: lastMsg,
+          lastTime: lastTime,
+        ));
+      }
+      groupChats.sort((a, b) => b.lastTime.compareTo(a.lastTime));
 
       setState(() {
         _blockNeighbours = neighbours;
         _conversations = convos;
+        _residentGroupChats = groupChats;
         _loading = false;
       });
     } catch (e, stack) {
-      debugPrint('❌ Error loading chat list: $e');
-      debugPrint(stack.toString());
+      debugPrint('Resident load error: $e\n$stack');
       setState(() => _loading = false);
     }
   }
-
-  // ── Room helpers ──────────────────────────────
 
   Future<String> _generateRoomId() async {
     final existing = await supabase.from('chat_rooms').select('room_id');
@@ -207,7 +284,7 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen> {
     return 'ROOM_${count.toString().padLeft(2, '0')}';
   }
 
-  Future<void> _openOrCreateChat(ResidentProfile resident) async {
+  Future<void> _openOrCreateResidentDM(ResidentProfile resident) async {
     try {
       final existing = await supabase
           .from('chat_rooms')
@@ -221,7 +298,6 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen> {
       String roomId;
       if (existing != null) {
         roomId = existing['room_id'] as String;
-        debugPrint('✅ Existing room found: $roomId');
       } else {
         roomId = await _generateRoomId();
         await supabase.from('chat_rooms').insert({
@@ -229,7 +305,6 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen> {
           'user1_id': _currentUserId,
           'user2_id': resident.id,
         });
-        debugPrint('✅ New room created: $roomId');
       }
 
       if (!mounted) return;
@@ -240,14 +315,14 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen> {
             roomId: roomId,
             communityName: resident.name,
             currentUserId: _currentUserId,
-            currentUser: _currentUserEmail, // email matches messages.sender
+            currentUser: _currentUserEmail,
+            isAdmin: false,
           ),
         ),
       );
-
-      _loadData(); // refresh list on return
+      _loadResidentData();
     } catch (e) {
-      debugPrint('❌ Error opening/creating chat: $e');
+      debugPrint('Error opening DM: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -256,6 +331,103 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen> {
       }
     }
   }
+
+  void _openResidentGroupChat(GroupChatPreview group) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CommunityChatScreen(
+          roomId: group.roomId,
+          communityName: group.name,
+          currentUserId: _currentUserId,
+          currentUser: _currentUserEmail,
+          isAdmin: false,
+        ),
+      ),
+    );
+    _loadResidentData();
+  }
+
+  // ══════════════════════════════════════════════
+  // ADMIN – data loading
+  // ══════════════════════════════════════════════
+
+  Future<void> _loadAdminData() async {
+    setState(() => _loading = true);
+    try {
+      final blocksData =
+      await supabase.from('resident').select('block').neq('block', '');
+      final blocks = (blocksData as List)
+          .map((e) => e['block']?.toString() ?? '')
+          .where((s) => s.isNotEmpty)
+          .toSet()
+          .toList()
+        ..sort();
+
+      final groupsData = await supabase
+          .from('group_chats')
+          .select('id, room_id, block, name')
+          .eq('created_by', _currentUserId);
+
+      final groups = <GroupChatPreview>[];
+      for (final g in (groupsData as List<dynamic>)) {
+        final roomId = g['room_id'] as String;
+        final msgs = await supabase
+            .from('messages')
+            .select('content, created_at')
+            .eq('room_id', roomId)
+            .order('created_at', ascending: false)
+            .limit(1);
+
+        final msgList = msgs as List<dynamic>;
+        final lastMsg = msgList.isNotEmpty
+            ? msgList[0]['content'] as String
+            : 'No messages yet';
+        final lastTime = msgList.isNotEmpty
+            ? DateTime.parse(msgList[0]['created_at'] as String)
+            : DateTime.now().subtract(const Duration(days: 999));
+
+        groups.add(GroupChatPreview(
+          groupId: g['id'] as String,
+          roomId: roomId,
+          name: g['name'] as String? ?? 'Block ${g['block']}',
+          block: g['block']?.toString() ?? '',
+          lastMessage: lastMsg,
+          lastTime: lastTime,
+        ));
+      }
+      groups.sort((a, b) => b.lastTime.compareTo(a.lastTime));
+
+      setState(() {
+        _adminBlocks = blocks;
+        _adminGroupChats = groups;
+        _loading = false;
+      });
+    } catch (e, stack) {
+      debugPrint('❌ Admin load error: $e\n$stack');
+      setState(() => _loading = false);
+    }
+  }
+
+  void _openAdminGroupChat(GroupChatPreview group) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CommunityChatScreen(
+          roomId: group.roomId,
+          communityName: group.name,
+          currentUserId: _currentUserId,
+          currentUser: _currentUserEmail,
+          isAdmin: true,
+        ),
+      ),
+    );
+    _loadAdminData();
+  }
+
+  // ══════════════════════════════════════════════
+  // Helpers
+  // ══════════════════════════════════════════════
 
   String _formatTime(DateTime dt) {
     final now = DateTime.now();
@@ -267,7 +439,9 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen> {
     return '${diff.inDays} days';
   }
 
-  // ── UI ────────────────────────────────────────
+  // ══════════════════════════════════════════════
+  // BUILD
+  // ══════════════════════════════════════════════
 
   @override
   Widget build(BuildContext context) {
@@ -276,59 +450,156 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen> {
       body: SafeArea(
         child: _loading
             ? const Center(child: CircularProgressIndicator())
-            : Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildHeader(),
-            _buildNeighboursStrip(),
-            _buildDivider(),
-            _buildSearchBar(),
-            const SizedBox(height: 4),
-            ResidentInvitationsWidget(       // ← add this
-              currentUserId: _currentUserId,
-              currentUser: _currentUserEmail,
-            ),
-            Expanded(child: _buildConversationList()),
-            const SizedBox(height: 4),
-          ],
-        ),
+            : _isAdmin
+            ? _buildAdminLayout()
+            : _isResident
+            ? _buildResidentLayout()
+            : const Center(child: Text('Unknown role')),
       ),
     );
   }
 
-  Widget _buildHeader() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(22, 18, 22, 4),
-      child: Row(
-        children: [
-          Text(
-            'Messages',
-            style: TextStyle(
-              fontSize: 26,
-              fontWeight: FontWeight.w800,
-              color: _textDark,
-              letterSpacing: -0.5,
-            ),
-          ),
-          const Spacer(),
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(14),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.06),
-                  blurRadius: 8,
-                  offset: const Offset(0, 3),
-                ),
+  // ══════════════════════════════════════════════
+  // RESIDENT layout — CustomScrollView so all
+  // sections scroll together with no overflow
+  // ══════════════════════════════════════════════
+  //
+  Widget _buildResidentLayout() {
+    final filteredConvos = _searchQuery.isEmpty
+        ? _conversations
+        : _conversations
+        .where((c) =>
+        c.resident.name.toLowerCase().contains(_searchQuery))
+        .toList();
+
+    // 🔥 Combine group + DM
+    final List<Map<String, dynamic>> combinedList = [];
+
+    if (_filter == 'all' || _filter == 'group') {
+      combinedList.addAll(_residentGroupChats.map((g) => {
+        'type': 'group',
+        'data': g,
+      }));
+    }
+
+    if (_filter == 'all' || _filter == 'dm') {
+      combinedList.addAll(filteredConvos.map((c) => {
+        'type': 'dm',
+        'data': c,
+      }));
+    }
+
+    // 🔥 Sort by latest message
+    combinedList.sort((a, b) {
+      final aTime = a['type'] == 'group'
+          ? (a['data'] as GroupChatPreview).lastTime
+          : (a['data'] as ConversationPreview).lastTime;
+
+      final bTime = b['type'] == 'group'
+          ? (b['data'] as GroupChatPreview).lastTime
+          : (b['data'] as ConversationPreview).lastTime;
+
+      return bTime.compareTo(aTime);
+    });
+
+    return CustomScrollView(
+      slivers: [
+        SliverToBoxAdapter(child: _buildHeader(title: 'Messages')),
+
+        SliverToBoxAdapter(child: _buildNeighboursStrip()),
+
+        SliverToBoxAdapter(child: _buildDivider()),
+
+        SliverToBoxAdapter(
+          child: _buildSearchBar(hint: 'Search neighbours…'),
+        ),
+
+        const SliverToBoxAdapter(child: SizedBox(height: 8)),
+
+        // 🔥 FILTER BUTTONS
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(22, 8, 22, 8),
+            child: Row(
+              children: [
+                _buildFilterChip('All', 'all'),
+                _buildFilterChip('Direct', 'dm'),
+                _buildFilterChip('Groups', 'group'),
               ],
             ),
-            child: Icon(Icons.edit_outlined, color: _primary, size: 20),
           ),
-        ],
-      ),
+        ),
+
+        // ── Invitations (unchanged)
+        SliverToBoxAdapter(
+          child: ResidentInvitationsWidget(
+            currentUserId: _currentUserId,
+            currentUser: _currentUserEmail,
+          ),
+        ),
+
+        // 🔥 UNIFIED LIST
+        if (combinedList.isEmpty)
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Icon(Icons.chat_bubble_outline_rounded,
+                      size: 48, color: Colors.black26),
+                  SizedBox(height: 12),
+                  Text(
+                    'No conversations yet.\nStart chatting now!',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.black45, height: 1.6),
+                  ),
+                ],
+              ),
+            ),
+          )
+        else
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(22, 8, 22, 100),
+            sliver: SliverList(
+              delegate: SliverChildBuilderDelegate(
+                    (context, i) {
+                  final item = combinedList[i];
+
+                  if (item['type'] == 'group') {
+                    final group = item['data'] as GroupChatPreview;
+
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _GroupChatTile(
+                        group: group,
+                        primaryColor: _primary,
+                        formatTime: _formatTime,
+                        isAdmin: false,
+                        onTap: () => _openResidentGroupChat(group),
+                      ),
+                    );
+                  } else {
+                    final convo = item['data'] as ConversationPreview;
+
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _ConversationTile(
+                        preview: convo,
+                        primaryColor: _primary,
+                        accentColor: _accent,
+                        formatTime: _formatTime,
+                        onTap: () =>
+                            _openOrCreateResidentDM(convo.resident),
+                      ),
+                    );
+                  }
+                },
+                childCount: combinedList.length,
+              ),
+            ),
+          ),
+      ],
     );
   }
 
@@ -360,22 +631,7 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen> {
                 ),
               ),
               const SizedBox(width: 8),
-              Container(
-                padding:
-                const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: _primary.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  '${_blockNeighbours.length}',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: _primary,
-                  ),
-                ),
-              ),
+              _CountBadge(count: _blockNeighbours.length, color: _primary),
               const SizedBox(width: 8),
               Text(
                 '· tap to chat',
@@ -398,12 +654,151 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen> {
             itemBuilder: (context, i) => _NeighbourCard(
               profile: _blockNeighbours[i],
               primaryColor: _primary,
-              onTap: () => _openOrCreateChat(_blockNeighbours[i]),
+              onTap: () => _openOrCreateResidentDM(_blockNeighbours[i]),
             ),
           ),
         ),
         const SizedBox(height: 6),
       ],
+    );
+  }
+
+  // ══════════════════════════════════════════════
+  // ADMIN layout
+  // ══════════════════════════════════════════════
+
+  Widget _buildAdminLayout() {
+    return CustomScrollView(
+      slivers: [
+        SliverToBoxAdapter(
+            child: _buildHeader(title: 'Community Chats', isAdmin: true)),
+        SliverToBoxAdapter(child: _buildDivider()),
+        SliverToBoxAdapter(
+            child: _buildSearchBar(hint: 'Search group chats…')),
+        const SliverToBoxAdapter(child: SizedBox(height: 10)),
+        if (_adminGroupChats.isNotEmpty)
+          SliverToBoxAdapter(
+            child: _buildSectionLabel('GROUP CHATS',
+                count: _adminGroupChats.length),
+          ),
+        _buildAdminGroupSliver(),
+        const SliverToBoxAdapter(child: SizedBox(height: 100)),
+      ],
+    );
+  }
+
+  Widget _buildAdminGroupSliver() {
+    final filtered = _searchQuery.isEmpty
+        ? _adminGroupChats
+        : _adminGroupChats
+        .where((g) =>
+    g.name.toLowerCase().contains(_searchQuery) ||
+        g.block.toLowerCase().contains(_searchQuery))
+        .toList();
+
+    if (filtered.isEmpty) {
+      return SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.only(top: 40),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: const [
+              Icon(Icons.groups_outlined, size: 56, color: Colors.black26),
+              SizedBox(height: 12),
+              Text(
+                'No group chats yet.\nUse + to invite residents to a block chat.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.black45, height: 1.6),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return SliverPadding(
+      padding: const EdgeInsets.symmetric(horizontal: 22),
+      sliver: SliverList(
+        delegate: SliverChildBuilderDelegate(
+              (context, i) => Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: _GroupChatTile(
+              group: filtered[i],
+              primaryColor: _primary,
+              formatTime: _formatTime,
+              isAdmin: true,
+              onTap: () => _openAdminGroupChat(filtered[i]),
+            ),
+          ),
+          childCount: filtered.length,
+        ),
+      ),
+    );
+  }
+
+  // ══════════════════════════════════════════════
+  // SHARED UI helpers
+  // ══════════════════════════════════════════════
+
+  Widget _buildHeader({required String title, bool isAdmin = false}) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(22, 18, 22, 4),
+      child: Row(
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 26,
+              fontWeight: FontWeight.w800,
+              color: _textDark,
+              letterSpacing: -0.5,
+            ),
+          ),
+          if (isAdmin) ...[
+            const SizedBox(width: 10),
+            Container(
+              padding:
+              const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: _primary,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text(
+                'Admin',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionLabel(String label, {int? count}) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(22, 12, 22, 8),
+      child: Row(
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              color: _primary,
+              letterSpacing: 1.2,
+            ),
+          ),
+          if (count != null) ...[
+            const SizedBox(width: 8),
+            _CountBadge(count: count, color: _primary),
+          ],
+        ],
+      ),
     );
   }
 
@@ -413,11 +808,34 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen> {
     color: Colors.black.withOpacity(0.07),
   );
 
-  Widget _buildSearchBar() {
+  Widget _buildFilterChip(String label, String value) {
+    final isSelected = _filter == value;
+
+    return GestureDetector(
+      onTap: () => setState(() => _filter = value),
+      child: Container(
+        margin: const EdgeInsets.only(right: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? _primary : Colors.grey.shade200,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? Colors.white : Colors.black54,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchBar({required String hint}) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(22, 14, 22, 0),
       child: Container(
-        height: 44,
+        height: 60,
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(14),
@@ -434,7 +852,7 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen> {
           onChanged: (v) => setState(() => _searchQuery = v.toLowerCase()),
           style: const TextStyle(fontSize: 14, color: _textDark),
           decoration: InputDecoration(
-            hintText: 'Search neighbours…',
+            hintText: hint,
             hintStyle:
             const TextStyle(color: Colors.black38, fontSize: 14),
             prefixIcon: const Icon(Icons.search_rounded,
@@ -446,51 +864,250 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen> {
       ),
     );
   }
-
-  Widget _buildConversationList() {
-    final filtered = _searchQuery.isEmpty
-        ? _conversations
-        : _conversations
-        .where((c) =>
-        c.resident.name.toLowerCase().contains(_searchQuery))
-        .toList();
-
-    if (filtered.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: const [
-            Icon(Icons.chat_bubble_outline_rounded,
-                size: 48, color: Colors.black26),
-            SizedBox(height: 12),
-            Text(
-              'No conversations yet.\nTap a neighbour above to say hi!',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.black45, height: 1.6),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(22, 12, 22, 100),
-      itemCount: filtered.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 4),
-      itemBuilder: (context, i) => _ConversationTile(
-        preview: filtered[i],
-        primaryColor: _primary,
-        accentColor: _accent,
-        formatTime: _formatTime,
-        onTap: () => _openOrCreateChat(filtered[i].resident),
-      ),
-    );
-  }
 }
 
 // ─────────────────────────────────────────────
 // Sub-widgets
 // ─────────────────────────────────────────────
+
+class _CountBadge extends StatelessWidget {
+  final int count;
+  final Color color;
+  const _CountBadge({required this.count, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        '$count',
+        style: TextStyle(
+            fontSize: 11, fontWeight: FontWeight.w700, color: color),
+      ),
+    );
+  }
+}
+
+class _GroupChatChip extends StatelessWidget {
+  final GroupChatPreview group;
+  final Color primaryColor;
+  final String Function(DateTime) formatTime;
+  final VoidCallback onTap;
+
+  const _GroupChatChip({
+    required this.group,
+    required this.primaryColor,
+    required this.formatTime,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 160,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [primaryColor, primaryColor.withOpacity(0.7)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Center(
+                    child: Text(
+                      group.block,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  formatTime(group.lastTime),
+                  style:
+                  const TextStyle(fontSize: 10, color: Colors.black38),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              group.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF2B2B2B),
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              group.lastMessage,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 11, color: Colors.black45),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GroupChatTile extends StatelessWidget {
+  final GroupChatPreview group;
+  final Color primaryColor;
+  final String Function(DateTime) formatTime;
+  final bool isAdmin;
+  final VoidCallback onTap;
+
+  const _GroupChatTile({
+    required this.group,
+    required this.primaryColor,
+    required this.formatTime,
+    required this.isAdmin,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [primaryColor, primaryColor.withOpacity(0.7)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Center(
+                child: Text(
+                  group.block,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 17,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          group.name,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF2B2B2B),
+                          ),
+                        ),
+                      ),
+                      if (isAdmin) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: primaryColor.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            'Admin',
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w700,
+                              color: primaryColor,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    group.lastMessage,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 13, color: Colors.black45),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  formatTime(group.lastTime),
+                  style: const TextStyle(
+                      fontSize: 12, color: Colors.black38),
+                ),
+                const SizedBox(height: 4),
+                const Icon(Icons.arrow_forward_ios_rounded,
+                    size: 12, color: Colors.black26),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class _NeighbourCard extends StatelessWidget {
   final ResidentProfile profile;

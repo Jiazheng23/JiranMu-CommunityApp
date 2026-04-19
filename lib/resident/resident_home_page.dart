@@ -3,6 +3,7 @@ import 'package:assignment/chat/CommunityChatsListScreen.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../admin/request/event/event_calendar_screen.dart';
+import 'VisitorPassListScreen.dart';
 
 class ResidentHomePage extends StatefulWidget {
   const ResidentHomePage({super.key});
@@ -455,16 +456,6 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
   }
 
   Widget buildChatsTab() {
-    // const String roomId = 'community_chat';
-    // const String communityName = 'Condo Community';
-    // final String currentUser = Supabase.instance.client.auth.currentUser?.email ?? 'guest';
-    //
-    // return CommunityChatScreen(
-    //   roomId: roomId,
-    //   communityName: communityName,
-    //   currentUserId: currentUser,
-    //   currentUser: currentUser,
-    // );
     return CommunityChatsListScreen();
   }
 
@@ -522,6 +513,14 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                   title: const Text("Booking History"),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () {},
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.badge_outlined, color: primaryColor),
+                  title: const Text("Visitor Pass"),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => const VisitorPassListScreen())),
                 ),
                 ListTile(
                   contentPadding: EdgeInsets.zero,

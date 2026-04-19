@@ -54,12 +54,33 @@ class _AdminGroupInviteScreenState extends State<AdminGroupInviteScreen> {
     setState(() => _loading = true);
     try {
       final user = supabase.auth.currentUser;
-      if (user == null) throw Exception("User session not found. Please log in again.");
-      
+      if (user == null) throw Exception("User session not found.");
       final myId = user.id;
 
-      debugPrint('Fetching residents for block: $block, myId: $myId');
+      // 1. Get the group chat for this block (if it exists)
+      final existingGroup = await supabase
+          .from('group_chats')
+          .select('id')
+          .eq('block', block)
+          .maybeSingle();
 
+      Set<String> alreadyInvitedIds = {};
+
+      if (existingGroup != null) {
+        final groupChatId = existingGroup['id'] as String;
+
+        // 2. Fetch all already-invited user IDs for this group
+        final invitations = await supabase
+            .from('group_chat_invitations')
+            .select('invited_user_id')
+            .eq('group_chat_id', groupChatId);
+
+        alreadyInvitedIds = (invitations as List)
+            .map((e) => e['invited_user_id'] as String)
+            .toSet();
+      }
+
+      // 3. Fetch all residents in the block
       final data = await supabase
           .from('resident')
           .select('id, full_name, unit_number, block, role')
@@ -67,29 +88,25 @@ class _AdminGroupInviteScreenState extends State<AdminGroupInviteScreen> {
 
       if (mounted) {
         setState(() {
-          // Filter out self and only show residents (not other admins)
           _residents = (data as List)
               .map((e) => Map<String, dynamic>.from(e))
-              .where((e) => e['id'] != myId && (e['role'] == 'resident' || e['role'] == null))
+              .where((e) =>
+          e['id'] != myId &&
+              (e['role'] == 'resident' || e['role'] == null) &&
+              !alreadyInvitedIds.contains(e['id'])) // ← exclude already invited
               .toList();
           _selectedIds = {};
         });
-        debugPrint('Loaded ${_residents.length} residents');
       }
     } catch (e) {
-      debugPrint('DETAILED ERROR loading residents: $e');
+      debugPrint('Error loading residents: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.redAccent,
-          ),
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.redAccent),
         );
       }
     } finally {
-      if (mounted) {
-        setState(() => _loading = false);
-      }
+      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -202,10 +219,10 @@ class _AdminGroupInviteScreenState extends State<AdminGroupInviteScreen> {
                         color: _primary, letterSpacing: 1.2)),
                 const SizedBox(height: 10),
                 if (_blocks.isEmpty)
-                   const Padding(
-                     padding: EdgeInsets.all(8.0),
-                     child: Text("No blocks found in profiles table", style: TextStyle(color: Colors.grey, fontSize: 13)),
-                   )
+                  const Padding(
+                    padding: EdgeInsets.all(8.0),
+                    child: Text("No blocks found in profiles table", style: TextStyle(color: Colors.grey, fontSize: 13)),
+                  )
                 else
                   Wrap(
                     spacing: 8,
@@ -221,8 +238,8 @@ class _AdminGroupInviteScreenState extends State<AdminGroupInviteScreen> {
                         ),
                         onSelected: (bool selected) {
                           if (selected) {
-                             setState(() => _selectedBlock = block);
-                             _loadResidents(block);
+                            setState(() => _selectedBlock = block);
+                            _loadResidents(block);
                           }
                         },
                       );
@@ -263,17 +280,17 @@ class _AdminGroupInviteScreenState extends State<AdminGroupInviteScreen> {
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
                   : _residents.isEmpty
-                    ? const Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.person_off_outlined, size: 48, color: Colors.grey),
-                            SizedBox(height: 12),
-                            Text("No residents found in this block", style: TextStyle(color: Colors.grey)),
-                          ],
-                        ),
-                      )
-                    : ListView.builder(
+                  ? const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.person_off_outlined, size: 48, color: Colors.grey),
+                    SizedBox(height: 12),
+                    Text("No residents found in this block", style: TextStyle(color: Colors.grey)),
+                  ],
+                ),
+              )
+                  : ListView.builder(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 itemCount: _residents.length,
                 itemBuilder: (context, i) {
@@ -339,11 +356,11 @@ class _AdminGroupInviteScreenState extends State<AdminGroupInviteScreen> {
                       borderRadius: BorderRadius.circular(14)),
                 ),
                 child: _loading
-                  ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                  : Text(
-                      'Send Invitations (${_selectedIds.length} selected)',
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-                    ),
+                    ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : Text(
+                  'Send Invitations (${_selectedIds.length} selected)',
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                ),
               ),
             ),
         ],

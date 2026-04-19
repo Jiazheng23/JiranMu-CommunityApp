@@ -1,12 +1,11 @@
 import 'dart:async';
-import 'package:assignment/admin/request/admin_request_page.dart';
-
-import '../emergency/emergency_list_page.dart';
 import 'package:flutter/material.dart';
-import 'dashboard_page.dart';
-import '../request/request_list_page.dart';
-import '../request/admin_register_page.dart';
+import 'package:assignment/admin/AdminGroupInviteScreen.dart';
+import 'package:assignment/admin/request/admin_request_page.dart';
+import '../../chat/CommunityChatsListScreen.dart';
+import '../emergency/emergency_list_page.dart';
 import '../user/user_management.dart';
+import 'dashboard_page.dart';
 
 class AdminDashboard extends StatefulWidget {
   final Map<String, dynamic> user;
@@ -22,14 +21,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   bool isWaiting = false;
   bool isEmergency = false;
+
   Timer? _timer;
   int countdown = 10;
 
   final List<Widget> pages = [
-    DashboardPage(),
+    const AdminProfilePage(),
     const UserManagementPage(),
     const AdminRequestsPage(),
-    const Center(child: Text("Chat")),
+    const CommunityChatsListScreen(),
     EmergencyListPage(),
   ];
 
@@ -44,6 +44,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
   void resetState() {
     _timer?.cancel();
 
+    if (!mounted) return;
+
     setState(() {
       isWaiting = false;
       isEmergency = false;
@@ -56,112 +58,110 @@ class _AdminDashboardState extends State<AdminDashboard> {
       resetState();
       return;
     }
-    if (!isWaiting) {
-      setState(() {
-        isWaiting = true;
-        countdown = 10;
-      });
-      StateSetter? dialogSetState;
 
-      _timer = Timer.periodic(const Duration(seconds: 1), (t) {
-        if (countdown > 1) {
-          if (mounted) {
-            setState(() {
-              countdown--;
-            });
-          }
-          if (dialogSetState != null) {
-            dialogSetState!(() {});
-          }
-        } else {
-          t.cancel();
+    if (isWaiting) return;
 
-          setState(() {
-            isWaiting = false;
-            isEmergency = true;
-          });
+    setState(() {
+      isWaiting = true;
+      countdown = 10;
+    });
 
-          // createEmergency(widget.user['id']);
+    StateSetter? dialogSetState;
 
-          if (mounted) {
-            Navigator.of(context, rootNavigator: true).pop();
-          }
+    _timer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) {
+        t.cancel();
+        return;
+      }
+
+      if (countdown > 1) {
+        setState(() => countdown--);
+        dialogSetState?.call(() {});
+      } else {
+        t.cancel();
+
+        setState(() {
+          isWaiting = false;
+          isEmergency = true;
+        });
+
+        if (Navigator.of(context).canPop()) {
+          Navigator.of(context, rootNavigator: true).pop();
         }
-      });
+      }
+    });
 
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) {
-          return AlertDialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-            content: StatefulBuilder(
-              builder: (context, setStepState) {
-                dialogSetState = setStepState;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          content: StatefulBuilder(
+            builder: (context, setStepState) {
+              dialogSetState = setStepState;
 
-                return Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.warning_amber_rounded,
-                      color: Colors.orange,
-                      size: 70,
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.warning_amber_rounded,
+                    color: Colors.orange,
+                    size: 70,
+                  ),
+                  const SizedBox(height: 20),
+                  const Text(
+                    "Confirm sending emergency notification?",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
                     ),
-                    const SizedBox(height: 20),
-                    const Text(
-                      "Confirm sending emergency notification?",
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 18,
-                      ),
-                    ),
-                    const SizedBox(height: 25),
-                    Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        SizedBox(
-                          width: 80,
-                          height: 80,
-                          child: CircularProgressIndicator(
-                            value: countdown / 10,
-                            strokeWidth: 6,
-                            backgroundColor: Colors.grey.shade200,
-                            valueColor: const AlwaysStoppedAnimation<Color>(
-                              Colors.orange,
-                            ),
-                          ),
+                  ),
+                  const SizedBox(height: 25),
+                  Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      SizedBox(
+                        width: 80,
+                        height: 80,
+                        child: CircularProgressIndicator(
+                          value: countdown / 10,
+                          strokeWidth: 6,
+                          backgroundColor: Colors.grey.shade200,
+                          valueColor:
+                          const AlwaysStoppedAnimation<Color>(Colors.orange),
                         ),
-                        Text(
-                          "$countdown",
-                          style: const TextStyle(
-                            fontSize: 32,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 30),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton(
-                        onPressed: () {
-                          resetState();
-                          Navigator.pop(context);
-                        },
-                        child: const Text("Cancel Emergency"),
                       ),
+                      Text(
+                        "$countdown",
+                        style: const TextStyle(
+                          fontSize: 32,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 30),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton(
+                      onPressed: () {
+                        resetState();
+                        Navigator.pop(context);
+                      },
+                      child: const Text("Cancel Emergency"),
                     ),
-                  ],
-                );
-              },
-            ),
-          );
-        },
-      );
-    }
+                  ),
+                ],
+              );
+            },
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -175,18 +175,33 @@ class _AdminDashboardState extends State<AdminDashboard> {
         width: 65,
         height: 65,
         child: FloatingActionButton(
-          onPressed: handleEmergency,
-          backgroundColor: isEmergency
+          onPressed: () {
+            if (selectedIndex == 3) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const AdminGroupInviteScreen(),
+                ),
+              );
+            } else {
+              handleEmergency();
+            }
+          },
+          backgroundColor: selectedIndex == 3
+              ? const Color(0xFF1E88E5)
+              : (isEmergency
               ? Colors.red
-              : (isWaiting ? Colors.orange : Colors.red),
+              : (isWaiting ? Colors.orange : Colors.red)),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(60),
           ),
           elevation: 4,
           child: Icon(
-            isEmergency
+            selectedIndex == 3
+                ? Icons.add
+                : (isEmergency
                 ? Icons.warning
-                : (isWaiting ? Icons.access_time : Icons.add),
+                : (isWaiting ? Icons.access_time : Icons.add)),
             size: 30,
             color: Colors.white,
           ),
