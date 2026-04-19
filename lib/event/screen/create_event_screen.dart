@@ -2,9 +2,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
-import 'event_service.dart';
-// Import your history page here once created
-// import 'resident_history_screen.dart';
+import '../service/event_service.dart';
+import 'resident_event_history_screen.dart';
 
 class CreateEventScreen extends StatefulWidget {
   final String userRole;
@@ -29,13 +28,12 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   // Controllers
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _descController = TextEditingController();
-  // NEW: Controller for Max Capacity
-  final TextEditingController _capacityController = TextEditingController(text: "20");
+  final TextEditingController _capacityController = TextEditingController();
 
   // State Variables
   DateTime _selectedDate = DateTime.now();
-  TimeOfDay _startTime = TimeOfDay.now();
-  TimeOfDay _endTime = TimeOfDay.now().replacing(hour: (TimeOfDay.now().hour + 1) % 24);
+  TimeOfDay _startTime = const TimeOfDay(hour: 9, minute: 0);
+  TimeOfDay _endTime = const TimeOfDay(hour: 10, minute: 0);
 
   String? _selectedLocation;
   bool _isPrivate = false;
@@ -59,9 +57,10 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   // --- HELPERS ---
 
   String _formatTimeForDb(TimeOfDay time) {
-    final now = DateTime.now();
-    final dt = DateTime(now.year, now.month, now.day, time.hour, time.minute);
-    return DateFormat('HH:mm:ss').format(dt);
+    // Returns "HH:mm:ss" format for Supabase
+    final String hour = time.hour.toString().padLeft(2, '0');
+    final String minute = time.minute.toString().padLeft(2, '0');
+    return "$hour:$minute:00";
   }
 
   // --- LOGIC ---
@@ -96,82 +95,96 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   }
 
   void _submitForm() async {
-    if (_formKey.currentState!.validate()) {
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => const Center(child: CircularProgressIndicator()),
+    if (!_formKey.currentState!.validate()) return;
+
+    // Additional Time Check: End Time must be after Start Time
+    final double startDouble = _startTime.hour + _startTime.minute / 60.0;
+    final double endDouble = _endTime.hour + _endTime.minute / 60.0;
+
+    if (endDouble <= startDouble) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("End Time must be later than Start Time!")),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final formattedDate = DateFormat('yyyy-MM-dd').format(_selectedDate);
+      final dbStartTime = _formatTimeForDb(_startTime);
+      final dbEndTime = _formatTimeForDb(_endTime);
+
+      // 1. Availability Check
+      bool isAvailable = await _eventService.isFacilityAvailable(
+        _selectedLocation!,
+        formattedDate,
+        dbStartTime,
+        dbEndTime,
       );
 
-      try {
-        final formattedDate = DateFormat('yyyy-MM-dd').format(_selectedDate);
-        final dbStartTime = _formatTimeForDb(_startTime);
-        final dbEndTime = _formatTimeForDb(_endTime);
-
-        // 1. Double-Booking Check
-        bool isAvailable = await _eventService.isFacilityAvailable(
-          _selectedLocation!,
-          formattedDate,
-          dbStartTime,
-          dbEndTime,
-        );
-
-        if (!isAvailable) {
-          if (mounted) Navigator.pop(context);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Time Conflict! Facility already booked."), backgroundColor: Colors.orange),
-          );
-          return;
-        }
-
-        // 2. Image Upload
-        String? imageUrl;
-        if (_selectedImage != null) {
-          imageUrl = await _eventService.uploadEventImage(_selectedImage!);
-        }
-
-        // 3. Data Preparation (Including Max Capacity)
-        final eventData = {
-          'title': _titleController.text.trim(),
-          'description': _descController.text.trim(),
-          'location': _selectedLocation,
-          'event_date': formattedDate,
-          'start_time': dbStartTime,
-          'end_time': dbEndTime,
-          'max_capacity': int.parse(_capacityController.text), // NEW
-          'created_by_name': widget.userName,
-          'is_private': _isPrivate,
-          'image_url': imageUrl,
-        };
-
-        // 4. Send to Service
-        await _eventService.createEvent(
-          eventData: eventData,
-          userRole: widget.userRole,
-        );
-
-        if (mounted) {
-          Navigator.pop(context); // Close loading
-
-          String msg = widget.userRole == 'admin' ? "Event Published! ✅" : "Proposal Sent! ⏳";
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: cork));
-
-          // 5. Navigation Logic
-          if (widget.userRole == 'admin') {
-            Navigator.pop(context, true); // Return to calendar
-          } else {
-            // Redirect Resident to History Page
-            // Replace with your actual History Screen push
-            // Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => ResidentHistoryScreen()));
-            Navigator.pop(context);
-          }
-        }
-      } catch (e) {
-        if (mounted) Navigator.pop(context);
+      if (!isAvailable) {
+        if (mounted) Navigator.pop(context); // Close loading
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error: $e"), backgroundColor: Colors.redAccent),
+          const SnackBar(
+            content: Text("Time Conflict! This facility is already booked for this slot."),
+            backgroundColor: Colors.deepOrange,
+          ),
         );
+        return;
       }
+
+      // 2. Upload Image if selected
+      String? imageUrl;
+      if (_selectedImage != null) {
+        imageUrl = await _eventService.uploadEventImage(_selectedImage!);
+      }
+
+      // 3. Prepare Data
+      final eventData = {
+        'title': _titleController.text.trim(),
+        'description': _descController.text.trim(),
+        'location': _selectedLocation,
+        'event_date': formattedDate,
+        'start_time': dbStartTime,
+        'end_time': dbEndTime,
+        'max_capacity': int.tryParse(_capacityController.text) ?? 20,
+        'created_by_name': widget.userName,
+        'is_private': _isPrivate,
+        'image_url': imageUrl,
+      };
+
+      // 4. Create in DB
+      await _eventService.createEvent(
+        eventData: eventData,
+        userRole: widget.userRole,
+      );
+
+      if (mounted) {
+        Navigator.pop(context); // Close loading indicator
+
+        String msg = widget.userRole == 'admin' ? "Event Published! ✅" : "Proposal Sent! ⏳";
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: cork));
+
+        // REDIRECTION
+        if (widget.userRole == 'admin') {
+          Navigator.pop(context, true);
+        } else {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const ResidentEventHistoryScreen()),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error: $e"), backgroundColor: Colors.redAccent),
+      );
     }
   }
 
@@ -180,10 +193,13 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFFFFF8F0), // Cream Background
       appBar: AppBar(
-        title: Text(widget.userRole == 'admin' ? 'Create Official Event' : 'Propose Community Event'),
+        title: Text(widget.userRole == 'admin' ? 'Create Official Event' : 'Propose Community Event',
+            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
         backgroundColor: cork,
-        foregroundColor: Colors.white,
+        centerTitle: true,
+        elevation: 0,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
@@ -198,8 +214,9 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                 child: Container(
                   height: 180, width: double.infinity,
                   decoration: BoxDecoration(
-                    color: Colors.grey[200], borderRadius: BorderRadius.circular(15),
+                    color: Colors.white, borderRadius: BorderRadius.circular(15),
                     border: Border.all(color: Colors.grey.shade300),
+                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)],
                   ),
                   child: _selectedImage != null
                       ? ClipRRect(borderRadius: BorderRadius.circular(15), child: Image.file(_selectedImage!, fit: BoxFit.cover))
@@ -220,15 +237,17 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
               ),
               const SizedBox(height: 20),
 
-              // NEW: Max Capacity Field
-              _buildLabel("Max Capacity (People)"),
+              _buildLabel("Max Capacity (5 - 100 people)"),
               TextFormField(
                 controller: _capacityController,
                 keyboardType: TextInputType.number,
-                decoration: _inputStyle("e.g. 30"),
+                decoration: _inputStyle("e.g. 20"),
                 validator: (v) {
                   if (v == null || v.isEmpty) return "Enter capacity";
-                  if (int.tryParse(v) == null) return "Enter a valid number";
+                  final n = int.tryParse(v);
+                  if (n == null) return "Enter a valid number";
+                  if (n < 5) return "Minimum 5";
+                  if (n > 100) return "Maximum 100";
                   return null;
                 },
               ),
@@ -264,7 +283,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
               const SizedBox(height: 20),
 
               Container(
-                decoration: BoxDecoration(color: cork.withOpacity(0.05), borderRadius: BorderRadius.circular(10)),
+                decoration: BoxDecoration(color: cork.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
                 child: SwitchListTile(
                   contentPadding: const EdgeInsets.symmetric(horizontal: 12),
                   title: Text("Private Event", style: TextStyle(color: cork, fontWeight: FontWeight.bold)),
@@ -288,12 +307,16 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                 width: double.infinity, height: 55,
                 child: ElevatedButton(
                   onPressed: _submitForm,
-                  style: ElevatedButton.styleFrom(backgroundColor: apricot, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: apricot,
+                      elevation: 5,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))
+                  ),
                   child: Text(widget.userRole == 'admin' ? "Publish Event" : "Submit Proposal",
                       style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
                 ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 30),
             ],
           ),
         ),
@@ -307,7 +330,13 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   Widget _buildSelectionBox(String text) => Container(
     padding: const EdgeInsets.all(12), width: double.infinity,
     decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300), borderRadius: BorderRadius.circular(10), color: Colors.white),
-    child: Text(text, style: const TextStyle(fontSize: 16)),
+    child: Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(text, style: const TextStyle(fontSize: 16)),
+        Icon(Icons.arrow_drop_down, color: cork),
+      ],
+    ),
   );
 
   InputDecoration _inputStyle(String hint) => InputDecoration(
