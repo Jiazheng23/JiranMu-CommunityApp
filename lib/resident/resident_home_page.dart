@@ -1,5 +1,6 @@
 import 'package:assignment/chat/CommunityChatScreen.dart';
 import 'package:assignment/chat/CommunityChatsListScreen.dart';
+import 'package:assignment/facility/facility_booking_page.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../admin/request/event/event_calendar_screen.dart';
@@ -396,8 +397,11 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                 color: const Color(0xFF4BC0B8),
                 label: "Facility",
                 onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Facility clicked")),
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => FacilityBookingPage(),
+                    ),
                   );
                 },
               ),
@@ -456,6 +460,16 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
   }
 
   Widget buildChatsTab() {
+    // const String roomId = 'community_chat';
+    // const String communityName = 'Condo Community';
+    // final String currentUser = Supabase.instance.client.auth.currentUser?.email ?? 'guest';
+    //
+    // return CommunityChatScreen(
+    //   roomId: roomId,
+    //   communityName: communityName,
+    //   currentUserId: currentUser,
+    //   currentUser: currentUser,
+    // );
     return CommunityChatsListScreen();
   }
 

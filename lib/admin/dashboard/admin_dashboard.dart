@@ -1,11 +1,14 @@
 import 'dart:async';
-import 'package:flutter/material.dart';
-import 'package:assignment/admin/AdminCreateChatScreen.dart';
 import 'package:assignment/admin/request/admin_request_page.dart';
+
 import '../../chat/CommunityChatsListScreen.dart';
+import '../AdminCreateChatScreen.dart';
 import '../emergency/emergency_list_page.dart';
-import '../user/user_management.dart';
+import 'package:flutter/material.dart';
 import 'dashboard_page.dart';
+import '../request/request_list_page.dart';
+import '../request/admin_register_page.dart';
+import '../user/user_management.dart';
 
 class AdminDashboard extends StatefulWidget {
   final Map<String, dynamic> user;
@@ -21,12 +24,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   bool isWaiting = false;
   bool isEmergency = false;
-
   Timer? _timer;
   int countdown = 10;
 
   final List<Widget> pages = [
-    const AdminProfilePage(),
+    DashboardPage(),
     const UserManagementPage(),
     const AdminRequestsPage(),
     const CommunityChatsListScreen(),
@@ -58,110 +60,112 @@ class _AdminDashboardState extends State<AdminDashboard> {
       resetState();
       return;
     }
+    if (!isWaiting) {
+      setState(() {
+        isWaiting = true;
+        countdown = 10;
+      });
+      StateSetter? dialogSetState;
 
-    if (isWaiting) return;
+      _timer = Timer.periodic(const Duration(seconds: 1), (t) {
+        if (countdown > 1) {
+          if (mounted) {
+            setState(() {
+              countdown--;
+            });
+          }
+          if (dialogSetState != null) {
+            dialogSetState!(() {});
+          }
+        } else {
+          t.cancel();
 
-    setState(() {
-      isWaiting = true;
-      countdown = 10;
-    });
+          setState(() {
+            isWaiting = false;
+            isEmergency = true;
+          });
 
-    StateSetter? dialogSetState;
+          // createEmergency(widget.user['id']);
 
-    _timer = Timer.periodic(const Duration(seconds: 1), (t) {
-      if (!mounted) {
-        t.cancel();
-        return;
-      }
-
-      if (countdown > 1) {
-        setState(() => countdown--);
-        dialogSetState?.call(() {});
-      } else {
-        t.cancel();
-
-        setState(() {
-          isWaiting = false;
-          isEmergency = true;
-        });
-
-        if (Navigator.of(context).canPop()) {
-          Navigator.of(context, rootNavigator: true).pop();
+          if (mounted) {
+            Navigator.of(context, rootNavigator: true).pop();
+          }
         }
-      }
-    });
+      });
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          content: StatefulBuilder(
-            builder: (context, setStepState) {
-              dialogSetState = setStepState;
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            content: StatefulBuilder(
+              builder: (context, setStepState) {
+                dialogSetState = setStepState;
 
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Icons.warning_amber_rounded,
-                    color: Colors.orange,
-                    size: 70,
-                  ),
-                  const SizedBox(height: 20),
-                  const Text(
-                    "Confirm sending emergency notification?",
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 18,
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.warning_amber_rounded,
+                      color: Colors.orange,
+                      size: 70,
                     ),
-                  ),
-                  const SizedBox(height: 25),
-                  Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      SizedBox(
-                        width: 80,
-                        height: 80,
-                        child: CircularProgressIndicator(
-                          value: countdown / 10,
-                          strokeWidth: 6,
-                          backgroundColor: Colors.grey.shade200,
-                          valueColor:
-                          const AlwaysStoppedAnimation<Color>(Colors.orange),
-                        ),
+                    const SizedBox(height: 20),
+                    const Text(
+                      "Confirm sending emergency notification?",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
                       ),
-                      Text(
-                        "$countdown",
-                        style: const TextStyle(
-                          fontSize: 32,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 30),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton(
-                      onPressed: () {
-                        resetState();
-                        Navigator.pop(context);
-                      },
-                      child: const Text("Cancel Emergency"),
                     ),
-                  ),
-                ],
-              );
-            },
-          ),
-        );
-      },
-    );
+                    const SizedBox(height: 25),
+                    Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        SizedBox(
+                          width: 80,
+                          height: 80,
+                          child: CircularProgressIndicator(
+                            value: countdown / 10,
+                            strokeWidth: 6,
+                            backgroundColor: Colors.grey.shade200,
+                            valueColor: const AlwaysStoppedAnimation<Color>(
+                              Colors.orange,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          "$countdown",
+                          style: const TextStyle(
+                            fontSize: 32,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 30),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton(
+                        onPressed: () {
+                          resetState();
+                          Navigator.pop(context);
+                        },
+                        child: const Text("Cancel Emergency"),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          );
+        },
+      );
+    }
   }
 
   @override

@@ -59,7 +59,7 @@ class _AdminRequestsPageState extends State<AdminRequestsPage> {
         final type = r['type'];
         if (type == 'visitor') {
           temp['visitor']!.add(r);
-        } else if (type == 'booking') {
+        } else if (type == 'facility') {
           temp['facility']!.add(r);
         } else if (type == 'complaint') {
           temp['event']!.add(r);
@@ -177,8 +177,6 @@ class _AdminRequestsPageState extends State<AdminRequestsPage> {
     );
   }
 
-  // --- 其余 UI 组件保持逻辑一致 ---
-
   Widget buildTopButton(String title, IconData icon, VoidCallback onTap) {
     return Expanded(
       child: GestureDetector(
@@ -238,7 +236,8 @@ class _AdminRequestsPageState extends State<AdminRequestsPage> {
         child: isLoading
             ? const Center(child: CircularProgressIndicator())
             : ListView(
-          padding: const EdgeInsets.all(16),
+          // 🔥 1. 把底部的 padding 加大到 100（如果不够可以继续改大，比如 120 或 150）
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
           children: [
             Row(
               children: [
@@ -254,6 +253,9 @@ class _AdminRequestsPageState extends State<AdminRequestsPage> {
             buildSection("Event", "event"),
             buildSection("Facilities", "facility"),
             buildSection("Visitor", "visitor"),
+
+            // 🔥 2. 终极双保险：在列表最下面硬塞一个隐形的占位盒子，把上面的内容顶上去
+            const SizedBox(height: 10),
           ],
         ),
       ),

@@ -14,6 +14,12 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
   final supabase = Supabase.instance.client;
   final TextEditingController reasonController = TextEditingController();
 
+  @override
+  void dispose() {
+    reasonController.dispose();
+    super.dispose();
+  }
+
   // 辅助函数 (放到上面方便其他方法调用)
   Map? extractSubData(dynamic raw) {
     if (raw == null) return null;
@@ -28,13 +34,9 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
       final String userId = widget.data['user_id'];
       final String type = widget.data['type'];
 
-      print("--- 开始审批流程 ---");
-      print("Request ID: $requestId, User ID: $userId, Type: $type");
-
-      // 1. 处理居民 (Resident)
+      // 1. Resident approval
       if (type == 'resident') {
         final subData = extractSubData(widget.data['resident_requests']);
-        print("抓取到的居民子表数据: $subData");
 
         if (subData != null) {
           await supabase.from('resident').upsert({
@@ -45,18 +47,19 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
             'role': subData['role'],
             'block': subData['block'],
             'unit_number': subData['unit_number'],
-            // 注意：你的 resident 表我们之前建议加了 status 和 resident_type，
-            // 如果你的 resident 表里没有这两个字段，请把下面两行删掉，否则也会报错！
             'status': 'active',
             'resident_type': 'owner',
           });
-          print("✅ 数据已成功搬运到 resident 表");
-        } else {
-          print("❌ 错误：未找到 resident_requests 子表数据");
         }
+
+        await supabase.from('requests').update({
+          'status': 'approved',
+          'respond_time': DateTime.now().toIso8601String(),
+          'reject_reason': null,
+        }).eq('request_id', requestId);
       }
 
-      // 2. 处理管理员 (Admin)
+      // 2. Admin approval
       else if (type == 'admin') {
         final subData = extractSubData(widget.data['admin_requests']);
 
@@ -66,27 +69,109 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
             'full_name': subData['full_name'],
             'email': subData['email'],
             'role': 'admin',
-            'status': 'active', // 👈 既然数据库有了这个字段，这里就可以加上了
+            'status': 'active',
           });
+        }
+
+        await supabase.from('requests').update({
+          'status': 'approved',
+          'respond_time': DateTime.now().toIso8601String(),
+          'reject_reason': null,
+        }).eq('request_id', requestId);
+      }
+
+      // 3. Facility approval
+      else if (type == 'facility') {
+        final subData = extractSubData(widget.data['facility_requests']);
+
+        if (subData == null) {
+          throw Exception('Facility request detail not found.');
+        }
+
+        final facilityId = subData['facility_id'];
+        final bookingDate = subData['booking_date'];
+        final startTime = subData['start_time'];
+        final endTime = subData['end_time'];
+        final slotLabel = subData['slot_label'];
+        final participants = subData['participants'] ?? 1;
+        final purpose = subData['purpose'];
+
+        // overlap check
+        final existingBookings = await supabase
+            .from('facility_bookings')
+            .select('id, start_time, end_time')
+            .eq('facility_id', facilityId)
+            .eq('booking_date', bookingDate)
+            .eq('status', 'approved');
+
+        bool hasOverlap = false;
+
+        for (final row in existingBookings) {
+          final existingStart = row['start_time']?.toString();
+          final existingEnd = row['end_time']?.toString();
+
+          if (existingStart == null || existingEnd == null) continue;
+
+          final overlap = !(
+              endTime.compareTo(existingStart) <= 0 ||
+                  startTime.compareTo(existingEnd) >= 0
+          );
+
+          if (overlap) {
+            hasOverlap = true;
+            break;
+          }
+        }
+
+        if (hasOverlap) {
+          throw Exception('This facility time range is already booked.');
+        }
+
+        String? bookingId;
+
+        try {
+          final bookingResponse = await supabase
+              .from('facility_bookings')
+              .insert({
+            'request_id': requestId,
+            'facility_id': facilityId,
+            'resident_id': userId,
+            'booking_date': bookingDate,
+            'start_time': startTime,
+            'end_time': endTime,
+            'slot_label': slotLabel,
+            'participants': participants,
+            'purpose': purpose,
+            'status': 'approved',
+          })
+              .select('id')
+              .single();
+
+          bookingId = bookingResponse['id'] as String;
+
+          await supabase.from('requests').update({
+            'status': 'approved',
+            'respond_time': DateTime.now().toIso8601String(),
+            'reject_reason': null,
+          }).eq('request_id', requestId);
+        } catch (e) {
+          if (bookingId != null) {
+            await supabase
+                .from('facility_bookings')
+                .delete()
+                .eq('id', bookingId);
+          }
+          rethrow;
         }
       }
 
-      // 3. 最后更新主申请表状态
-      await supabase.from('requests').update({
-        'status': 'approved',
-        'respond_time': DateTime.now().toIso8601String(),
-      }).eq('request_id', requestId);
-
-      print("✅ 主申请表状态已更新为 approved");
-
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Approved and data migrated!")),
+          const SnackBar(content: Text("Approved successfully")),
         );
         Navigator.pop(context);
       }
     } catch (e) {
-      print("‼️ 审批发生崩溃: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text("Approve Error: $e")),
@@ -136,7 +221,7 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
     if (type == 'admin') details = extractSubData(data['admin_requests']);
     if (type == 'resident') details = extractSubData(data['resident_requests']);
     if (type == 'visitor') details = extractSubData(data['visitor_requests']);
-    if (type == 'booking') details = extractSubData(data['facility_requests']);
+    if (type == 'facility') details = extractSubData(data['facility_requests']);
     if (type == 'complaint') details = extractSubData(data['event_requests']);
 
     return Scaffold(

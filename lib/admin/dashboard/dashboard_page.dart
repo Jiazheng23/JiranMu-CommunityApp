@@ -1,16 +1,17 @@
 import 'package:flutter/material.dart';
-
+import 'package:geolocator/geolocator.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../AdminQRScannerScreen.dart';
 import '../AdminVisitorPassScreen.dart';
 
-class AdminProfilePage extends StatelessWidget {
-  const AdminProfilePage({super.key});
+class DashboardPage extends StatelessWidget{
+  const DashboardPage({super.key});
 
   Widget buildCard(String title, String value, Color color) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.15),
+        color: color,
         borderRadius: BorderRadius.circular(16),
         boxShadow: const [
           BoxShadow(
@@ -47,6 +48,7 @@ class AdminProfilePage extends StatelessWidget {
       ),
     );
   }
+
 
   Widget buildQRScannerButton(BuildContext context) {
     return Container(
@@ -93,29 +95,25 @@ class AdminProfilePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            "Admin Profile",
-            style: TextStyle(
-              fontSize: 26,
-              fontWeight: FontWeight.bold,
+        padding: EdgeInsets.all(16),
+        child: Column(
+          children: [
+            GridView.count(
+              crossAxisCount: 2,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+              childAspectRatio: 1.5,
+              shrinkWrap: true,
+              physics: NeverScrollableScrollPhysics(),
+              children: [
+                buildCard("Emergency", "2", Colors.red),
+                buildCard("Requests", "27", Colors.yellow),
+                buildCard("Users", "950", Colors.blue),
+                buildCard("Notices", "8", Colors.green),
+              ],
             ),
-          ),
-          const Text(
-            "Tools",
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-
-          buildQRScannerButton(context),
-          buildVisitorPassButton(context),
-        ],
-      ),
+          ],
+        ),
     );
   }
 }
