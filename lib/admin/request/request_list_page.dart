@@ -31,7 +31,6 @@ class _RequestListPageState extends State<RequestListPage> {
     try {
       setState(() => isLoading = true);
 
-      // 一次性关联所有子表，确保 extractName 逻辑有数据可用
       var query = supabase.from('requests').select('''
         *, 
         admin_requests(*), 
@@ -41,7 +40,6 @@ class _RequestListPageState extends State<RequestListPage> {
         event_requests(*)
       ''');
 
-      // 根据首页传过来的 type 进行分类过滤
       String uiType = widget.type.toLowerCase();
       if (uiType == 'users') {
         query = query.inFilter('type', ['admin', 'resident']);
@@ -53,14 +51,12 @@ class _RequestListPageState extends State<RequestListPage> {
         query = query.eq('type', uiType);
       }
 
-      // 状态过滤
       if (statusFilter != "all") {
         query = query.eq('status', statusFilter);
       }
 
       final data = await query.order('created_at', ascending: false);
 
-      // 本地搜索过滤 (基于提取出的全名)
       List filteredData = data;
       if (searchText.isNotEmpty) {
         filteredData = data.where((r) {
@@ -79,7 +75,6 @@ class _RequestListPageState extends State<RequestListPage> {
     }
   }
 
-  /// 辅助函数：安全提取子表数据
   Map? extractSubData(dynamic raw) {
     if (raw == null) return null;
     if (raw is List && raw.isNotEmpty) return raw[0];
@@ -87,7 +82,6 @@ class _RequestListPageState extends State<RequestListPage> {
     return null;
   }
 
-  /// 核心逻辑：根据请求类型抓取展示名称
   String extractNameForRequest(Map data) {
     String type = data['type'] ?? '';
 
@@ -105,95 +99,105 @@ class _RequestListPageState extends State<RequestListPage> {
     return "No Name";
   }
 
-  /// ✅ 重点：按照你要求的照片风格实现的 Card 设计
+  /// ✅ 统一风格：带有浅棕色阴影的悬浮卡片
   Widget buildRequestCard(Map data) {
     String status = (data['status'] ?? "pending").toString().toLowerCase();
     String displayName = extractNameForRequest(data);
     String subtitle = data['title'] ?? data['type'] ?? "";
 
+    // 🔥 调整状态颜色，让它们搭配棕色背景更好看
     Color statusColor;
     if (status == 'approved') {
-      statusColor = Colors.green;
+      statusColor = const Color(0xFF6B8E6B); // 柔和的莫兰迪绿
     } else if (status == 'rejected') {
-      statusColor = Colors.red;
+      statusColor = const Color(0xFFC67B75); // 之前退出的砖红色
     } else {
-      statusColor = Colors.orange;
+      statusColor = const Color(0xFFD49A6A); // 焦糖橙色
     }
 
-    return Card(
+    return Container(
       margin: const EdgeInsets.symmetric(vertical: 8),
-      elevation: 0, // 扁平化设计
-      shape: RoundedRectangleBorder(
+      decoration: BoxDecoration(
+        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: Colors.grey.shade200), // 浅灰色微边框
+        // 🔥 添加和 Profile 页面一样的浅棕色悬浮阴影
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF8B5E4A).withOpacity(0.1),
+            blurRadius: 15,
+            spreadRadius: 0,
+            offset: const Offset(0, 8),
+          )
+        ],
       ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () {
-          // 点击整个卡片跳转
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => RequestDetailPage(data: data),
-            ),
-          ).then((_) => fetchRequests()); // 返回时刷新列表
-        },
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              // 左侧内容部分
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => RequestDetailPage(data: data),
+              ),
+            ).then((_) => fetchRequests());
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        displayName,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: Color(0xFF2B2B2B), // 🔥 统一深灰色字体
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        data['created_at'].toString().substring(0, 16).replaceAll('T', ' '),
+                        style: TextStyle(color: Colors.grey.shade400, fontSize: 11),
+                      ),
+                    ],
+                  ),
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Text(
-                      displayName,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                        color: Color(0xFF1D1D1D),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: statusColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        status.toUpperCase(),
+                        style: TextStyle(
+                          color: statusColor,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 10,
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      data['created_at'].toString().substring(0, 16).replaceAll('T', ' '),
-                      style: TextStyle(color: Colors.grey.shade400, fontSize: 11),
-                    ),
+                    const SizedBox(height: 12),
+                    // 🔥 右侧箭头换成主打深棕色
+                    const Icon(Icons.chevron_right, color: Color(0xFF8B5E4A), size: 20),
                   ],
                 ),
-              ),
-              // 右侧状态和指示箭头
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: statusColor.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      status.toUpperCase(),
-                      style: TextStyle(
-                        color: statusColor,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 10,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  const Icon(Icons.chevron_right, color: Colors.grey, size: 20),
-                ],
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -202,23 +206,40 @@ class _RequestListPageState extends State<RequestListPage> {
 
   /// 搜索栏设计
   Widget buildSearchBar() {
-    return TextField(
-      controller: searchController,
-      decoration: InputDecoration(
-        hintText: "Search requests...",
-        prefixIcon: const Icon(Icons.search),
-        filled: true,
-        fillColor: Colors.white,
-        contentPadding: const EdgeInsets.symmetric(vertical: 0),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
-        ),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        // 🔥 搜索栏也加上淡淡的棕色阴影
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF8B5E4A).withOpacity(0.05),
+            blurRadius: 10,
+            spreadRadius: 0,
+            offset: const Offset(0, 4),
+          )
+        ],
       ),
-      onChanged: (value) {
-        searchText = value;
-        fetchRequests();
-      },
+      child: TextField(
+        controller: searchController,
+        decoration: InputDecoration(
+          hintText: "Search requests...",
+          hintStyle: TextStyle(color: Colors.grey.shade400),
+          // 🔥 搜索图标换成深棕色
+          prefixIcon: const Icon(Icons.search, color: Color(0xFF8B5E4A)),
+          filled: true,
+          fillColor: Colors.transparent,
+          contentPadding: const EdgeInsets.symmetric(vertical: 15),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
+        ),
+        onChanged: (value) {
+          searchText = value;
+          fetchRequests();
+        },
+      ),
     );
   }
 
@@ -239,7 +260,8 @@ class _RequestListPageState extends State<RequestListPage> {
             decoration: BoxDecoration(
               border: Border(
                 bottom: BorderSide(
-                  color: isSelected ? Colors.blue : Colors.transparent,
+                  // 🔥 选中时的下划线换成深棕色
+                  color: isSelected ? const Color(0xFF8B5E4A) : Colors.transparent,
                   width: 2,
                 ),
               ),
@@ -248,8 +270,9 @@ class _RequestListPageState extends State<RequestListPage> {
               status.toUpperCase(),
               style: TextStyle(
                 fontSize: 12,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                color: isSelected ? Colors.blue : Colors.grey,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                // 🔥 选中时的文字换成深棕色
+                color: isSelected ? const Color(0xFF8B5E4A) : Colors.grey.shade500,
               ),
             ),
           ),
@@ -261,26 +284,33 @@ class _RequestListPageState extends State<RequestListPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F6FA), // 背景淡灰色，突出白色卡片
+      // 🔥 整页背景换成浅米棕色
+      backgroundColor: const Color(0xFFF5EBE6),
       appBar: AppBar(
-        title: Text("${widget.type} Requests", style: const TextStyle(fontWeight: FontWeight.bold)),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
+        title: Text(
+            "${widget.type} Requests",
+            style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF2B2B2B))
+        ),
+        // 🔥 AppBar 背景也使用浅米棕色，融为一体
+        backgroundColor: const Color(0xFFF5EBE6),
+        foregroundColor: const Color(0xFF2B2B2B), // 返回键等图标颜色
         elevation: 0,
+        centerTitle: true,
       ),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
             buildSearchBar(),
-            const SizedBox(height: 10),
+            const SizedBox(height: 15),
             buildStatusFilter(),
-            const SizedBox(height: 10),
+            const SizedBox(height: 15),
             Expanded(
               child: isLoading
-                  ? const Center(child: CircularProgressIndicator())
+              // 🔥 加载圈换成深棕色
+                  ? const Center(child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF8B5E4A))))
                   : requests.isEmpty
-                  ? const Center(child: Text("No requests found"))
+                  ? const Center(child: Text("No requests found", style: TextStyle(color: Colors.grey)))
                   : ListView.builder(
                 itemCount: requests.length,
                 itemBuilder: (context, index) {

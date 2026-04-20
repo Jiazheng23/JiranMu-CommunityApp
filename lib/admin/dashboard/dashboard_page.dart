@@ -1,58 +1,138 @@
+import 'dart:io';
+import 'package:assignment/admin/emergency/emergency_list_page.dart';
 import 'package:flutter/material.dart';
-// 🔥 确保导入对应的页面文件
-import 'package:assignment/admin/request/admin_request_page.dart';
-import '../emergency/emergency_list_page.dart';
-import '../user/user_management.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../request/request_list_page.dart';
+import 'package:image_picker/image_picker.dart';
 
-class DashboardPage extends StatelessWidget {
+class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
 
-  // 修改了 buildCard 方法，增加了 context 和 targetPage 参数
-  Widget buildCard(BuildContext context, String title, String value, Color color, Widget targetPage) {
-    return InkWell(
-      onTap: () {
-        // 🔥 点击后通过 Navigator 跳转到对应的页面
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => targetPage),
-        );
-      },
-      borderRadius: BorderRadius.circular(16), // 让点击波纹效果和圆角一致
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: const [
-            BoxShadow(
-              color: Colors.black26,
-              blurRadius: 6,
-              offset: Offset(0, 3),
-            )
-          ],
-        ),
+  @override
+  State<DashboardPage> createState() => _DashboardPageState();
+}
+
+class _DashboardPageState extends State<DashboardPage> {
+  final supabase = Supabase.instance.client;
+  final ImagePicker _picker = ImagePicker();
+
+  // ── Design tokens (mirrors ResidentHomePage) ──
+  static const Color bgColor      = Color(0xFFF5F1ED);
+  static const Color primaryColor = Color(0xFF9A4B3C);
+  static const Color softYellow   = Color(0xFFF0E6B8);
+  static const Color textDark     = Color(0xFF2B2B2B);
+
+  bool hasUserNotif      = false;
+  bool hasEventNotif     = false;
+  bool hasFacilityNotif  = false;
+  bool hasVisitorNotif   = false;
+  bool hasEmergencyNotif = false;
+
+  List<dynamic> announcements = [];
+
+  @override
+  void initState() {
+    super.initState();
+    refreshAllData();
+  }
+
+  Future<void> refreshAllData() async {
+    await fetchNotificationStatus();
+    await fetchAnnouncements();
+  }
+
+  Future<void> fetchAnnouncements() async {
+    try {
+      final response = await supabase
+          .from('announcements')
+          .select()
+          .order('created_at', ascending: false)
+          .limit(5);
+      if (mounted) setState(() => announcements = response);
+    } catch (e) {
+      debugPrint("Fetch Announcements Error: $e");
+    }
+  }
+
+  Future<void> fetchNotificationStatus() async {
+    try {
+      final requests    = await supabase.from('requests').select('type').eq('status', 'pending');
+      final emergencies = await supabase.from('emergency').select('emergency_id').neq('status', 'solved');
+      if (mounted) {
+        setState(() {
+          hasUserNotif      = requests.any((r) => r['type'] == 'admin' || r['type'] == 'resident');
+          hasEventNotif     = requests.any((r) => r['type'] == 'complaint');
+          hasFacilityNotif  = requests.any((r) => r['type'] == 'booking');
+          hasVisitorNotif   = requests.any((r) => r['type'] == 'visitor');
+          hasEmergencyNotif = emergencies.isNotEmpty;
+        });
+      }
+    } catch (e) {
+      debugPrint("Fetch Notifications Error: $e");
+    }
+  }
+
+  void navigateTo(String type) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => RequestListPage(type: type)),
+    ).then((_) => refreshAllData());
+  }
+
+  // ── Shared section title (same as Resident) ──
+  Widget buildSectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Text(title,
+          style: const TextStyle(
+              fontSize: 18, fontWeight: FontWeight.bold, color: textDark)),
+    );
+  }
+
+  // ── Quick-access button (mirrors Resident's buildServiceItem) ──
+  Widget buildTopButton(
+      String title,
+      IconData icon,
+      VoidCallback onTap, {
+        Color iconColor = primaryColor,
+        bool hasNotification = false,
+      }) {
+    return Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: Colors.black,
-              ),
-            ),
-            Align(
-              alignment: Alignment.bottomRight,
-              child: Text(
-                value,
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black,
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  width: 54,
+                  height: 54,
+                  decoration: BoxDecoration(
+                    color: iconColor.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: Icon(icon, color: iconColor, size: 26),
                 ),
-              ),
+                if (hasNotification)
+                  Positioned(
+                    right: -2, top: -2,
+                    child: Container(
+                      width: 12, height: 12,
+                      decoration: BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: bgColor, width: 2)),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            FittedBox(
+              child: Text(title,
+                  style: const TextStyle(
+                      fontSize: 11, fontWeight: FontWeight.w600, color: textDark)),
             ),
           ],
         ),
@@ -60,37 +140,727 @@ class DashboardPage extends StatelessWidget {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 20),
-          const Text(
-            "Dashboard",
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 20),
-          GridView.count(
-            crossAxisCount: 2,
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
-            childAspectRatio: 1.5,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            children: [
-              // 🔥 传入对应的页面组件
-              buildCard(context, "Emergency", "2", Colors.red.shade300, EmergencyListPage()),
-              buildCard(context, "Requests", "27", Colors.yellow.shade300, const AdminRequestsPage()),
-              buildCard(context, "Users", "950", Colors.blue.shade300, const UserManagementPage()),
+  // ─────────────────────────────────────────────
+  // CREATE announcement
+  // ─────────────────────────────────────────────
+  void _showCreateAnnouncementSheet(BuildContext context) {
+    final titleController   = TextEditingController();
+    final contentController = TextEditingController();
+    DateTime? selectedDate;
+    bool isUrgent           = false;
+    String selectedCategory = 'Notice';
+    File? imageFile;
+    bool isUploading        = false;
 
-              // Notices 暂时用一个简单的 Scaffold 代替，你有真实的页面可以换掉
-              buildCard(context, "Notices", "8", Colors.green.shade300, Scaffold(appBar: AppBar(title: const Text("Notices")), body: const Center(child: Text("Notices Page")))),
-            ],
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => Container(
+          padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom,
+              top: 25, left: 20, right: 20),
+          decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Center(
+                    child: Text("Create Announcement",
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
+                const SizedBox(height: 20),
+
+                GestureDetector(
+                  onTap: () async {
+                    final XFile? pickedFile = await _picker.pickImage(
+                        source: ImageSource.gallery, imageQuality: 70);
+                    if (pickedFile != null)
+                      setModalState(() => imageFile = File(pickedFile.path));
+                  },
+                  child: Container(
+                    height: 140, width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF9F9F9),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: const Color(0xFFE0E0E0)),
+                    ),
+                    child: imageFile == null
+                        ? const Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.add_photo_alternate_outlined, color: Colors.grey, size: 40),
+                        SizedBox(height: 8),
+                        Text("Add Photo (Optional)", style: TextStyle(color: Colors.grey, fontSize: 13)),
+                      ],
+                    )
+                        : ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: Image.file(imageFile!, fit: BoxFit.cover, width: double.infinity),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 15),
+
+                TextField(
+                    controller: titleController,
+                    decoration: InputDecoration(
+                        labelText: "Title",
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: primaryColor)))),
+                const SizedBox(height: 15),
+                TextField(
+                    controller: contentController,
+                    maxLines: 3,
+                    decoration: InputDecoration(
+                        labelText: "Message",
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: primaryColor)))),
+                const SizedBox(height: 15),
+
+                DropdownButtonFormField<String>(
+                  value: selectedCategory,
+                  decoration: InputDecoration(
+                      labelText: "Category",
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
+                  items: ['Notice', 'Maintenance', 'Event', 'General']
+                      .map((v) => DropdownMenuItem<String>(value: v, child: Text(v)))
+                      .toList(),
+                  onChanged: (val) => setModalState(() => selectedCategory = val!),
+                ),
+
+                const SizedBox(height: 15),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    TextButton.icon(
+                      onPressed: () async {
+                        final picked = await showDatePicker(
+                            context: context,
+                            initialDate: DateTime.now(),
+                            firstDate: DateTime.now(),
+                            lastDate: DateTime(2030));
+                        if (picked != null) setModalState(() => selectedDate = picked);
+                      },
+                      icon: const Icon(Icons.calendar_month, color: primaryColor),
+                      label: Text(selectedDate == null
+                          ? "Set Event Date"
+                          : "${selectedDate!.day}/${selectedDate!.month}/${selectedDate!.year}"),
+                    ),
+                    Row(children: [
+                      const Text("Urgent", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                      Switch(value: isUrgent, activeColor: Colors.red,
+                          onChanged: (val) => setModalState(() => isUrgent = val)),
+                    ]),
+                  ],
+                ),
+                const SizedBox(height: 20),
+
+                SizedBox(
+                  width: double.infinity, height: 50,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: primaryColor,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+                    onPressed: isUploading ? null : () async {
+                      if (titleController.text.isEmpty || contentController.text.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text("Title and Message required")));
+                        return;
+                      }
+                      setModalState(() => isUploading = true);
+                      try {
+                        String? imageUrl;
+                        if (imageFile != null) {
+                          final fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
+                          final path = 'public/$fileName';
+                          await supabase.storage.from('announcement_images').upload(path, imageFile!);
+                          imageUrl = supabase.storage.from('announcement_images').getPublicUrl(path);
+                        }
+                        await supabase.from('announcements').insert({
+                          'title': titleController.text,
+                          'content': contentController.text,
+                          'category': selectedCategory,
+                          'event_date': selectedDate?.toIso8601String(),
+                          'is_urgent': isUrgent,
+                          if (imageUrl != null) 'image_url': imageUrl,
+                        });
+                        if (context.mounted) {
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                              content: Text("Announcement published!"), backgroundColor: Colors.green));
+                          fetchAnnouncements();
+                        }
+                      } catch (e) {
+                        debugPrint("Error: $e");
+                        if (context.mounted)
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                              content: Text("Failed to publish"), backgroundColor: Colors.red));
+                      } finally {
+                        setModalState(() => isUploading = false);
+                      }
+                    },
+                    child: isUploading
+                        ? const SizedBox(height: 20, width: 20,
+                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                        : const Text("Publish Now",
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+                const SizedBox(height: 30),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ─────────────────────────────────────────────
+  // DELETE announcement
+  // ─────────────────────────────────────────────
+  Future<void> _deleteAnnouncement(BuildContext dialogContext, String id) async {
+    Navigator.pop(dialogContext);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        title: const Text("Delete Announcement"),
+        content: const Text("Are you sure you want to delete this announcement? This cannot be undone."),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text("Cancel", style: TextStyle(color: Colors.grey))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text("Delete", style: TextStyle(color: Colors.white)),
           ),
         ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await supabase.from('announcements').delete().eq('id', id);
+      fetchAnnouncements();
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text("Announcement deleted."), backgroundColor: Colors.red));
+    } catch (e) {
+      debugPrint("Delete Error: $e");
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text("Failed to delete."), backgroundColor: Colors.red));
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  // EDIT announcement
+  // ─────────────────────────────────────────────
+  void _showEditAnnouncementSheet(BuildContext dialogContext, Map<String, dynamic> data) {
+    Navigator.pop(dialogContext);
+
+    final titleController   = TextEditingController(text: data['title']);
+    final contentController = TextEditingController(text: data['content']);
+    DateTime? selectedDate  = data['event_date'] != null
+        ? DateTime.parse(data['event_date']).toLocal() : null;
+    bool isUrgent           = data['is_urgent'] ?? false;
+    String selectedCategory = data['category'] ?? 'General';
+    File? newImageFile;
+    String? existingImageUrl = data['image_url'];
+    bool isUploading         = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => Container(
+          padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom,
+              top: 25, left: 20, right: 20),
+          decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Center(
+                    child: Text("Edit Announcement",
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
+                const SizedBox(height: 20),
+
+                GestureDetector(
+                  onTap: () async {
+                    final XFile? pickedFile = await _picker.pickImage(
+                        source: ImageSource.gallery, imageQuality: 70);
+                    if (pickedFile != null)
+                      setModalState(() => newImageFile = File(pickedFile.path));
+                  },
+                  child: Stack(
+                    children: [
+                      Container(
+                        height: 140, width: double.infinity,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF9F9F9),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: const Color(0xFFE0E0E0)),
+                        ),
+                        child: newImageFile != null
+                            ? ClipRRect(
+                            borderRadius: BorderRadius.circular(14),
+                            child: Image.file(newImageFile!, fit: BoxFit.cover, width: double.infinity))
+                            : existingImageUrl != null
+                            ? ClipRRect(
+                            borderRadius: BorderRadius.circular(14),
+                            child: Image.network(existingImageUrl!, fit: BoxFit.cover, width: double.infinity))
+                            : const Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.add_photo_alternate_outlined, color: Colors.grey, size: 40),
+                            SizedBox(height: 8),
+                            Text("Add Photo (Optional)", style: TextStyle(color: Colors.grey, fontSize: 13)),
+                          ],
+                        ),
+                      ),
+                      if (newImageFile != null || existingImageUrl != null)
+                        Positioned(
+                          top: 8, right: 8,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(20)),
+                            child: const Text("Change", style: TextStyle(color: Colors.white, fontSize: 11)),
+                          ),
+                        ),
+                      if (newImageFile != null || existingImageUrl != null)
+                        Positioned(
+                          top: 8, left: 8,
+                          child: GestureDetector(
+                            onTap: () => setModalState(() {
+                              newImageFile = null;
+                              existingImageUrl = null;
+                            }),
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                              child: const Icon(Icons.close, color: Colors.white, size: 14),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 15),
+
+                TextField(
+                    controller: titleController,
+                    decoration: InputDecoration(
+                        labelText: "Title",
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: primaryColor)))),
+                const SizedBox(height: 15),
+                TextField(
+                    controller: contentController,
+                    maxLines: 3,
+                    decoration: InputDecoration(
+                        labelText: "Message",
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: primaryColor)))),
+                const SizedBox(height: 15),
+
+                DropdownButtonFormField<String>(
+                  value: selectedCategory,
+                  decoration: InputDecoration(
+                      labelText: "Category",
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
+                  items: ['Notice', 'Maintenance', 'Event', 'General']
+                      .map((v) => DropdownMenuItem<String>(value: v, child: Text(v)))
+                      .toList(),
+                  onChanged: (val) => setModalState(() => selectedCategory = val!),
+                ),
+
+                const SizedBox(height: 15),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    TextButton.icon(
+                      onPressed: () async {
+                        final picked = await showDatePicker(
+                            context: context,
+                            initialDate: selectedDate ?? DateTime.now(),
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime(2030));
+                        if (picked != null) setModalState(() => selectedDate = picked);
+                      },
+                      icon: const Icon(Icons.calendar_month, color: primaryColor),
+                      label: Text(selectedDate == null
+                          ? "Set Event Date"
+                          : "${selectedDate!.day}/${selectedDate!.month}/${selectedDate!.year}"),
+                    ),
+                    Row(children: [
+                      const Text("Urgent", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                      Switch(value: isUrgent, activeColor: Colors.red,
+                          onChanged: (val) => setModalState(() => isUrgent = val)),
+                    ]),
+                  ],
+                ),
+                const SizedBox(height: 20),
+
+                SizedBox(
+                  width: double.infinity, height: 50,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: primaryColor,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+                    onPressed: isUploading ? null : () async {
+                      if (titleController.text.isEmpty || contentController.text.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text("Title and Message required")));
+                        return;
+                      }
+                      setModalState(() => isUploading = true);
+                      try {
+                        String? finalImageUrl = existingImageUrl;
+                        if (newImageFile != null) {
+                          final fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
+                          final path = 'public/$fileName';
+                          await supabase.storage.from('announcement_images').upload(path, newImageFile!);
+                          finalImageUrl = supabase.storage.from('announcement_images').getPublicUrl(path);
+                        }
+                        await supabase.from('announcements').update({
+                          'title': titleController.text,
+                          'content': contentController.text,
+                          'category': selectedCategory,
+                          'event_date': selectedDate?.toIso8601String(),
+                          'is_urgent': isUrgent,
+                          'image_url': finalImageUrl,
+                        }).eq('id', data['id']);
+                        if (context.mounted) {
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                              content: Text("Announcement updated!"), backgroundColor: Colors.green));
+                          fetchAnnouncements();
+                        }
+                      } catch (e) {
+                        debugPrint("Edit Error: $e");
+                        if (context.mounted)
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                              content: Text("Failed to update."), backgroundColor: Colors.red));
+                      } finally {
+                        setModalState(() => isUploading = false);
+                      }
+                    },
+                    child: isUploading
+                        ? const SizedBox(height: 20, width: 20,
+                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                        : const Text("Save Changes",
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+                const SizedBox(height: 30),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ─────────────────────────────────────────────
+  // VIEW announcement detail
+  // ─────────────────────────────────────────────
+  void _showAnnouncementDetails(Map<String, dynamic> data) {
+    final dt = data['event_date'] != null
+        ? DateTime.parse(data['event_date']).toLocal() : null;
+    final dateDisplay = dt != null ? "${dt.day}/${dt.month}/${dt.year}" : "No specific date";
+    final bool hasImage = data['image_url'] != null;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        contentPadding: EdgeInsets.zero,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (hasImage)
+              ClipRRect(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+                child: Image.network(data['image_url'],
+                    width: double.infinity, height: 180, fit: BoxFit.cover),
+              ),
+            Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(children: [
+                    Icon(data['is_urgent'] ? Icons.warning : Icons.campaign,
+                        color: data['is_urgent'] ? Colors.red : primaryColor),
+                    const SizedBox(width: 10),
+                    Expanded(
+                        child: Text(data['title'],
+                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDark))),
+                  ]),
+                  const SizedBox(height: 12),
+                  // Category chip
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                        color: primaryColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(20)),
+                    child: Text(data['category'] ?? '',
+                        style: const TextStyle(
+                            color: primaryColor, fontWeight: FontWeight.w600, fontSize: 12)),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(children: [
+                    const Icon(Icons.calendar_today_outlined, size: 13, color: Colors.grey),
+                    const SizedBox(width: 4),
+                    Text(dateDisplay, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                  ]),
+                  const Divider(height: 24),
+                  Text(data['content'], style: const TextStyle(fontSize: 14, height: 1.6)),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        actions: [
+          Row(children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => Navigator.pop(dialogContext),
+                icon: const Icon(Icons.close, size: 16, color: Colors.grey),
+                label: const Text("Close", style: TextStyle(color: Colors.grey)),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Colors.grey, width: 1),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => _showEditAnnouncementSheet(dialogContext, data),
+                icon: const Icon(Icons.edit_outlined, size: 16, color: primaryColor),
+                label: const Text("Edit", style: TextStyle(color: primaryColor)),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: primaryColor, width: 1),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => _deleteAnnouncement(dialogContext, data['id']),
+                icon: const Icon(Icons.delete_outline, size: 16, color: Colors.red),
+                label: const Text("Delete", style: TextStyle(color: Colors.red)),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Colors.red, width: 1),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+            ),
+          ]),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: bgColor,
+      body: SafeArea(
+        child: RefreshIndicator(
+          onRefresh: refreshAllData,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 100),
+            children: [
+
+              // ── Header banner (mirrors Resident's softYellow banner) ──
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: softYellow,
+                  borderRadius: BorderRadius.circular(26),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: const [
+                          Text("Admin Dashboard",
+                              style: TextStyle(
+                                  fontSize: 20, fontWeight: FontWeight.bold, color: textDark)),
+                          SizedBox(height: 4),
+                          Text("Manage your community from here.",
+                              style: TextStyle(fontSize: 13, color: primaryColor, height: 1.4)),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Container(
+                      width: 54, height: 54,
+                      decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.85),
+                          borderRadius: BorderRadius.circular(18)),
+                      child: const Icon(Icons.admin_panel_settings_rounded,
+                          color: primaryColor, size: 28),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 26),
+              buildSectionTitle("Management"),
+
+              // ── Quick-access buttons ──
+              Row(
+                children: [
+                  buildTopButton("Users", Icons.person_outline, () => navigateTo("Users"),
+                      iconColor: const Color(0xFF758BFD), hasNotification: hasUserNotif),
+                  const SizedBox(width: 6),
+                  buildTopButton("Event", Icons.event_note_outlined, () => navigateTo("Event"),
+                      iconColor: const Color(0xFF4BC0B8), hasNotification: hasEventNotif),
+                  const SizedBox(width: 6),
+                  buildTopButton("Facilities", Icons.home_work_outlined, () => navigateTo("Facilities"),
+                      iconColor: primaryColor, hasNotification: hasFacilityNotif),
+                  const SizedBox(width: 6),
+                  buildTopButton("Visitor", Icons.badge_outlined, () => navigateTo("Visitor"),
+                      iconColor: const Color(0xFFE96B9E), hasNotification: hasVisitorNotif),
+                  const SizedBox(width: 6),
+                  buildTopButton(
+                    "Emergency", Icons.warning_amber_rounded,
+                        () {
+                      Navigator.push(context,
+                          MaterialPageRoute(builder: (_) => const EmergencyListPage()))
+                          .then((_) => refreshAllData());
+                    },
+                    iconColor: const Color(0xFFFF5A5A),
+                    hasNotification: hasEmergencyNotif,
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 30),
+
+              // ── Announcements header ──
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  buildSectionTitle("Announcements"),
+                  TextButton.icon(
+                    onPressed: () => _showCreateAnnouncementSheet(context),
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text("Create", style: TextStyle(fontWeight: FontWeight.bold)),
+                    style: TextButton.styleFrom(
+                        foregroundColor: primaryColor,
+                        backgroundColor: primaryColor.withOpacity(0.1),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20))),
+                  ),
+                ],
+              ),
+
+              // ── Announcement cards ──
+              if (announcements.isEmpty)
+                const Padding(
+                    padding: EdgeInsets.all(40),
+                    child: Center(child: Text("No announcements yet.",
+                        style: TextStyle(color: Colors.grey))))
+              else
+                ...announcements.map((item) {
+                  final bool urgent   = item['is_urgent'] ?? false;
+                  final bool hasImage = item['image_url'] != null;
+
+                  return GestureDetector(
+                    onTap: () => _showAnnouncementDetails(item),
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(22),
+                        border: urgent
+                            ? Border.all(color: Colors.red.withOpacity(0.35), width: 1.5)
+                            : null,
+                        boxShadow: [
+                          BoxShadow(
+                              color: Colors.black.withOpacity(0.04),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4))
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          hasImage
+                              ? ClipOval(
+                              child: Image.network(item['image_url'],
+                                  width: 46, height: 46, fit: BoxFit.cover))
+                              : Container(
+                            width: 46, height: 46,
+                            decoration: BoxDecoration(
+                              color: (urgent ? Colors.red : primaryColor).withOpacity(0.12),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                                urgent ? Icons.priority_high : Icons.campaign_outlined,
+                                color: urgent ? Colors.red : primaryColor,
+                                size: 22),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(item['title'],
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w700, fontSize: 15, color: textDark),
+                                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                                const SizedBox(height: 4),
+                                Text(item['content'],
+                                    style: const TextStyle(fontSize: 12, color: Colors.black54),
+                                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          const Icon(Icons.chevron_right, color: Colors.black26, size: 20),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+            ],
+          ),
+        ),
       ),
     );
   }
