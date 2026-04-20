@@ -59,7 +59,7 @@ class _AdminRequestsPageState extends State<AdminRequestsPage> {
         final type = r['type'];
         if (type == 'visitor') {
           temp['visitor']!.add(r);
-        } else if (type == 'booking') {
+        } else if (type == 'facility') {
           temp['facility']!.add(r);
         } else if (type == 'complaint') {
           temp['event']!.add(r);

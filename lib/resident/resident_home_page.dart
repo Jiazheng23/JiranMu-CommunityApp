@@ -3,6 +3,8 @@ import 'package:assignment/chat/CommunityChatsListScreen.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../admin/request/event/event_calendar_screen.dart';
+import 'package:assignment/facility/facility_booking_page.dart';
+import 'package:assignment/resident/resident_booking_history_page.dart';
 
 class ResidentHomePage extends StatefulWidget {
   const ResidentHomePage({super.key});
@@ -316,7 +318,6 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                   ),
                 ),
                 const SizedBox(width: 4),
-                const Icon(Icons.keyboard_arrow_down_rounded),
               ],
             ),
           ),
@@ -395,8 +396,11 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                 color: const Color(0xFF4BC0B8),
                 label: "Facility",
                 onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Facility clicked")),
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const FacilityBookingPage(),
+                    ),
                   );
                 },
               ),
@@ -441,17 +445,8 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     );
   }
 
-  Widget buildCommunityTab() {
-    return Center(
-      child: Text(
-        "Community Page",
-        style: TextStyle(
-          fontSize: 20,
-          fontWeight: FontWeight.bold,
-          color: primaryColor,
-        ),
-      ),
-    );
+  Widget buildMyFacilityTab() {
+    return const FacilityBookingPage(showBackButton: false);
   }
 
   Widget buildChatsTab() {
@@ -521,7 +516,14 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                   leading: Icon(Icons.history, color: primaryColor),
                   title: const Text("Booking History"),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () {},
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const ResidentBookingHistoryPage(),
+                      ),
+                    );
+                  },
                 ),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
@@ -543,7 +545,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
       case 0:
         return buildHomeTab();
       case 1:
-        return buildCommunityTab();
+        return buildMyFacilityTab();
       case 2:
         return buildChatsTab();
       case 3:
@@ -593,8 +595,8 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                 label: "Home",
               ),
               BottomNavigationBarItem(
-                icon: Icon(Icons.groups_rounded),
-                label: "Community",
+                icon: Icon(Icons.fitness_center_rounded),
+                label: "Facility",
               ),
               BottomNavigationBarItem(
                 icon: Icon(Icons.chat_bubble_outline_rounded),
