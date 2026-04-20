@@ -22,7 +22,22 @@ class EventService {
     }
   }
 
-  // --- 2. CREATE EVENT REQUEST ---
+  // --- 2. FACILITY METHODS ---
+  Future<List<Map<String, dynamic>>> fetchActiveFacilities() async {
+    try {
+      final response = await supabase
+          .from('facilities')
+          .select('*')
+          .eq('is_active', true)
+          .order('name', ascending: true);
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      debugPrint("Fetch Facilities Error: $e");
+      return [];
+    }
+  }
+
+  // --- 3. CREATE EVENT REQUEST ---
   Future<void> createEvent({
     required Map<String, dynamic> eventData,
     required String userRole,
@@ -31,7 +46,7 @@ class EventService {
       final String? userId = supabase.auth.currentUser?.id;
       if (userId == null) throw Exception("User must be logged in to create events.");
 
-      // Insert into Master 'requests' table
+      // 1. Insert into Master 'requests' table
       final response = await supabase.from('requests').insert({
         'user_id': userId,
         'type': 'booking',
@@ -42,7 +57,7 @@ class EventService {
 
       final String newRequestId = response['request_id'].toString();
 
-      // Insert into Sub-Table 'event_requests'
+      // 2. Insert into Sub-Table 'event_requests'
       await supabase.from('event_requests').insert({
         'request_id': newRequestId,
         'event_title': eventData['title'],
@@ -57,6 +72,7 @@ class EventService {
         'is_private': eventData['is_private'] ?? false,
       });
 
+      // 3. If Admin, promote to live 'events' table immediately
       if (userRole == 'admin') {
         await approveAndPromoteRequest(newRequestId);
       }
@@ -66,20 +82,23 @@ class EventService {
     }
   }
 
-  // --- 3. APPROVE & PROMOTE ---
+  // --- 4. APPROVE & PROMOTE ---
   Future<void> approveAndPromoteRequest(String requestId) async {
     try {
+      // Update Master table status
       await supabase.from('requests').update({
         'status': 'approved',
         'respond_time': DateTime.now().toIso8601String(),
       }).eq('request_id', requestId);
 
+      // Fetch details from sub-table to move to 'events'
       final details = await supabase
           .from('event_requests')
           .select('*, requests!inner(user_id, description)')
           .eq('request_id', requestId)
           .single();
 
+      // Promotion logic: Uses requestId as the primary ID for 'events'
       await supabase.from('events').insert({
         'id': requestId,
         'title': details['event_title'],
@@ -102,22 +121,53 @@ class EventService {
     }
   }
 
-  // --- 4. FETCHING METHODS ---
+  // --- 5. FETCHING METHODS ---
 
-  Future<List<CommunityEvent>> fetchAllEvents() async {
-    final response = await supabase
-        .from('events')
-        .select('*, requests!inner(status, user_id, description, reject_reason)')
-        .eq('is_private', false)
-        .order('event_date', ascending: true);
+  /// Fetches live events for the Calendar.
+  Future<List<CommunityEvent>> fetchAllEvents({int? limit, bool upcomingOnly = true}) async {
+    try {
+      var query = supabase
+          .from('events')
+          .select('*, requests!inner(status, user_id, description, reject_reason)')
+          .eq('is_private', false);
 
-    return _mapResponseToEventList(response);
+      if (upcomingOnly) {
+        final String today = DateTime.now().toIso8601String().split('T')[0];
+        query = query.gte('event_date', today);
+      }
+
+      final response = await (limit != null
+          ? query.order('event_date', ascending: true).limit(limit)
+          : query.order('event_date', ascending: true));
+
+      return _mapResponseToEventList(response);
+    } catch (e) {
+      debugPrint("Fetch All Events Error: $e");
+      return [];
+    }
   }
 
-  // NEW: Fetch events a specific user has joined
+  /// Fetches all requests (Pending/Approved/Rejected) for a specific user.
+  Future<List<CommunityEvent>> fetchUserRequests() async {
+    final String? userId = supabase.auth.currentUser?.id;
+    if (userId == null) return [];
+
+    try {
+      final response = await supabase
+          .from('event_requests')
+          .select('*, requests!inner(*)')
+          .eq('requests.user_id', userId)
+          .order('date', ascending: false);
+
+      return _mapResponseToEventList(response);
+    } catch (e) {
+      debugPrint("Fetch User Requests Error: $e");
+      return [];
+    }
+  }
+
   Future<List<CommunityEvent>> fetchJoinedEvents(String userId) async {
     try {
-      // Logic: Get entries from 'event_participants', joining with the 'events' table
       final response = await supabase
           .from('event_participants')
           .select('*, events(*, requests!inner(status, user_id, description))')
@@ -126,63 +176,16 @@ class EventService {
       final List<dynamic> data = response as List<dynamic>;
 
       return data.map((item) {
-        // Extract the nested event object
-        final Map<String, dynamic> eventJson = Map<String, dynamic>.from(item['events']);
-
-        // Use our helper to ensure status/description/user_id are flattened
-        return _mapSingleResponseToEvent(eventJson);
-      }).toList();
+        if (item['events'] == null) return null;
+        return _mapSingleResponseToEvent(item['events']);
+      }).whereType<CommunityEvent>().toList();
     } catch (e) {
       debugPrint("Fetch Joined Events Error: $e");
       return [];
     }
   }
 
-  Future<List<CommunityEvent>> fetchPendingEvents() async {
-    final response = await supabase
-        .from('event_requests')
-        .select('*, requests!inner(status, created_at, user_id, description, reject_reason)')
-        .eq('requests.status', 'pending');
-
-    return _mapResponseToEventList(response);
-  }
-
-  Future<List<CommunityEvent>> fetchUserRequests() async {
-    final String? userId = supabase.auth.currentUser?.id;
-    if (userId == null) return [];
-
-    final response = await supabase
-        .from('event_requests')
-        .select('*, requests!inner(*)')
-        .eq('requests.user_id', userId)
-        .order('date', ascending: false);
-
-    return _mapResponseToEventList(response);
-  }
-
-  // Helper for multiple items
-  List<CommunityEvent> _mapResponseToEventList(dynamic response) {
-    return (response as List).map((json) => _mapSingleResponseToEvent(json)).toList();
-  }
-
-  // Helper for a single item (refactored for reuse)
-  CommunityEvent _mapSingleResponseToEvent(dynamic json) {
-    final Map<String, dynamic> flattened = Map<String, dynamic>.from(json);
-
-    if (json['requests'] != null) {
-      flattened['status'] = json['requests']['status'];
-      flattened['description'] = json['requests']['description'];
-      flattened['reject_reason'] = json['requests']['reject_reason'];
-      flattened['user_id'] = json['user_id'] ?? json['requests']['user_id'];
-
-      if (flattened['id'] == null) {
-        flattened['id'] = (flattened['request_id'] ?? flattened['id']).toString();
-      }
-    }
-    return CommunityEvent.fromJson(flattened);
-  }
-
-  // --- 5. JOIN & REJECT ---
+  // --- 6. JOIN, REJECT & UTILITIES ---
 
   Future<void> joinEvent(String eventId, String userId) async {
     try {
@@ -192,16 +195,12 @@ class EventService {
           .eq('id', eventId)
           .single();
 
-      if (event['user_id'] == userId) {
-        throw Exception("As the host, you are already participating!");
-      }
+      if (event['user_id'] == userId) throw Exception("As host, you're already participating!");
 
       int currentParticipants = event['participants'] ?? 0;
       int maxCapacity = event['max_capacity'] ?? 20;
 
-      if (currentParticipants >= maxCapacity) {
-        throw Exception("Event is full!");
-      }
+      if (currentParticipants >= maxCapacity) throw Exception("Event is full!");
 
       final existing = await supabase
           .from('event_participants')
@@ -210,9 +209,7 @@ class EventService {
           .eq('user_id', userId)
           .maybeSingle();
 
-      if (existing != null) {
-        throw Exception("You have already joined this event!");
-      }
+      if (existing != null) throw Exception("You have already joined!");
 
       await supabase.from('event_participants').insert({
         'event_id': eventId,
@@ -224,22 +221,23 @@ class EventService {
           .from('events')
           .update({'participants': currentParticipants + 1})
           .eq('id', eventId);
-
     } catch (e) {
-      debugPrint("Join Error: $e");
       rethrow;
     }
   }
 
   Future<void> rejectRequest(String requestId, String reason) async {
-    await supabase.from('requests').update({
-      'status': 'rejected',
-      'reject_reason': reason,
-      'respond_time': DateTime.now().toIso8601String(),
-    }).eq('request_id', requestId);
+    try {
+      await supabase.from('requests').update({
+        'status': 'rejected',
+        'reject_reason': reason,
+        'respond_time': DateTime.now().toIso8601String(),
+      }).eq('request_id', requestId);
+    } catch (e) {
+      rethrow;
+    }
   }
 
-  // --- 6. UTILITIES ---
   Future<bool> isFacilityAvailable(String location, String date, String startTime, String endTime) async {
     final response = await supabase
         .from('event_requests')
@@ -259,13 +257,33 @@ class EventService {
     return true;
   }
 
+  // --- 7. MAPPING HELPERS ---
+
+  List<CommunityEvent> _mapResponseToEventList(dynamic response) {
+    if (response == null) return [];
+    return (response as List).map((json) => _mapSingleResponseToEvent(json)).toList();
+  }
+
+  CommunityEvent _mapSingleResponseToEvent(dynamic json) {
+    final Map<String, dynamic> flattened = Map<String, dynamic>.from(json);
+
+    if (json['requests'] != null) {
+      flattened['status'] = json['requests']['status'];
+      flattened['description'] = json['requests']['description'];
+      flattened['reject_reason'] = json['requests']['reject_reason'];
+      flattened['user_id'] = flattened['user_id'] ?? json['requests']['user_id'];
+
+      // Crucial: Use request_id if the main 'id' is null (for history/pending views)
+      if (flattened['id'] == null) {
+        flattened['id'] = (flattened['request_id'] ?? json['request_id']).toString();
+      }
+    }
+    return CommunityEvent.fromJson(flattened);
+  }
+
   int _timeToMinutes(String timeString) {
     if (timeString.isEmpty) return 0;
-    try {
-      final parts = timeString.split(':');
-      return (int.parse(parts[0]) * 60) + int.parse(parts[1]);
-    } catch (e) {
-      return 0;
-    }
+    final parts = timeString.split(':');
+    return (int.parse(parts[0]) * 60) + int.parse(parts[1]);
   }
 }

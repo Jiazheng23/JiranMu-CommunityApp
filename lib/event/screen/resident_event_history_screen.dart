@@ -29,14 +29,15 @@ class _ResidentEventHistoryScreenState extends State<ResidentEventHistoryScreen>
         backgroundColor: cork,
         centerTitle: true,
         elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: RefreshIndicator(
         onRefresh: () async {
-          // Triggers a rebuild to fetch fresh data from Supabase
           setState(() {});
         },
         color: apricot,
         child: FutureBuilder<List<CommunityEvent>>(
+          // Uses the specific User Request fetcher we updated in EventService
           future: _eventService.fetchUserRequests(),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
@@ -47,7 +48,10 @@ class _ResidentEventHistoryScreenState extends State<ResidentEventHistoryScreen>
               return Center(
                 child: Padding(
                   padding: const EdgeInsets.all(20.0),
-                  child: Text("Error: ${snapshot.error}", textAlign: TextAlign.center),
+                  child: Text(
+                      "Error loading history: ${snapshot.error}",
+                      textAlign: TextAlign.center
+                  ),
                 ),
               );
             }
@@ -61,6 +65,7 @@ class _ResidentEventHistoryScreenState extends State<ResidentEventHistoryScreen>
             return ListView.builder(
               padding: const EdgeInsets.all(16),
               itemCount: requests.length,
+              physics: const AlwaysScrollableScrollPhysics(), // Ensures pull-to-refresh always works
               itemBuilder: (context, index) {
                 final event = requests[index];
                 return _buildHistoryCard(event);
@@ -73,6 +78,9 @@ class _ResidentEventHistoryScreenState extends State<ResidentEventHistoryScreen>
   }
 
   Widget _buildHistoryCard(CommunityEvent event) {
+    final bool isApproved = event.status.toLowerCase() == 'approved';
+    final bool isRejected = event.status.toLowerCase() == 'rejected';
+
     return Card(
       elevation: 3,
       margin: const EdgeInsets.only(bottom: 16),
@@ -83,7 +91,7 @@ class _ResidentEventHistoryScreenState extends State<ResidentEventHistoryScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header: Title and Status Badge
+            // Header: Title and Status Badge + Share Button
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -97,7 +105,25 @@ class _ResidentEventHistoryScreenState extends State<ResidentEventHistoryScreen>
                     ),
                   ),
                 ),
-                _buildStatusBadge(event.status),
+                Row(
+                  children: [
+                    if (isApproved)
+                      IconButton(
+                        onPressed: () {
+                          // TODO: Implement share_plus logic later
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text("Sharing function coming soon!")),
+                          );
+                        },
+                        icon: const Icon(Icons.share_outlined, size: 20, color: Colors.blue),
+                        tooltip: "Share Event",
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                    if (isApproved) const SizedBox(width: 10),
+                    _buildStatusBadge(event.status),
+                  ],
+                ),
               ],
             ),
             const Divider(height: 24, thickness: 1),
@@ -115,60 +141,34 @@ class _ResidentEventHistoryScreenState extends State<ResidentEventHistoryScreen>
               "${event.startTime} - ${event.endTime}",
             ),
             const SizedBox(height: 8),
-            _buildIconInfo(Icons.people_outline, "Capacity: ${event.maxCapacity} people"),
+            _buildIconInfo(Icons.people_outline, "Max Capacity: ${event.maxCapacity} people"),
 
-            // REJECTED REASON SECTION
-            if (event.status.toLowerCase() == 'rejected') ...[
+            // Feedback section for Rejected requests
+            if (isRejected) ...[
               const SizedBox(height: 16),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.red[50],
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.red.shade100),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.feedback_outlined, color: Colors.red, size: 16),
-                        const SizedBox(width: 8),
-                        Text(
-                          "Admin Feedback",
-                          style: TextStyle(
-                            color: Colors.red[800],
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      event.rejectReason ?? "No specific feedback provided.",
-                      style: const TextStyle(
-                        color: Colors.black87,
-                        fontSize: 14,
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                  ],
-                ),
+              _buildFeedbackBox(
+                title: "Admin Feedback",
+                message: event.rejectReason ?? "No specific feedback provided.",
+                baseColor: Colors.red,
               ),
             ],
 
-            // APPROVED MESSAGE
-            if (event.status.toLowerCase() == 'approved') ...[
+            // Message for Approved requests
+            if (isApproved) ...[
               const SizedBox(height: 12),
               const Row(
                 children: [
                   Icon(Icons.check_circle, color: Colors.green, size: 16),
                   SizedBox(width: 8),
-                  Text(
-                    "This event is now live on the calendar!",
-                    style: TextStyle(color: Colors.green, fontSize: 13, fontWeight: FontWeight.w500),
+                  Expanded(
+                    child: Text(
+                      "Your event is live on the community calendar!",
+                      style: TextStyle(
+                          color: Colors.green,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -202,11 +202,11 @@ class _ResidentEventHistoryScreenState extends State<ResidentEventHistoryScreen>
         color = Colors.red;
         break;
       default:
-        color = Colors.orange; // Pending
+        color = Colors.orange; // Pending status
     }
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
         color: color.withOpacity(0.1),
         borderRadius: BorderRadius.circular(20),
@@ -214,7 +214,52 @@ class _ResidentEventHistoryScreenState extends State<ResidentEventHistoryScreen>
       ),
       child: Text(
         status.toUpperCase(),
-        style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+        style: TextStyle(
+            color: color,
+            fontSize: 10,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 0.5
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFeedbackBox({required String title, required String message, required Color baseColor}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: baseColor.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: baseColor.withOpacity(0.1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.feedback_outlined, color: baseColor, size: 16),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: TextStyle(
+                  color: baseColor,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            message,
+            style: const TextStyle(
+              color: Colors.black87,
+              fontSize: 14,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -224,15 +269,15 @@ class _ResidentEventHistoryScreenState extends State<ResidentEventHistoryScreen>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.event_note_outlined, size: 80, color: cork.withOpacity(0.2)),
+          Icon(Icons.history_outlined, size: 80, color: cork.withOpacity(0.2)),
           const SizedBox(height: 16),
           Text(
-            "No event requests found",
+            "No requests yet",
             style: TextStyle(color: cork, fontSize: 18, fontWeight: FontWeight.w500),
           ),
           const SizedBox(height: 8),
           Text(
-            "Your submitted proposals will appear here.",
+            "When you propose an event, it will appear here.",
             style: TextStyle(color: cork.withOpacity(0.6), fontSize: 14),
           ),
         ],
