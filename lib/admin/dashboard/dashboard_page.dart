@@ -47,7 +47,7 @@ class _DashboardPageState extends State<DashboardPage> {
           .from('announcements')
           .select()
           .order('created_at', ascending: false)
-          .limit(5);
+          .limit(10);
       if (mounted) setState(() => announcements = response);
     } catch (e) {
       debugPrint("Fetch Announcements Error: $e");
@@ -81,11 +81,13 @@ class _DashboardPageState extends State<DashboardPage> {
 
   // ── Shared section title (same as Resident) ──
   Widget buildSectionTitle(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Text(title,
-          style: const TextStyle(
-              fontSize: 18, fontWeight: FontWeight.bold, color: textDark)),
+    return Text(
+      title,
+      style: const TextStyle(
+        fontSize: 18,
+        fontWeight: FontWeight.bold,
+        color: textDark, // 确保你之前定义了 textDark
+      ),
     );
   }
 
@@ -699,165 +701,194 @@ class _DashboardPageState extends State<DashboardPage> {
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: refreshAllData,
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(20, 18, 20, 100),
-            children: [
-
-              // ── Header banner (mirrors Resident's softYellow banner) ──
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                  color: softYellow,
-                  borderRadius: BorderRadius.circular(26),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: const [
-                          Text("Admin Dashboard",
-                              style: TextStyle(
-                                  fontSize: 20, fontWeight: FontWeight.bold, color: textDark)),
-                          SizedBox(height: 4),
-                          Text("Manage your community from here.",
-                              style: TextStyle(fontSize: 13, color: primaryColor, height: 1.4)),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Container(
-                      width: 54, height: 54,
-                      decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.85),
-                          borderRadius: BorderRadius.circular(18)),
-                      child: const Icon(Icons.admin_panel_settings_rounded,
-                          color: primaryColor, size: 28),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 26),
-              buildSectionTitle("Management"),
-
-              // ── Quick-access buttons ──
-              Row(
-                children: [
-                  buildTopButton("Users", Icons.person_outline, () => navigateTo("Users"),
-                      iconColor: const Color(0xFF758BFD), hasNotification: hasUserNotif),
-                  const SizedBox(width: 6),
-                  buildTopButton("Event", Icons.event_note_outlined, () => navigateTo("Event"),
-                      iconColor: const Color(0xFF4BC0B8), hasNotification: hasEventNotif),
-                  const SizedBox(width: 6),
-                  buildTopButton("Facilities", Icons.home_work_outlined, () => navigateTo("Facilities"),
-                      iconColor: primaryColor, hasNotification: hasFacilityNotif),
-                  const SizedBox(width: 6),
-                  buildTopButton("Visitor", Icons.badge_outlined, () => navigateTo("Visitor"),
-                      iconColor: const Color(0xFFE96B9E), hasNotification: hasVisitorNotif),
-                  const SizedBox(width: 6),
-                  buildTopButton(
-                    "Emergency", Icons.warning_amber_rounded,
-                        () {
-                      Navigator.push(context,
-                          MaterialPageRoute(builder: (_) => const EmergencyListPage()))
-                          .then((_) => refreshAllData());
-                    },
-                    iconColor: const Color(0xFFFF5A5A),
-                    hasNotification: hasEmergencyNotif,
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 30),
-
-              // ── Announcements header ──
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  buildSectionTitle("Announcements"),
-                  TextButton.icon(
-                    onPressed: () => _showCreateAnnouncementSheet(context),
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text("Create", style: TextStyle(fontWeight: FontWeight.bold)),
-                    style: TextButton.styleFrom(
-                        foregroundColor: primaryColor,
-                        backgroundColor: primaryColor.withOpacity(0.1),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20))),
-                  ),
-                ],
-              ),
-
-              // ── Announcement cards ──
-              if (announcements.isEmpty)
-                const Padding(
-                    padding: EdgeInsets.all(40),
-                    child: Center(child: Text("No announcements yet.",
-                        style: TextStyle(color: Colors.grey))))
-              else
-                ...announcements.map((item) {
-                  final bool urgent   = item['is_urgent'] ?? false;
-                  final bool hasImage = item['image_url'] != null;
-
-                  return GestureDetector(
-                    onTap: () => _showAnnouncementDetails(item),
-                    child: Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(22),
-                        border: urgent
-                            ? Border.all(color: Colors.red.withOpacity(0.35), width: 1.5)
-                            : null,
-                        boxShadow: [
-                          BoxShadow(
-                              color: Colors.black.withOpacity(0.04),
-                              blurRadius: 12,
-                              offset: const Offset(0, 4))
-                        ],
-                      ),
-                      child: Row(
-                        children: [
-                          hasImage
-                              ? ClipOval(
-                              child: Image.network(item['image_url'],
-                                  width: 46, height: 46, fit: BoxFit.cover))
-                              : Container(
-                            width: 46, height: 46,
-                            decoration: BoxDecoration(
-                              color: (urgent ? Colors.red : primaryColor).withOpacity(0.12),
-                              shape: BoxShape.circle,
+          // 🔥 换成 CustomScrollView，让整个页面完美融合并整体滑动
+          child: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(), // 确保即使内容少也能下拉刷新
+            slivers: [
+              // ── 📌 顶部内容 (使用 SliverToBoxAdapter 包裹) ──
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // ── Header banner ──
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(18),
+                        decoration: BoxDecoration(
+                          color: softYellow,
+                          borderRadius: BorderRadius.circular(26),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: const [
+                                  Text("Admin Dashboard",
+                                      style: TextStyle(
+                                          fontSize: 20, fontWeight: FontWeight.bold, color: textDark)),
+                                  SizedBox(height: 4),
+                                  Text("Manage your community from here.",
+                                      style: TextStyle(fontSize: 13, color: primaryColor, height: 1.4)),
+                                ],
+                              ),
                             ),
-                            child: Icon(
-                                urgent ? Icons.priority_high : Icons.campaign_outlined,
-                                color: urgent ? Colors.red : primaryColor,
-                                size: 22),
+                            const SizedBox(width: 12),
+                            Container(
+                              width: 54, height: 54,
+                              decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.85),
+                                  borderRadius: BorderRadius.circular(18)),
+                              child: const Icon(Icons.admin_panel_settings_rounded,
+                                  color: primaryColor, size: 28),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 15),
+                      buildSectionTitle("Management"),
+                      const SizedBox(height: 10),
+
+                      // ── Quick-access buttons ──
+                      Row(
+                        children: [
+                          buildTopButton("Users", Icons.person_outline, () => navigateTo("Users"),
+                              iconColor: const Color(0xFF758BFD), hasNotification: hasUserNotif),
+                          const SizedBox(width: 6),
+                          buildTopButton("Event", Icons.event_note_outlined, () => navigateTo("Event"),
+                              iconColor: const Color(0xFF4BC0B8), hasNotification: hasEventNotif),
+                          const SizedBox(width: 6),
+                          buildTopButton("Facilities", Icons.home_work_outlined, () => navigateTo("Facilities"),
+                              iconColor: primaryColor, hasNotification: hasFacilityNotif),
+                          const SizedBox(width: 6),
+                          buildTopButton("Visitor", Icons.badge_outlined, () => navigateTo("Visitor"),
+                              iconColor: const Color(0xFFE96B9E), hasNotification: hasVisitorNotif),
+                          const SizedBox(width: 6),
+                          buildTopButton(
+                            "SOS", Icons.warning_amber_rounded,
+                                () {
+                              Navigator.push(context,
+                                  MaterialPageRoute(builder: (_) => const EmergencyListPage()))
+                                  .then((_) => refreshAllData());
+                            },
+                            iconColor: const Color(0xFFFF5A5A),
+                            hasNotification: hasEmergencyNotif,
                           ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                        ],
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      // ── Announcements header ──
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          buildSectionTitle("Announcements"),
+                          TextButton.icon(
+                            onPressed: () => _showCreateAnnouncementSheet(context),
+                            icon: const Icon(Icons.add, size: 18),
+                            label: const Text("Create", style: TextStyle(fontWeight: FontWeight.bold)),
+                            style: TextButton.styleFrom(
+                                foregroundColor: primaryColor,
+                                backgroundColor: primaryColor.withOpacity(0.1),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20))),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                    ],
+                  ),
+                ),
+              ),
+
+              // ── 📜 公告列表 (使用 SliverList 实现高性能无限滑动) ──
+              if (announcements.isEmpty)
+                const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.all(40),
+                    child: Center(child: Text("No announcements yet.", style: TextStyle(color: Colors.grey))),
+                  ),
+                )
+              else
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 100), // 底部留白
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                          (context, index) {
+                        final item = announcements[index];
+                        final bool urgent   = item['is_urgent'] ?? false;
+                        final bool hasImage = item['image_url'] != null;
+
+                        return GestureDetector(
+                          onTap: () => _showAnnouncementDetails(item),
+                          child: Container(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(22),
+                              border: urgent
+                                  ? Border.all(color: Colors.red.withOpacity(0.35), width: 1.5)
+                                  : null,
+                              boxShadow: [
+                                BoxShadow(
+                                    color: Colors.black.withOpacity(0.04),
+                                    blurRadius: 12,
+                                    offset: const Offset(0, 4))
+                              ],
+                            ),
+                            child: Row(
                               children: [
-                                Text(item['title'],
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.w700, fontSize: 15, color: textDark),
-                                    maxLines: 1, overflow: TextOverflow.ellipsis),
-                                const SizedBox(height: 4),
-                                Text(item['content'],
-                                    style: const TextStyle(fontSize: 12, color: Colors.black54),
-                                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                                hasImage
+                                    ? ClipOval(
+                                  child: Image.network(
+                                    item['image_url'],
+                                    width: 46, height: 46, fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) => const Icon(Icons.image_not_supported, color: Colors.grey),
+                                  ),
+                                )
+                                    : Container(
+                                  width: 46, height: 46,
+                                  decoration: BoxDecoration(
+                                    color: (urgent ? Colors.red : primaryColor).withOpacity(0.12),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(
+                                      urgent ? Icons.priority_high : Icons.campaign_outlined,
+                                      color: urgent ? Colors.red : primaryColor,
+                                      size: 22),
+                                ),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(item['title'],
+                                          style: const TextStyle(
+                                              fontWeight: FontWeight.w700, fontSize: 15, color: textDark),
+                                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                                      const SizedBox(height: 4),
+                                      Text(item['content'],
+                                          style: const TextStyle(fontSize: 12, color: Colors.black54),
+                                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                const Icon(Icons.chevron_right, color: Colors.black26, size: 20),
                               ],
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          const Icon(Icons.chevron_right, color: Colors.black26, size: 20),
-                        ],
-                      ),
+                        );
+                      },
+                      childCount: announcements.length, // 根据数组长度自动生成
                     ),
-                  );
-                }).toList(),
+                  ),
+                ),
             ],
           ),
         ),
