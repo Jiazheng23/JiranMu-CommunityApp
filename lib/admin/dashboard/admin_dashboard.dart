@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:assignment/admin/AdminGroupInviteScreen.dart';
+import 'package:assignment/admin/AdminCreateChatScreen.dart';
 import 'package:assignment/admin/request/admin_request_page.dart';
 import '../../chat/CommunityChatsListScreen.dart';
 import '../emergency/emergency_list_page.dart';
@@ -180,7 +180,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => const AdminGroupInviteScreen(),
+                  builder: (_) => const AdminCreateChatScreen(),
                 ),
               );
             } else {
@@ -188,7 +188,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
             }
           },
           backgroundColor: selectedIndex == 3
-              ? const Color(0xFF1E88E5)
+              ? const Color(0xFF9A4B3C)
               : (isEmergency
               ? Colors.red
               : (isWaiting ? Colors.orange : Colors.red)),

@@ -754,26 +754,6 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
               letterSpacing: -0.5,
             ),
           ),
-          if (isAdmin) ...[
-            const SizedBox(width: 10),
-            Container(
-              padding:
-              const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: _primary,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Text(
-                'Admin',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.5,
-                ),
-              ),
-            ),
-          ],
         ],
       ),
     );
@@ -1056,25 +1036,6 @@ class _GroupChatTile extends StatelessWidget {
                           ),
                         ),
                       ),
-                      if (isAdmin) ...[
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: primaryColor.withOpacity(0.12),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            'Admin',
-                            style: TextStyle(
-                              fontSize: 9,
-                              fontWeight: FontWeight.w700,
-                              color: primaryColor,
-                            ),
-                          ),
-                        ),
-                      ],
                     ],
                   ),
                   const SizedBox(height: 3),
