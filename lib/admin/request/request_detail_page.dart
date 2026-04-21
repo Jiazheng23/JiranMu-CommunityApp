@@ -71,12 +71,12 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
           });
         }
 
-      await supabase.from('requests').update({
-        'status': 'approved',
-        'respond_time': DateTime.now().toIso8601String(),
-        'reject_reason': null,
-      }).eq('request_id', requestId);
-    }
+        await supabase.from('requests').update({
+          'status': 'approved',
+          'respond_time': DateTime.now().toIso8601String(),
+          'reject_reason': null,
+        }).eq('request_id', requestId);
+      }
 
       // 3. Facility approval
       else if (type == 'facility') {
