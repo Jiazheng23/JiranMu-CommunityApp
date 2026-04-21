@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dashboard/admin_dashboard.dart';
+import '../chat/user_session.dart';
 
 class AdminLoginPage extends StatefulWidget {
   const AdminLoginPage({super.key});
@@ -29,7 +30,8 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
       filled: true,
       fillColor: Colors.white,
       suffixIcon: suffixIcon,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      contentPadding:
+      const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
@@ -54,9 +56,7 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
       return;
     }
 
-    setState(() {
-      isLoading = true;
-    });
+    setState(() => isLoading = true);
 
     try {
       final response = await supabase.auth.signInWithPassword(
@@ -70,6 +70,10 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
         throw Exception("Admin login failed");
       }
 
+      // ✅ Initialize UserSession — sets role to 'admin' if found in admin_new
+      await UserSession.init();
+
+      // Verify this user is actually in the admin_new table
       final admin = await supabase
           .from('admin_new')
           .select()
@@ -77,14 +81,19 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
           .maybeSingle();
 
       if (admin == null) {
+        // Not an admin — sign out and reset session
+        await supabase.auth.signOut();
+        UserSession.role = 'resident';
+        UserSession.uid = null;
+        UserSession.email = null;
         throw Exception("Account not approved yet");
       }
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Admin login success")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Admin login success")),
+      );
 
       Navigator.pushReplacement(
         context,
@@ -94,20 +103,14 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
       );
     } on AuthException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.message)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Error: $e")));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text("Error: $e")));
     } finally {
-      if (mounted) {
-        setState(() {
-          isLoading = false;
-        });
-      }
+      if (mounted) setState(() => isLoading = false);
     }
   }
 
@@ -156,12 +159,12 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                   "Password",
                   suffixIcon: IconButton(
                     onPressed: () {
-                      setState(() {
-                        obscurePassword = !obscurePassword;
-                      });
+                      setState(() => obscurePassword = !obscurePassword);
                     },
                     icon: Icon(
-                      obscurePassword ? Icons.visibility_off : Icons.visibility,
+                      obscurePassword
+                          ? Icons.visibility_off
+                          : Icons.visibility,
                     ),
                   ),
                 ),
@@ -182,20 +185,20 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                   ),
                   child: isLoading
                       ? const SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.5,
-                            color: Colors.white,
-                          ),
-                        )
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      color: Colors.white,
+                    ),
+                  )
                       : const Text(
-                          "Login",
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
+                    "Login",
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
               ),
             ],
