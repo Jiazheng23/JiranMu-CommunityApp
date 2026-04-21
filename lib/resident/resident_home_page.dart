@@ -1,8 +1,11 @@
+import 'dart:async'; // 🔥 新增 Timer 需要的包
 import 'package:assignment/chat/CommunityChatScreen.dart';
 import 'package:assignment/chat/CommunityChatsListScreen.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../admin/request/event/event_calendar_screen.dart';
+import '../resident/emergency_form.dart';
+import '../admin//emergency/location.dart'; // 🔥 新增 location，用于获取位置和 createEmergency
 
 class ResidentHomePage extends StatefulWidget {
   const ResidentHomePage({super.key});
@@ -14,11 +17,23 @@ class ResidentHomePage extends StatefulWidget {
 class _ResidentHomePageState extends State<ResidentHomePage> {
   int currentIndex = 0;
 
+  // 🔥 紧急按钮状态变量
+  bool isWaiting = false;
+  bool isEmergency = false;
+  Timer? _timer;
+  int countdown = 10;
+
   final Color bgColor = const Color(0xFFF5F1ED);
   final Color primaryColor = const Color(0xFF9A4B3C);
   final Color accentColor = const Color(0xFFFC9D7E);
   final Color softYellow = const Color(0xFFF0E6B8);
   final Color textDark = const Color(0xFF2B2B2B);
+
+  @override
+  void dispose() {
+    _timer?.cancel(); // 🔥 页面销毁时清理定时器
+    super.dispose();
+  }
 
   Future<void> logout() async {
     await Supabase.instance.client.auth.signOut();
@@ -30,6 +45,148 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(const SnackBar(content: Text("Logged out successfully")));
+  }
+
+  // 🔥 重置紧急状态
+  void resetState() {
+    _timer?.cancel();
+    setState(() {
+      isWaiting = false;
+      isEmergency = false;
+      countdown = 10;
+    });
+  }
+
+  // 🔥 核心逻辑：带倒计时的紧急求救
+  void handleEmergency() {
+    if (isEmergency) {
+      resetState();
+      return;
+    }
+
+    if (!isWaiting) {
+      setState(() {
+        isWaiting = true;
+        countdown = 10;
+      });
+      StateSetter? dialogSetState;
+
+      _timer = Timer.periodic(const Duration(seconds: 1), (t) async {
+        if (countdown > 1) {
+          if (mounted) {
+            setState(() {
+              countdown--;
+            });
+          }
+          if (dialogSetState != null) {
+            dialogSetState!(() {});
+          }
+        } else {
+          t.cancel();
+
+          setState(() {
+            isWaiting = false;
+            isEmergency = true;
+          });
+
+          if (mounted) {
+            Navigator.of(context, rootNavigator: true).pop();
+          }
+
+          // 🔥 从 Supabase 获取当前 Resident 的 User ID
+          final userId = Supabase.instance.client.auth.currentUser?.id;
+
+          if (userId != null) {
+            try {
+              final position = await getCurrentLocation();
+              await createEmergency(userId.toString(), 'SOS', position);
+
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text("Emergency SOS Sent with Location!"),
+                    backgroundColor: Color(0xFF6B8E6B), // 成功绿
+                  ),
+                );
+              }
+            } catch (e) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text("Failed to send SOS: $e"),
+                    backgroundColor: const Color(0xFFC67B75), // 错误红
+                  ),
+                );
+              }
+              resetState();
+            }
+          }
+        }
+      });
+
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) {
+          return AlertDialog(
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            content: StatefulBuilder(
+              builder: (context, setStepState) {
+                dialogSetState = setStepState;
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.warning_amber_rounded, color: Color(0xFFD49A6A), size: 70), // 焦糖橙
+                    const SizedBox(height: 20),
+                    const Text(
+                      "Confirm sending emergency notification?",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Color(0xFF2B2B2B)),
+                    ),
+                    const SizedBox(height: 25),
+                    Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        SizedBox(
+                          width: 80, height: 80,
+                          child: CircularProgressIndicator(
+                            value: countdown / 10,
+                            strokeWidth: 6,
+                            backgroundColor: Colors.grey.shade200,
+                            valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFD49A6A)), // 焦糖橙
+                          ),
+                        ),
+                        Text(
+                          "$countdown",
+                          style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Color(0xFF2B2B2B)),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 30),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF8B5E4A),
+                          side: const BorderSide(color: Color(0xFF8B5E4A)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        onPressed: () {
+                          resetState();
+                          Navigator.pop(context);
+                        },
+                        child: const Text("Cancel Emergency"),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          );
+        },
+      );
+    }
   }
 
   Widget buildServiceItem({
@@ -257,7 +414,6 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                   width: double.infinity,
                   child: ElevatedButton(
                     onPressed: () {
-                      // 🔥 跳转到 EventCalendarScreen
                       Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -406,7 +562,6 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                 color: const Color(0xFF758BFD),
                 label: "Events",
                 onTap: () {
-                  // 🔥 跳转到 EventCalendarScreen
                   Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -421,9 +576,12 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                 color: const Color(0xFFFF5A5A),
                 label: "SOS",
                 onTap: () {
-                  ScaffoldMessenger.of(
+                  Navigator.push(
                     context,
-                  ).showSnackBar(const SnackBar(content: Text("SOS clicked")));
+                    MaterialPageRoute(
+                      builder: (context) => EmergencyForm(),
+                    ),
+                  );
                 },
               ),
             ],
@@ -455,16 +613,6 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
   }
 
   Widget buildChatsTab() {
-    // const String roomId = 'community_chat';
-    // const String communityName = 'Condo Community';
-    // final String currentUser = Supabase.instance.client.auth.currentUser?.email ?? 'guest';
-    //
-    // return CommunityChatScreen(
-    //   roomId: roomId,
-    //   communityName: communityName,
-    //   currentUserId: currentUser,
-    //   currentUser: currentUser,
-    // );
     return CommunityChatsListScreen();
   }
 
@@ -558,6 +706,25 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     return Scaffold(
       backgroundColor: bgColor,
       body: SafeArea(child: getCurrentPage()),
+
+      // 🔥 同步 Admin Dashboard 的带倒计时悬浮按钮
+      floatingActionButton: SizedBox(
+        width: 65,
+        height: 65,
+        child: FloatingActionButton(
+          onPressed: handleEmergency,
+          backgroundColor: isEmergency ? Colors.red : (isWaiting ? Colors.orange : Colors.red),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(60)),
+          elevation: 6,
+          child: Icon(
+            // 这里用 sos_rounded 或 warning 都可以，我用 sos_rounded 更清晰
+            isEmergency ? Icons.warning : (isWaiting ? Icons.access_time : Icons.sos_rounded),
+            size: 32, color: Colors.white,
+          ),
+        ),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+
       bottomNavigationBar: Container(
         margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         decoration: BoxDecoration(

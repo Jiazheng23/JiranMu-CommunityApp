@@ -148,11 +148,14 @@ class _AdminEmergencyPageState extends State<AdminEmergencyPage> {
   }
 
   void subscribeRealtime() {
-    supabase.channel('emergency-updates-${widget.emergency['emergency_id']}').onPostgresChanges(
+    // 假设你的主键是 id（如果是 emergency_id 请自行替换）
+    final emergencyId = widget.emergency['id'] ?? widget.emergency['emergency_id'];
+
+    supabase.channel('emergency-updates-$emergencyId').onPostgresChanges(
         event: PostgresChangeEvent.update,
         schema: 'public',
         table: 'emergency',
-        filter: PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'emergency_id', value: widget.emergency['emergency_id'].toString()),
+        filter: PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'id', value: emergencyId.toString()), // 注意主键名字
         callback: (payload) {
           final newData = payload.newRecord;
           if (!mounted) return;
@@ -208,14 +211,14 @@ class _AdminEmergencyPageState extends State<AdminEmergencyPage> {
         builder: (context) => const Center(child: CircularProgressIndicator()),
       );
 
-      final String emergencyId = widget.emergency['emergency_id'].toString();
-      final String fileName = 'evidence_$emergencyId\_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final String emergencyId = (widget.emergency['id'] ?? widget.emergency['emergency_id']).toString();
+      final String fileName = 'resolution_$emergencyId\_${DateTime.now().millisecondsSinceEpoch}.jpg';
       final String filePath = 'records/$fileName';
 
       // 获取当前管理员邮箱作为记录人，如果没有就写 Admin
       final String adminName = supabase.auth.currentUser?.email ?? 'Admin';
 
-      // 1. 上传图片
+      // 1. 上传图片到 storage (假设你用的桶名叫 emergency_evidence)
       await supabase.storage.from('emergency_evidence').upload(
         filePath,
         _evidencePhoto!,
@@ -225,17 +228,21 @@ class _AdminEmergencyPageState extends State<AdminEmergencyPage> {
       // 2. 获取图片公开链接
       final String publicUrl = supabase.storage.from('emergency_evidence').getPublicUrl(filePath);
 
-      // 3. 更新数据库：包含所有必须字段
+      // 3. 更新数据库：🚨 保存到 admin_resolution_url 字段
       await supabase.from('emergency').update({
         'status': 'solved',
-        'evidence_url': publicUrl,
+        'admin_resolution_url': publicUrl, // 🔥 这里改为了 admin 专属的字段
         'solved_at': DateTime.now().toIso8601String(),
         'solved_by': adminName,
-      }).eq('emergency_id', emergencyId);
+      }).eq('id', emergencyId); // 这里用的是 id，如果是 emergency_id 请自行替换
 
       if (mounted) {
         setState(() {
           currentStatus = 'solved';
+          // 更新本地数据，以便立刻展示
+          widget.emergency['admin_resolution_url'] = publicUrl;
+          widget.emergency['solved_by'] = adminName;
+          widget.emergency['solved_at'] = DateTime.now().toIso8601String();
         });
         Navigator.pop(context); // 关掉加载圈
 
@@ -319,6 +326,33 @@ class _AdminEmergencyPageState extends State<AdminEmergencyPage> {
                     const SizedBox(height: 30),
 
                     // ==========================================
+                    // 📸 新增：展示居民报警时上传的证据图
+                    // ==========================================
+                    if (widget.emergency['report_evidence_url'] != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 30.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text("Resident's Report Photo", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                            const SizedBox(height: 10),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(10),
+                              child: Image.network(
+                                widget.emergency['report_evidence_url'],
+                                width: double.infinity,
+                                height: 200,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) => Container(
+                                  height: 150, color: Colors.grey[200], child: const Center(child: Text("Failed to load resident photo")),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                    // ==========================================
                     // 🔍 UI 分支：结案报告 VS 处理面板
                     // ==========================================
                     if (currentStatus == 'solved')
@@ -345,14 +379,14 @@ class _AdminEmergencyPageState extends State<AdminEmergencyPage> {
                             const SizedBox(height: 8),
                             Text("Solved Time: ${widget.emergency['solved_at']?.toString().substring(0, 16).replaceFirst('T', ' ') ?? 'N/A'}", style: const TextStyle(fontSize: 16)),
                             const SizedBox(height: 20),
-                            const Text("Evidence Photo:", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                            const Text("Resolution Photo:", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                             const SizedBox(height: 10),
-                            // 显示数据库中的照片
-                            if (widget.emergency['evidence_url'] != null)
+                            // 🔥 这里改成了读取 admin_resolution_url
+                            if (widget.emergency['admin_resolution_url'] != null)
                               ClipRRect(
                                 borderRadius: BorderRadius.circular(10),
                                 child: Image.network(
-                                  widget.emergency['evidence_url'],
+                                  widget.emergency['admin_resolution_url'],
                                   width: double.infinity,
                                   height: 250,
                                   fit: BoxFit.cover,
