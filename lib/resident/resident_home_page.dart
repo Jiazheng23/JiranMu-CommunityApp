@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../admin/request/event/event_calendar_screen.dart';
+import '../event/screen/event_calendar_screen.dart';
 
 class ResidentHomePage extends StatefulWidget {
   const ResidentHomePage({super.key});
