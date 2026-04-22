@@ -1,3 +1,5 @@
+import 'package:intl/intl.dart';
+
 class CommunityEvent {
   final String id;
   final String title;
@@ -8,9 +10,9 @@ class CommunityEvent {
   final String endTime;
   final String? imageUrl;
   final String status;
-  final String? rejectReason; // NEW FIELD
-  final String? createdBy;
-  final String createdByDisplayName;
+  final String? rejectReason;
+  final String? createdBy; // This will hold the UID
+  final String createdByDisplayName; // This will hold the full_name
   final bool isPrivate;
   final int participants;
   final int maxCapacity;
@@ -25,7 +27,7 @@ class CommunityEvent {
     required this.endTime,
     this.imageUrl,
     required this.status,
-    this.rejectReason, // ADDED
+    this.rejectReason,
     this.createdBy,
     required this.createdByDisplayName,
     required this.isPrivate,
@@ -33,38 +35,52 @@ class CommunityEvent {
     required this.maxCapacity,
   });
 
+  /// Factory to convert Supabase JSON to CommunityEvent Object
   factory CommunityEvent.fromJson(Map<String, dynamic> json) {
+    // Some queries return nested 'requests' objects depending on your join logic
     final masterRequest = json['requests'] is Map ? json['requests'] : {};
 
     return CommunityEvent(
       id: (json['id'] ?? json['request_id'] ?? masterRequest['request_id'] ?? '').toString(),
-      title: json['event_title'] ?? json['title'] ?? 'Untitled Event',
-      description: json['description'] ?? masterRequest['description'] ?? '',
-      location: json['location'] ?? 'No Location',
+      title: json['title'] ?? json['event_title'] ?? 'Untitled Event',
+      description: json['description'] ?? masterRequest['description'] ?? 'No description provided.',
+      location: json['location'] ?? masterRequest['location'] ?? 'No Location',
+
+      // Date Parsing
       eventDate: json['event_date'] != null
           ? DateTime.parse(json['event_date'])
           : (json['date'] != null
           ? DateTime.parse(json['date'])
           : DateTime.now()),
-      startTime: _formatTime(json['start_time']),
-      endTime: _formatTime(json['end_time']),
-      imageUrl: json['image_url'],
-      status: masterRequest['status'] ?? json['status'] ?? 'pending',
 
-      // MAPPING REJECT REASON
-      rejectReason: masterRequest['reject_reason'] ?? json['reject_reason'],
+      // Time Formatting using helper
+      startTime: _formatTime(json['start_time'] ?? masterRequest['start_time']),
+      endTime: _formatTime(json['end_time'] ?? masterRequest['end_time']),
 
-      createdBy: masterRequest['user_id'] ?? json['user_id'],
+      imageUrl: json['image_url'] ?? masterRequest['image_url'],
+      status: json['status'] ?? masterRequest['status'] ?? 'pending',
+
+      // Mapping Reject Reason (from admin_new decisions)
+      rejectReason: json['reject_reason'] ?? masterRequest['reject_reason'],
+
+      // User Identification
+      createdBy: (json['created_by'] ?? json['user_id'] ?? masterRequest['user_id'])?.toString(),
+
+      // Pulling the full_name we passed from the Calendar/Create screen
       createdByDisplayName: json['created_by_name'] ?? 'Resident',
+
       isPrivate: json['is_private'] ?? false,
       participants: json['participants'] ?? 0,
       maxCapacity: json['max_capacity'] ?? 20,
     );
   }
 
+  /// Helper to ensure time is always HH:mm
   static String _formatTime(dynamic time) {
     if (time == null) return "00:00";
     String t = time.toString();
+
+    // If Supabase returns HH:mm:ss, we strip the seconds
     if (t.contains(':')) {
       final parts = t.split(':');
       if (parts.length >= 2) {
@@ -74,11 +90,15 @@ class CommunityEvent {
     return t;
   }
 
+  /// Helper getter for UI
   bool get isFull => participants >= maxCapacity;
 
+  /// Formats the date for display (e.g., 12 Oct 2026)
+  String get formattedDate => DateFormat('dd MMM yyyy').format(eventDate);
+
+  /// Convert Object back to JSON for database updates
   Map<String, dynamic> toJson() {
     return {
-      'id': id,
       'title': title,
       'description': description,
       'location': location,
@@ -87,7 +107,7 @@ class CommunityEvent {
       'end_time': endTime,
       'image_url': imageUrl,
       'status': status,
-      'reject_reason': rejectReason, // ADDED
+      'reject_reason': rejectReason,
       'created_by_name': createdByDisplayName,
       'is_private': isPrivate,
       'max_capacity': maxCapacity,

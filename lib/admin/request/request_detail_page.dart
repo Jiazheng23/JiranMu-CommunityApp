@@ -14,7 +14,17 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
   final supabase = Supabase.instance.client;
   final TextEditingController reasonController = TextEditingController();
 
-  // 辅助函数 (放到上面方便其他方法调用)
+  Future<String> _getAdminIdentifier() async {
+    try {
+      final user = supabase.auth.currentUser;
+      if (user == null) return "Unknown Admin";
+      final adminData = await supabase.from('admin_new').select('full_name').eq('email', user.email!).maybeSingle();
+      return adminData?['full_name'] ?? user.email ?? "Unknown Admin";
+    } catch (e) {
+      return supabase.auth.currentUser?.email ?? "Unknown Admin";
+    }
+  }
+
   Map? extractSubData(dynamic raw) {
     if (raw == null) return null;
     if (raw is List && raw.isNotEmpty) return raw[0];
@@ -22,20 +32,16 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
     return null;
   }
 
+  // --- ACTIONS (APPROVE/REJECT) ---
   Future<void> approve() async {
     try {
-      final String requestId = widget.data['request_id'];
+      final String requestId = widget.data['request_id'].toString();
       final String userId = widget.data['user_id'];
       final String type = widget.data['type'];
+      final String adminName = await _getAdminIdentifier();
 
-      print("--- 开始审批流程 ---");
-      print("Request ID: $requestId, User ID: $userId, Type: $type");
-
-      // 1. 处理居民 (Resident)
       if (type == 'resident') {
         final subData = extractSubData(widget.data['resident_requests']);
-        print("抓取到的居民子表数据: $subData");
-
         if (subData != null) {
           await supabase.from('resident').upsert({
             'id': userId,
@@ -49,238 +55,275 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
             'resident_type': 'owner',
           });
         }
-        await supabase.from('requests').update({
-          'status': 'approved',
-          'respond_time': DateTime.now().toIso8601String(),
-          'reject_reason': null,
-        }).eq('request_id', requestId);
-      }
-
-
-      // 2. 处理管理员 (Admin)
-      else if (type == 'admin') {
-        final subData = extractSubData(widget.data['admin_requests']);
-
+      } else if (type == 'booking') {
+        final subData = extractSubData(widget.data['event_requests']);
         if (subData != null) {
-          await supabase.from('admin_new').upsert({
-            'id': userId,
-            'full_name': subData['full_name'],
-            'email': subData['email'],
-            'role': 'admin',
-            'status': 'active',
+          await supabase.from('events').insert({
+            'id': requestId,
+            'title': subData['event_title'] ?? widget.data['title'] ?? "New Event",
+            'description': subData['description'] ?? widget.data['description'] ?? "",
+            'location': subData['location'] ?? "Community Hall",
+            'event_date': subData['date'] ?? DateTime.now().toIso8601String(),
+            'start_time': subData['start_time'],
+            'end_time': subData['end_time'],
+            'image_url': subData['image_url'],
+            'user_id': userId,
+            'created_by_name': subData['created_by_name'] ?? subData['full_name'] ?? "Resident",
+            'is_private': subData['is_private'] ?? false,
+            'created_at': DateTime.now().toIso8601String(),
+            'max_capacity': subData['max_capacity'] ?? 20,
+            'participants': 0,
           });
         }
-
-        await supabase.from('requests').update({
-          'status': 'approved',
-          'respond_time': DateTime.now().toIso8601String(),
-          'reject_reason': null,
-        }).eq('request_id', requestId);
       }
 
-      // 3. Facility approval
-      else if (type == 'facility') {
-        final subData = extractSubData(widget.data['facility_requests']);
+      await supabase.from('requests').update({
+        'status': 'approved',
+        'respond_time': DateTime.now().toIso8601String(),
+        'processed_by': adminName,
+      }).eq('request_id', requestId);
 
-        if (subData == null) {
-          throw Exception('Facility request detail not found.');
-        }
-
-        final facilityId = subData['facility_id'];
-        final bookingDate = subData['booking_date'];
-        final startTime = subData['start_time'];
-        final endTime = subData['end_time'];
-        final slotLabel = subData['slot_label'];
-        final participants = subData['participants'] ?? 1;
-        final purpose = subData['purpose'];
-
-        // overlap check
-        final existingBookings = await supabase
-            .from('facility_bookings')
-            .select('id, start_time, end_time')
-            .eq('facility_id', facilityId)
-            .eq('booking_date', bookingDate)
-            .eq('status', 'approved');
-
-        bool hasOverlap = false;
-
-        for (final row in existingBookings) {
-          final existingStart = row['start_time']?.toString();
-          final existingEnd = row['end_time']?.toString();
-
-          if (existingStart == null || existingEnd == null) continue;
-
-          final overlap = !(
-              endTime.compareTo(existingStart) <= 0 ||
-                  startTime.compareTo(existingEnd) >= 0
-          );
-
-          if (overlap) {
-            hasOverlap = true;
-            break;
-          }
-        }
-
-        if (hasOverlap) {
-          throw Exception('This facility time range is already booked.');
-        }
-
-        String? bookingId;
-
-        try {
-          final bookingResponse = await supabase
-              .from('facility_bookings')
-              .insert({
-            'request_id': requestId,
-            'facility_id': facilityId,
-            'resident_id': userId,
-            'booking_date': bookingDate,
-            'start_time': startTime,
-            'end_time': endTime,
-            'slot_label': slotLabel,
-            'participants': participants,
-            'purpose': purpose,
-            'status': 'approved',
-          })
-              .select('id')
-              .single();
-
-          bookingId = bookingResponse['id'] as String;
-
-          await supabase.from('requests').update({
-            'status': 'approved',
-            'respond_time': DateTime.now().toIso8601String(),
-            'reject_reason': null,
-          }).eq('request_id', requestId);
-        } catch (e) {
-          if (bookingId != null) {
-            await supabase
-                .from('facility_bookings')
-                .delete()
-                .eq('id', bookingId);
-          }
-          rethrow;
-        }
-      }
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Approved and data migrated!")),
-        );
-        Navigator.pop(context);
-      }
+      if (mounted) Navigator.pop(context);
     } catch (e) {
-      print("‼️ 审批发生崩溃: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Approve Error: $e")),
-        );
-      }
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
     }
   }
 
   Future<void> reject() async {
     try {
+      final String adminName = await _getAdminIdentifier();
       await supabase.from('requests').update({
         'status': 'rejected',
         'reject_reason': reasonController.text,
         'respond_time': DateTime.now().toIso8601String(),
+        'processed_by': adminName,
       }).eq('request_id', widget.data['request_id']);
-
       if (mounted) Navigator.pop(context);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Reject Error: $e")),
-        );
-      }
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
     }
   }
 
-  Widget buildInfo(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
+  // --- THE "ANTI-RAW" UI TILE HELPER ---
+  Widget _buildDetailTile(String key, dynamic value, {String? endTime}) {
+    String k = key.toLowerCase();
+    String displayValue = value?.toString() ?? "-";
+
+    // 1. FORMAT IMAGE
+    if (k.contains('image_url') && displayValue.startsWith('http')) {
+      return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text("$label: ", style: const TextStyle(fontWeight: FontWeight.bold)),
-          Expanded(child: Text(value)),
+          _buildLabel(Icons.image_outlined, "EVENT POSTER"),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Image.network(
+              displayValue,
+              height: 180,
+              width: double.infinity,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Container(height: 100, color: Colors.grey[200], child: const Icon(Icons.broken_image)),
+            ),
+          ),
         ],
-      ),
+      );
+    }
+
+    // 2. COMBINED TIME (Start Time -> End Time)
+    if (k.contains('start_time') && endTime != null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildLabel(Icons.access_time_rounded, "EVENT SCHEDULE"),
+          const SizedBox(height: 6),
+          Padding(
+            padding: const EdgeInsets.only(left: 24),
+            child: Row(
+              children: [
+                Text(displayValue, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 10),
+                  child: Icon(Icons.arrow_forward_rounded, size: 14, color: Colors.grey),
+                ),
+                Text(endTime, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
+    // 3. FORMAT PRIVACY
+    if (k.contains('is_private')) {
+      bool isPrivate = displayValue == 'true';
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildLabel(Icons.visibility_off_outlined, "VISIBILITY"),
+          const SizedBox(height: 6),
+          Container(
+            margin: const EdgeInsets.only(left: 24),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: isPrivate ? Colors.red.shade50 : Colors.green.shade50,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(isPrivate ? Icons.lock : Icons.public, size: 12, color: isPrivate ? Colors.red : Colors.green),
+                const SizedBox(width: 4),
+                Text(isPrivate ? "PRIVATE" : "PUBLIC", style: TextStyle(color: isPrivate ? Colors.red : Colors.green, fontWeight: FontWeight.bold, fontSize: 11)),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
+    // 4. DEFAULT TEXT (Clean Label + Value)
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildLabel(_getIconForKey(k), key.replaceAll('_', ' ').toUpperCase()),
+        const SizedBox(height: 6),
+        Padding(
+          padding: const EdgeInsets.only(left: 24),
+          child: Text(displayValue, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Color(0xFF263238))),
+        ),
+      ],
     );
+  }
+
+  Widget _buildLabel(IconData icon, String label) {
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: const Color(0xFF6D4C41)),
+        const SizedBox(width: 8),
+        Text(label, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.grey.shade500, letterSpacing: 0.8)),
+      ],
+    );
+  }
+
+  IconData _getIconForKey(String k) {
+    if (k.contains('phone')) return Icons.phone_android_rounded;
+    if (k.contains('email')) return Icons.mail_outline_rounded;
+    if (k.contains('date')) return Icons.calendar_today_rounded;
+    if (k.contains('location')) return Icons.place_outlined;
+    if (k.contains('name')) return Icons.person_outline_rounded;
+    if (k.contains('capacity')) return Icons.groups_rounded;
+    return Icons.info_outline_rounded;
   }
 
   @override
   Widget build(BuildContext context) {
     final data = widget.data;
     final type = data['type'];
+    final status = data['status'] ?? 'pending';
 
-    // 提取子表数据供展示
     Map? details;
     if (type == 'admin') details = extractSubData(data['admin_requests']);
-    if (type == 'resident') details = extractSubData(data['resident_requests']);
-    if (type == 'visitor') details = extractSubData(data['visitor_requests']);
-    if (type == 'booking') details = extractSubData(data['facility_requests']);
-    if (type == 'complaint') details = extractSubData(data['event_requests']);
-
+    else if (type == 'resident') details = extractSubData(data['resident_requests']);
+    else if (type == 'visitor') details = extractSubData(data['visitor_requests']);
+    else if (type == 'booking') details = extractSubData(data['event_requests']);
+    else if (type == 'facility') details = extractSubData(data['facility_requests']);
 
     return Scaffold(
-      appBar: AppBar(title: const Text("Request Detail")),
+      backgroundColor: const Color(0xFFF5F7F9),
+      appBar: AppBar(title: const Text("Review Request", style: TextStyle(fontWeight: FontWeight.bold)), centerTitle: true, backgroundColor: Colors.white, foregroundColor: Colors.black, elevation: 0),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            buildInfo("Request Type", type?.toString().toUpperCase() ?? "-"),
-            buildInfo("Title", data['title'] ?? "-"),
-            buildInfo("Description", data['description'] ?? "-"),
-            buildInfo("Status", data['status'] ?? "-"),
+            _buildHeader(data, type),
+            const SizedBox(height: 30),
 
-            const Divider(height: 30, thickness: 1),
-            const Text("Details:", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            const SizedBox(height: 10),
+            if (details != null) ...[
+              const Row(children: [
+                Icon(Icons.assignment_outlined, size: 18, color: Colors.blueGrey),
+                SizedBox(width: 8),
+                Text("SPECIFIC DETAILS", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12, color: Colors.blueGrey, letterSpacing: 1.2)),
+              ]),
+              const Divider(height: 24),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.grey.shade200)),
+                child: Wrap(
+                  spacing: 20,
+                  runSpacing: 25,
+                  children: details.entries
+                      .where((e) => e.key != 'request_id' && e.key != 'id' && e.key != 'end_time') // We skip end_time here because we merge it with start_time
+                      .map((e) {
+                    bool isFullWidth = e.key.toLowerCase().contains('image') || e.key.toLowerCase().contains('description') || e.key.toLowerCase().contains('start_time');
 
-            if (details != null)
-              ...details.entries
-                  .where((e) => e.key != 'request_id') // 隐藏数据库ID
-                  .map((e) => buildInfo(e.key.toString(), e.value?.toString() ?? "-")),
-
-            const SizedBox(height: 20),
-
-            if (data['status'] == 'pending') ...[
-              TextField(
-                controller: reasonController,
-                decoration: const InputDecoration(
-                  labelText: "Reject Reason (if any)",
-                  border: OutlineInputBorder(),
+                    return SizedBox(
+                      width: isFullWidth ? double.infinity : (MediaQuery.of(context).size.width - 100) / 2,
+                      child: _buildDetailTile(
+                        e.key,
+                        e.value,
+                        endTime: e.key == 'start_time' ? details!['end_time']?.toString() : null,
+                      ),
+                    );
+                  }).toList(),
                 ),
               ),
-              const SizedBox(height: 20),
-              Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: approve,
-                      style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
-                      child: const Text("Approve"),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: reject,
-                      style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
-                      child: const Text("Reject"),
-                    ),
-                  ),
-                ],
-              )
-            ] else if (data['status'] == 'rejected') ...[
-              buildInfo("Reject Reason", data['reject_reason'] ?? "No reason provided"),
-            ]
+            ],
+
+            const SizedBox(height: 30),
+            _buildActionSection(status),
           ],
         ),
       ),
     );
+  }
+
+  Widget _buildHeader(Map data, String type) {
+    return Container(
+      width: double.infinity, padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 20)]),
+      child: Column(children: [
+        Chip(label: Text(type.toUpperCase(), style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF6D4C41))), backgroundColor: const Color(0xFF6D4C41).withOpacity(0.1)),
+        const SizedBox(height: 12),
+        Text(data['title'] ?? "No Title", style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        Text(data['description'] ?? "No description", style: TextStyle(color: Colors.grey.shade600, height: 1.4), textAlign: TextAlign.center),
+      ]),
+    );
+  }
+
+  Widget _buildActionSection(String status) {
+    if (status != 'pending') {
+      return Container(
+        padding: const EdgeInsets.all(20), width: double.infinity,
+        decoration: BoxDecoration(color: status == 'approved' ? Colors.green.shade50 : Colors.red.shade50, borderRadius: BorderRadius.circular(16)),
+        child: Column(children: [
+          Icon(status == 'approved' ? Icons.check_circle : Icons.cancel, color: status == 'approved' ? Colors.green : Colors.red, size: 30),
+          const SizedBox(height: 8),
+          Text("REQUEST ${status.toUpperCase()}", style: TextStyle(fontWeight: FontWeight.w900, color: status == 'approved' ? Colors.green : Colors.red)),
+          if (widget.data['processed_by'] != null) Text("By: ${widget.data['processed_by']}", style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic)),
+        ]),
+      );
+    }
+    return Column(children: [
+      TextField(
+          controller: reasonController,
+          maxLines: 2,
+          decoration: InputDecoration(
+            hintText: "Reason for rejection (optional)",
+            filled: true,
+            fillColor: Colors.white,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade200)),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade200)),
+          )
+      ),
+      const SizedBox(height: 20),
+      Row(children: [
+        Expanded(child: ElevatedButton(onPressed: approve, style: ElevatedButton.styleFrom(backgroundColor: Colors.green, padding: const EdgeInsets.all(16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))), child: const Text("APPROVE", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)))),
+        const SizedBox(width: 10),
+        Expanded(child: ElevatedButton(onPressed: reject, style: ElevatedButton.styleFrom(backgroundColor: Colors.red, padding: const EdgeInsets.all(16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))), child: const Text("REJECT", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)))),
+      ]),
+    ]);
   }
 }
