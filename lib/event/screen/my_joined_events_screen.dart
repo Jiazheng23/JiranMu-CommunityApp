@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import '../model/event_model.dart';
-import '../service/event_service.dart';
+import 'package:assignment/event/model/event_model.dart';
+import 'package:assignment/event/service/event_service.dart';
 import 'event_details_screen.dart';
 
 // ─────────────────────────────────────────────

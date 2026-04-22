@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:table_calendar/table_calendar.dart';
-import '../model/event_model.dart';
-import '../service/event_service.dart';
+import 'package:assignment/event/model/event_model.dart';
+import 'package:assignment/event/service/event_service.dart';
 import 'create_event_screen.dart';
 import 'resident_event_history_screen.dart';
 import 'my_joined_events_screen.dart';

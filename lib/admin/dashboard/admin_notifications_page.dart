@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:timeago/timeago.dart' as timeago;
+import '../emergency/emergency_list_page.dart';
+import '../request/request_list_page.dart';
 
 class AdminNotificationsPage extends StatefulWidget {
   const AdminNotificationsPage({super.key});
@@ -174,8 +176,58 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
                   ),
                 ),
                 onTap: () {
-                  // TODO: 可以在这里添加导航到详情页的逻辑
-                  // Navigator.push(context, MaterialPageRoute(builder: (_) => RequestDetailPage(data: item)));
+                  final dbType = type.toLowerCase();
+                  String? targetPageType;
+                  Widget? emergencyPage;
+
+                  // 1. 把数据库里的 type 转换成你 RequestListPage 需要的 type
+                  switch (dbType) {
+                    case 'resident':
+                    case 'user':
+                      targetPageType = "Users";
+                      break;
+                    case 'event':
+                      targetPageType = "Event";
+                      break;
+                    case 'facility':
+                    case 'booking':
+                      targetPageType = "Facilities";
+                      break;
+                    case 'visitor':
+                      targetPageType = "Visitor";
+                      break;
+                    case 'emergency':
+                    case 'complaint':
+                    // 紧急情况你之前是单独的页面
+                      emergencyPage = const EmergencyListPage();
+                      break;
+                    default:
+                      targetPageType = null;
+                  }
+
+                  // 2. 执行跳转逻辑
+                  if (targetPageType != null) {
+                    // 跳转到通用的 RequestListPage
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => RequestListPage(type: targetPageType!),
+                      ),
+                    ).then((_) => _fetchNotifications()); // 处理完退回来时，刷新通知列表
+                  } else if (emergencyPage != null) {
+                    // 跳转到紧急页面
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => emergencyPage!,
+                      ),
+                    ).then((_) => _fetchNotifications()); // 处理完退回来时，刷新通知列表
+                  } else {
+                    // 如果都没匹配上
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text("Unknown request type.")),
+                    );
+                  }
                 },
               ),
             );
