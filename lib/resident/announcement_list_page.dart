@@ -19,6 +19,7 @@ class _AnnouncementListPageState extends State<AnnouncementListPage> {
     _fetchAllAnnouncements();
   }
 
+  // 获取所有公告
   Future<void> _fetchAllAnnouncements() async {
     try {
       final response = await Supabase.instance.client
@@ -58,18 +59,27 @@ class _AnnouncementListPageState extends State<AnnouncementListPage> {
 
   @override
   Widget build(BuildContext context) {
+    // 🎨 你的核心主题色
+    final Color primaryColor = const Color(0xFF9A4B3C);
+    final Color bgColor = const Color(0xFFF5F1ED);
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F1ED),
+      backgroundColor: bgColor,
+      // 🔥 统一替换为棕色 AppBar
       appBar: AppBar(
-        title: const Text("All Announcements", style: TextStyle(color: Colors.black87, fontSize: 18)),
-        backgroundColor: Colors.transparent,
+        title: const Text(
+            "All Announcements",
+            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 18)
+        ),
+        backgroundColor: primaryColor,
+        foregroundColor: Colors.white, // 返回键和文字变白
         elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.black87),
+        centerTitle: true,
       ),
       body: isLoading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF9A4B3C)))
+          ? Center(child: CircularProgressIndicator(color: primaryColor))
           : announcements.isEmpty
-          ? const Center(child: Text("No announcements found."))
+          ? const Center(child: Text("No announcements found.", style: TextStyle(color: Colors.black54)))
           : ListView.separated(
         padding: const EdgeInsets.all(20),
         itemCount: announcements.length,
@@ -93,48 +103,77 @@ class _AnnouncementListPageState extends State<AnnouncementListPage> {
                 ),
               ],
             ),
-            child: ListTile(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => AnnouncementDetailPage(announcement: announcement),
+            // 🔥 使用 Material 包裹，让点击出现水波纹动画
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => AnnouncementDetailPage(announcement: announcement),
+                    ),
+                  );
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 22,
+                        backgroundColor: isUrgent ? Colors.red.shade50 : const Color(0xFFEADFD6),
+                        child: Icon(
+                          isUrgent ? Icons.warning_amber_rounded : Icons.campaign_rounded,
+                          size: 22,
+                          color: isUrgent ? Colors.redAccent : primaryColor,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              title,
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF2B2B2B)),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 6),
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFEADFD6).withOpacity(0.5),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    category.toUpperCase(),
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      color: primaryColor,
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Text(
+                                  dateStr,
+                                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600, fontWeight: FontWeight.w500),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.chevron_right_rounded, color: Colors.black26),
+                    ],
                   ),
-                );
-              },
-              leading: CircleAvatar(
-                radius: 20,
-                backgroundColor: isUrgent ? Colors.red.shade50 : const Color(0xFFEADFD6),
-                child: Icon(
-                  isUrgent ? Icons.warning_amber_rounded : Icons.campaign_rounded,
-                  size: 20,
-                  color: isUrgent ? Colors.redAccent : const Color(0xFF9A4B3C),
                 ),
               ),
-              title: Text(
-                title,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              subtitle: Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Row(
-                  children: [
-                    Text(
-                      category.toUpperCase(),
-                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.black54),
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      dateStr,
-                      style: const TextStyle(fontSize: 11, color: Color(0xFF9A4B3C)),
-                    ),
-                  ],
-                ),
-              ),
-              trailing: const Icon(Icons.chevron_right, color: Colors.black26),
             ),
           );
         },
