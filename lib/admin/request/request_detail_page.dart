@@ -14,14 +14,17 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
   final supabase = Supabase.instance.client;
   final TextEditingController reasonController = TextEditingController();
 
-  // ── Design Tokens ──
-  static const Color bgColor = Color(0xFFF5F1ED);
-  static const Color primaryColor = Color(0xFF9A4B3C);
-  static const Color textDark = Color(0xFF2B2B2B);
+  Future<String> _getAdminIdentifier() async {
+    try {
+      final user = supabase.auth.currentUser;
+      if (user == null) return "Unknown Admin";
+      final adminData = await supabase.from('admin_new').select('full_name').eq('email', user.email!).maybeSingle();
+      return adminData?['full_name'] ?? user.email ?? "Unknown Admin";
+    } catch (e) {
+      return supabase.auth.currentUser?.email ?? "Unknown Admin";
+    }
+  }
 
-  bool _isProcessing = false; // 防连点/加载状态
-
-  // 辅助函数
   Map? extractSubData(dynamic raw) {
     if (raw == null) return null;
     if (raw is List && raw.isNotEmpty) return raw[0];
@@ -29,36 +32,14 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
     return null;
   }
 
-  // 格式化 Key (例如: "unit_number" -> "Unit Number")
-  String _formatKey(String key) {
-    return key.split('_').map((word) {
-      if (word.isEmpty) return '';
-      return word[0].toUpperCase() + word.substring(1);
-    }).join(' ');
-  }
-
-  // 获取状态对应的颜色
-  Color _getStatusColor(String status) {
-    switch (status.toLowerCase()) {
-      case 'approved':
-        return const Color(0xFF6B8E6B);
-      case 'rejected':
-        return const Color(0xFFE57373);
-      case 'pending':
-        return const Color(0xFFE6A822); // 暖黄色
-      default:
-        return Colors.grey;
-    }
-  }
-
+  // --- ACTIONS (APPROVE/REJECT) ---
   Future<void> approve() async {
-    setState(() => _isProcessing = true);
     try {
-      final String requestId = widget.data['request_id'];
+      final String requestId = widget.data['request_id'].toString();
       final String userId = widget.data['user_id'];
       final String type = widget.data['type'];
+      final String adminName = await _getAdminIdentifier();
 
-      // 1. 处理居民 (Resident)
       if (type == 'resident') {
         final subData = extractSubData(widget.data['resident_requests']);
         if (subData != null) {
@@ -74,258 +55,165 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
             'resident_type': 'owner',
           });
         }
-        await supabase.from('requests').update({
-          'status': 'approved',
-          'respond_time': DateTime.now().toIso8601String(),
-          'reject_reason': null,
-        }).eq('request_id', requestId);
-      }
-
-      // 2. 处理管理员 (Admin)
-      else if (type == 'admin') {
-        final subData = extractSubData(widget.data['admin_requests']);
+      } else if (type == 'booking') {
+        final subData = extractSubData(widget.data['event_requests']);
         if (subData != null) {
-          await supabase.from('admin_new').upsert({
-            'id': userId,
-            'full_name': subData['full_name'],
-            'email': subData['email'],
-            'role': 'admin',
-            'status': 'active',
+          await supabase.from('events').insert({
+            'id': requestId,
+            'title': subData['event_title'] ?? widget.data['title'] ?? "New Event",
+            'description': subData['description'] ?? widget.data['description'] ?? "",
+            'location': subData['location'] ?? "Community Hall",
+            'event_date': subData['date'] ?? DateTime.now().toIso8601String(),
+            'start_time': subData['start_time'],
+            'end_time': subData['end_time'],
+            'image_url': subData['image_url'],
+            'user_id': userId,
+            'created_by_name': subData['created_by_name'] ?? subData['full_name'] ?? "Resident",
+            'is_private': subData['is_private'] ?? false,
+            'created_at': DateTime.now().toIso8601String(),
+            'max_capacity': subData['max_capacity'] ?? 20,
+            'participants': 0,
           });
         }
-        await supabase.from('requests').update({
-          'status': 'approved',
-          'respond_time': DateTime.now().toIso8601String(),
-          'reject_reason': null,
-        }).eq('request_id', requestId);
       }
 
-      // 3. Facility approval
-      else if (type == 'facility') {
-        final subData = extractSubData(widget.data['facility_requests']);
-        if (subData == null) {
-          throw Exception('Facility request detail not found.');
-        }
+      await supabase.from('requests').update({
+        'status': 'approved',
+        'respond_time': DateTime.now().toIso8601String(),
+        'processed_by': adminName,
+      }).eq('request_id', requestId);
 
-        final facilityId = subData['facility_id'];
-        final bookingDate = subData['booking_date'];
-        final startTime = subData['start_time'];
-        final endTime = subData['end_time'];
-        final slotLabel = subData['slot_label'];
-        final participants = subData['participants'] ?? 1;
-        final purpose = subData['purpose'];
-
-        // overlap check
-        final existingBookings = await supabase
-            .from('facility_bookings')
-            .select('id, start_time, end_time')
-            .eq('facility_id', facilityId)
-            .eq('booking_date', bookingDate)
-            .eq('status', 'approved');
-
-        bool hasOverlap = false;
-        for (final row in existingBookings) {
-          final existingStart = row['start_time']?.toString();
-          final existingEnd = row['end_time']?.toString();
-          if (existingStart == null || existingEnd == null) continue;
-
-          final overlap = !(endTime.compareTo(existingStart) <= 0 || startTime.compareTo(existingEnd) >= 0);
-          if (overlap) {
-            hasOverlap = true;
-            break;
-          }
-        }
-
-        if (hasOverlap) {
-          throw Exception('This facility time range is already booked.');
-        }
-
-        String? bookingId;
-        try {
-          final bookingResponse = await supabase.from('facility_bookings').insert({
-            'request_id': requestId,
-            'facility_id': facilityId,
-            'resident_id': userId,
-            'booking_date': bookingDate,
-            'start_time': startTime,
-            'end_time': endTime,
-            'slot_label': slotLabel,
-            'participants': participants,
-            'purpose': purpose,
-            'status': 'approved',
-          }).select('id').single();
-
-          bookingId = bookingResponse['id'] as String;
-
-          await supabase.from('requests').update({
-            'status': 'approved',
-            'respond_time': DateTime.now().toIso8601String(),
-            'reject_reason': null,
-          }).eq('request_id', requestId);
-        } catch (e) {
-          if (bookingId != null) {
-            await supabase.from('facility_bookings').delete().eq('id', bookingId);
-          }
-          rethrow;
-        }
-      }
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Approved and data migrated!"), backgroundColor: Color(0xFF6B8E6B)),
-        );
-        Navigator.pop(context);
-      }
+      if (mounted) Navigator.pop(context);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Approve Error: $e"), backgroundColor: Colors.redAccent),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isProcessing = false);
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
     }
   }
 
-  // ── 弹出拒绝理由对话框 ──
-  Future<void> _showRejectDialog() async {
-    reasonController.clear(); // 每次打开清空输入框
-
-    await showDialog(
-      context: context,
-      barrierDismissible: false, // 点击外部不关闭，强制用户点击按钮
-      builder: (dialogContext) {
-        return AlertDialog(
-          backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Text(
-            "Reject Request",
-            style: TextStyle(fontWeight: FontWeight.bold, color: textDark, fontSize: 18),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                "Please provide a reason for rejecting this request. This is required.",
-                style: TextStyle(fontSize: 14, color: Colors.black54, height: 1.4),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: reasonController,
-                maxLines: 3,
-                autofocus: true, // 自动弹出键盘
-                style: const TextStyle(fontSize: 14, color: textDark),
-                decoration: InputDecoration(
-                  hintText: "Enter reject reason...",
-                  hintStyle: const TextStyle(color: Colors.black38, fontSize: 14),
-                  filled: true,
-                  fillColor: bgColor, // 使用页面的背景色，显得更有层次
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                  contentPadding: const EdgeInsets.all(16),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text("Cancel", style: TextStyle(color: Colors.black54, fontWeight: FontWeight.bold)),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                final reason = reasonController.text.trim();
-                if (reason.isEmpty) {
-                  // 必填校验
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Reject reason is required!"), backgroundColor: Colors.redAccent),
-                  );
-                  return;
-                }
-                // 校验通过，关闭弹窗并执行拒绝操作
-                Navigator.pop(dialogContext);
-                _executeReject(reason);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFE57373),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                elevation: 0,
-              ),
-              child: const Text("Confirm", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  // ── 实际执行拒绝数据库操作 ──
-  Future<void> _executeReject(String reason) async {
-    setState(() => _isProcessing = true);
+  Future<void> reject() async {
     try {
+      final String adminName = await _getAdminIdentifier();
       await supabase.from('requests').update({
         'status': 'rejected',
-        'reject_reason': reason, // 直接存入刚才填写的理由
+        'reject_reason': reasonController.text,
         'respond_time': DateTime.now().toIso8601String(),
+        'processed_by': adminName,
       }).eq('request_id', widget.data['request_id']);
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Request rejected successfully."), backgroundColor: Color(0xFFE57373)),
-        );
-        Navigator.pop(context); // 返回上一页
-      }
+      if (mounted) Navigator.pop(context);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Reject Error: $e"), backgroundColor: Colors.redAccent),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isProcessing = false);
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
     }
   }
 
-  // ── UI Components ──
+  // --- THE "ANTI-RAW" UI TILE HELPER ---
+  Widget _buildDetailTile(String key, dynamic value, {String? endTime}) {
+    String k = key.toLowerCase();
+    String displayValue = value?.toString() ?? "-";
 
-  Widget _buildInfoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: Row(
+    // 1. FORMAT IMAGE
+    if (k.contains('image_url') && displayValue.startsWith('http')) {
+      return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            flex: 2,
-            child: Text(
-              _formatKey(label),
-              style: const TextStyle(color: Colors.black54, fontSize: 13, fontWeight: FontWeight.w500),
-            ),
-          ),
-          Expanded(
-            flex: 3,
-            child: Text(
-              value.isEmpty ? "-" : value,
-              style: const TextStyle(color: textDark, fontWeight: FontWeight.w600, fontSize: 14, height: 1.4),
+          _buildLabel(Icons.image_outlined, "EVENT POSTER"),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Image.network(
+              displayValue,
+              height: 180,
+              width: double.infinity,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Container(height: 100, color: Colors.grey[200], child: const Icon(Icons.broken_image)),
             ),
           ),
         ],
-      ),
+      );
+    }
+
+    // 2. COMBINED TIME (Start Time -> End Time)
+    if (k.contains('start_time') && endTime != null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildLabel(Icons.access_time_rounded, "EVENT SCHEDULE"),
+          const SizedBox(height: 6),
+          Padding(
+            padding: const EdgeInsets.only(left: 24),
+            child: Row(
+              children: [
+                Text(displayValue, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 10),
+                  child: Icon(Icons.arrow_forward_rounded, size: 14, color: Colors.grey),
+                ),
+                Text(endTime, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
+    // 3. FORMAT PRIVACY
+    if (k.contains('is_private')) {
+      bool isPrivate = displayValue == 'true';
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildLabel(Icons.visibility_off_outlined, "VISIBILITY"),
+          const SizedBox(height: 6),
+          Container(
+            margin: const EdgeInsets.only(left: 24),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: isPrivate ? Colors.red.shade50 : Colors.green.shade50,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(isPrivate ? Icons.lock : Icons.public, size: 12, color: isPrivate ? Colors.red : Colors.green),
+                const SizedBox(width: 4),
+                Text(isPrivate ? "PRIVATE" : "PUBLIC", style: TextStyle(color: isPrivate ? Colors.red : Colors.green, fontWeight: FontWeight.bold, fontSize: 11)),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
+    // 4. DEFAULT TEXT (Clean Label + Value)
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildLabel(_getIconForKey(k), key.replaceAll('_', ' ').toUpperCase()),
+        const SizedBox(height: 6),
+        Padding(
+          padding: const EdgeInsets.only(left: 24),
+          child: Text(displayValue, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Color(0xFF263238))),
+        ),
+      ],
     );
   }
 
-  Widget _buildCard({required Widget child}) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, 2)),
-        ],
-      ),
-      child: child,
+  Widget _buildLabel(IconData icon, String label) {
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: const Color(0xFF6D4C41)),
+        const SizedBox(width: 8),
+        Text(label, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.grey.shade500, letterSpacing: 0.8)),
+      ],
     );
+  }
+
+  IconData _getIconForKey(String k) {
+    if (k.contains('phone')) return Icons.phone_android_rounded;
+    if (k.contains('email')) return Icons.mail_outline_rounded;
+    if (k.contains('date')) return Icons.calendar_today_rounded;
+    if (k.contains('location')) return Icons.place_outlined;
+    if (k.contains('name')) return Icons.person_outline_rounded;
+    if (k.contains('capacity')) return Icons.groups_rounded;
+    return Icons.info_outline_rounded;
   }
 
   @override
@@ -334,168 +222,108 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
     final type = data['type'];
     final status = data['status'] ?? 'pending';
 
-    // 提取子表数据供展示
     Map? details;
     if (type == 'admin') details = extractSubData(data['admin_requests']);
-    if (type == 'resident') details = extractSubData(data['resident_requests']);
-    if (type == 'visitor') details = extractSubData(data['visitor_requests']);
-    if (type == 'facility' || type == 'booking') details = extractSubData(data['facility_requests']);
-    if (type == 'complaint') details = extractSubData(data['event_requests']);
+    else if (type == 'resident') details = extractSubData(data['resident_requests']);
+    else if (type == 'visitor') details = extractSubData(data['visitor_requests']);
+    else if (type == 'booking') details = extractSubData(data['event_requests']);
+    else if (type == 'facility') details = extractSubData(data['facility_requests']);
 
     return Scaffold(
-      backgroundColor: bgColor,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        centerTitle: true,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: textDark),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: const Text(
-          "Request Detail",
-          style: TextStyle(color: textDark, fontWeight: FontWeight.bold, fontSize: 18),
-        ),
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // ── Section 1: Overview ──
-              const Text("Overview", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: textDark)),
-              const SizedBox(height: 12),
-              _buildCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: primaryColor.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            type?.toString().toUpperCase() ?? "UNKNOWN",
-                            style: const TextStyle(color: primaryColor, fontWeight: FontWeight.bold, fontSize: 11),
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: _getStatusColor(status).withOpacity(0.12),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            status.toString().toUpperCase(),
-                            style: TextStyle(color: _getStatusColor(status), fontWeight: FontWeight.bold, fontSize: 11),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      data['title'] ?? "No Title",
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDark),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      data['description'] ?? "No description provided.",
-                      style: const TextStyle(fontSize: 14, color: Colors.black54, height: 1.4),
-                    ),
-                  ],
+      backgroundColor: const Color(0xFFF5F7F9),
+      appBar: AppBar(title: const Text("Review Request", style: TextStyle(fontWeight: FontWeight.bold)), centerTitle: true, backgroundColor: Colors.white, foregroundColor: Colors.black, elevation: 0),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
+            _buildHeader(data, type),
+            const SizedBox(height: 30),
+
+            if (details != null) ...[
+              const Row(children: [
+                Icon(Icons.assignment_outlined, size: 18, color: Colors.blueGrey),
+                SizedBox(width: 8),
+                Text("SPECIFIC DETAILS", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12, color: Colors.blueGrey, letterSpacing: 1.2)),
+              ]),
+              const Divider(height: 24),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.grey.shade200)),
+                child: Wrap(
+                  spacing: 20,
+                  runSpacing: 25,
+                  children: details.entries
+                      .where((e) => e.key != 'request_id' && e.key != 'id' && e.key != 'end_time') // We skip end_time here because we merge it with start_time
+                      .map((e) {
+                    bool isFullWidth = e.key.toLowerCase().contains('image') || e.key.toLowerCase().contains('description') || e.key.toLowerCase().contains('start_time');
+
+                    return SizedBox(
+                      width: isFullWidth ? double.infinity : (MediaQuery.of(context).size.width - 100) / 2,
+                      child: _buildDetailTile(
+                        e.key,
+                        e.value,
+                        endTime: e.key == 'start_time' ? details!['end_time']?.toString() : null,
+                      ),
+                    );
+                  }).toList(),
                 ),
               ),
-
-              const SizedBox(height: 28),
-
-              // ── Section 2: Details ──
-              if (details != null && details.isNotEmpty) ...[
-                const Text("Submission Details", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: textDark)),
-                const SizedBox(height: 12),
-                _buildCard(
-                  child: Column(
-                    children: details.entries
-                        .where((e) => e.key != 'request_id' && e.key != 'id' && e.value != null) // 隐藏系统ID和空值
-                        .map((e) => _buildInfoRow(e.key.toString(), e.value.toString()))
-                        .toList(),
-                  ),
-                ),
-                const SizedBox(height: 28),
-              ],
-
-              // ── Section 3: Action / Status ──
-              if (status == 'pending') ...[
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: _isProcessing ? null : _showRejectDialog, // 点击打开弹窗
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          side: const BorderSide(color: Color(0xFFE57373), width: 1.5),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                        ),
-                        child: _isProcessing
-                            ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFE57373)))
-                            : const Text("Reject", style: TextStyle(color: Color(0xFFE57373), fontSize: 16, fontWeight: FontWeight.bold)),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: _isProcessing ? null : approve,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF6B8E6B), // 绿色
-                          disabledBackgroundColor: const Color(0xFF6B8E6B).withOpacity(0.5),
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                          elevation: 4,
-                          shadowColor: const Color(0xFF6B8E6B).withOpacity(0.4),
-                        ),
-                        child: _isProcessing
-                            ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                            : const Text("Approve", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 40),
-              ] else if (status == 'rejected') ...[
-                const Text("Rejection Info", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: textDark)),
-                const SizedBox(height: 12),
-                _buildCard(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(Icons.info_outline_rounded, color: Color(0xFFE57373), size: 20),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text("Reason", style: TextStyle(color: Colors.black54, fontSize: 12, fontWeight: FontWeight.w600)),
-                            const SizedBox(height: 4),
-                            Text(
-                              data['reject_reason'] ?? "No specific reason provided.",
-                              style: const TextStyle(color: textDark, fontSize: 14, height: 1.4),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 40),
-              ]
             ],
-          ),
+
+            const SizedBox(height: 30),
+            _buildActionSection(status),
+          ],
         ),
       ),
     );
+  }
+
+  Widget _buildHeader(Map data, String type) {
+    return Container(
+      width: double.infinity, padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 20)]),
+      child: Column(children: [
+        Chip(label: Text(type.toUpperCase(), style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF6D4C41))), backgroundColor: const Color(0xFF6D4C41).withOpacity(0.1)),
+        const SizedBox(height: 12),
+        Text(data['title'] ?? "No Title", style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        Text(data['description'] ?? "No description", style: TextStyle(color: Colors.grey.shade600, height: 1.4), textAlign: TextAlign.center),
+      ]),
+    );
+  }
+
+  Widget _buildActionSection(String status) {
+    if (status != 'pending') {
+      return Container(
+        padding: const EdgeInsets.all(20), width: double.infinity,
+        decoration: BoxDecoration(color: status == 'approved' ? Colors.green.shade50 : Colors.red.shade50, borderRadius: BorderRadius.circular(16)),
+        child: Column(children: [
+          Icon(status == 'approved' ? Icons.check_circle : Icons.cancel, color: status == 'approved' ? Colors.green : Colors.red, size: 30),
+          const SizedBox(height: 8),
+          Text("REQUEST ${status.toUpperCase()}", style: TextStyle(fontWeight: FontWeight.w900, color: status == 'approved' ? Colors.green : Colors.red)),
+          if (widget.data['processed_by'] != null) Text("By: ${widget.data['processed_by']}", style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic)),
+        ]),
+      );
+    }
+    return Column(children: [
+      TextField(
+          controller: reasonController,
+          maxLines: 2,
+          decoration: InputDecoration(
+            hintText: "Reason for rejection (optional)",
+            filled: true,
+            fillColor: Colors.white,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade200)),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade200)),
+          )
+      ),
+      const SizedBox(height: 20),
+      Row(children: [
+        Expanded(child: ElevatedButton(onPressed: approve, style: ElevatedButton.styleFrom(backgroundColor: Colors.green, padding: const EdgeInsets.all(16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))), child: const Text("APPROVE", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)))),
+        const SizedBox(width: 10),
+        Expanded(child: ElevatedButton(onPressed: reject, style: ElevatedButton.styleFrom(backgroundColor: Colors.red, padding: const EdgeInsets.all(16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))), child: const Text("REJECT", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)))),
+      ]),
+    ]);
   }
 }

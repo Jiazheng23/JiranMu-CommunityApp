@@ -1,9 +1,10 @@
-import 'package:assignment/chat/CommunityChatScreen.dart';
 import 'package:assignment/chat/CommunityChatsListScreen.dart';
 import 'package:assignment/facility/facility_booking_page.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../event/screen/event_calendar_screen.dart';
+import '../event/model/event_model.dart';       // ← adjust path if needed
+import '../event/service/event_service.dart';   // ← adjust path if needed
 import 'VisitorPassListScreen.dart';
 
 class ResidentHomePage extends StatefulWidget {
@@ -16,23 +17,61 @@ class ResidentHomePage extends StatefulWidget {
 class _ResidentHomePageState extends State<ResidentHomePage> {
   int currentIndex = 0;
 
-  final Color bgColor = const Color(0xFFF5F1ED);
-  final Color primaryColor = const Color(0xFF9A4B3C);
-  final Color accentColor = const Color(0xFFF26A3D);
-  final Color softYellow = const Color(0xFFF0E6B8);
-  final Color textDark = const Color(0xFF2B2B2B);
+  final Color bgColor       = const Color(0xFFF5F1ED);
+  final Color primaryColor  = const Color(0xFF9A4B3C);
+  final Color accentColor   = const Color(0xFFF26A3D);
+  final Color softYellow    = const Color(0xFFF0E6B8);
+  final Color textDark      = const Color(0xFF2B2B2B);
+
+  final EventService _eventService = EventService();
+
+  // ── Upcoming events state ─────────────────────
+  List<CommunityEvent> _upcomingEvents = [];
+  bool _eventsLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUpcomingEvents();
+  }
+
+  Future<void> _loadUpcomingEvents() async {
+    try {
+      final all = await _eventService.fetchAllEvents();
+      final now = DateTime.now();
+
+      // Keep only approved, public events whose date is today or in the future
+      final upcoming = all
+          .where((e) =>
+      e.status == 'approved' &&
+          !e.isPrivate &&
+          !e.eventDate.isBefore(DateTime(now.year, now.month, now.day)))
+          .toList()
+        ..sort((a, b) => a.eventDate.compareTo(b.eventDate));
+
+      if (mounted) {
+        setState(() {
+          _upcomingEvents = upcoming;
+          _eventsLoading  = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading upcoming events: $e');
+      if (mounted) setState(() => _eventsLoading = false);
+    }
+  }
+
+  // ── Auth ──────────────────────────────────────
 
   Future<void> logout() async {
     await Supabase.instance.client.auth.signOut();
-
     if (!mounted) return;
-
     Navigator.popUntil(context, (route) => route.isFirst);
-
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text("Logged out successfully")));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text("Logged out successfully")));
   }
+
+  // ── Shared widgets ────────────────────────────
 
   Widget buildServiceItem({
     required IconData icon,
@@ -47,8 +86,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
         child: Column(
           children: [
             Container(
-              width: 58,
-              height: 58,
+              width: 58, height: 58,
               decoration: BoxDecoration(
                 color: color.withOpacity(0.18),
                 borderRadius: BorderRadius.circular(18),
@@ -56,30 +94,34 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
               child: Icon(icon, color: color, size: 28),
             ),
             const SizedBox(height: 8),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: textDark,
-              ),
-            ),
+            Text(label,
+                style: TextStyle(
+                    fontSize: 12, fontWeight: FontWeight.w600, color: textDark)),
           ],
         ),
       ),
     );
   }
 
-  Widget buildSectionTitle(String title) {
+  Widget buildSectionTitle(String title, {VoidCallback? onSeeAll}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: Text(
-        title,
-        style: TextStyle(
-          fontSize: 18,
-          fontWeight: FontWeight.bold,
-          color: textDark,
-        ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(title,
+              style: TextStyle(
+                  fontSize: 18, fontWeight: FontWeight.bold, color: textDark)),
+          if (onSeeAll != null)
+            GestureDetector(
+              onTap: onSeeAll,
+              child: Text("See all",
+                  style: TextStyle(
+                      fontSize: 13,
+                      color: primaryColor,
+                      fontWeight: FontWeight.w600)),
+            ),
+        ],
       ),
     );
   }
@@ -93,26 +135,21 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
         borderRadius: BorderRadius.circular(22),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 12,
+              offset: const Offset(0, 4)),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            "Power outage announcement",
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
-              color: textDark,
-            ),
-          ),
+          Text("Power outage announcement",
+              style: TextStyle(
+                  fontSize: 15, fontWeight: FontWeight.w700, color: textDark)),
           const SizedBox(height: 8),
           const Text(
-            "Please be informed that maintenance works are scheduled from 10 AM to 12 PM. Power supply will be temporarily interrupted in Block A.",
+            "Please be informed that maintenance works are scheduled from 10 AM to 12 PM. "
+                "Power supply will be temporarily interrupted in Block A.",
             style: TextStyle(fontSize: 13, color: Colors.black54, height: 1.5),
           ),
           const SizedBox(height: 12),
@@ -125,19 +162,14 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
               ),
               const SizedBox(width: 8),
               const Expanded(
-                child: Text(
-                  "Office Management",
-                  style: TextStyle(fontSize: 12, color: Colors.black54),
-                ),
+                child: Text("Office Management",
+                    style: TextStyle(fontSize: 12, color: Colors.black54)),
               ),
-              Text(
-                "5 Jan, 2026",
-                style: TextStyle(
-                  fontSize: 12,
-                  color: primaryColor,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+              Text("5 Jan, 2026",
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: primaryColor,
+                      fontWeight: FontWeight.w600)),
             ],
           ),
         ],
@@ -145,145 +177,180 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     );
   }
 
-  Widget buildEventCard() {
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(22),
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            height: 150,
-            decoration: const BoxDecoration(
-              borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-              gradient: LinearGradient(
-                colors: [Color(0xFFF7D7C8), Color(0xFFF4B39B)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-            ),
-            child: Stack(
-              children: [
-                Positioned(
-                  left: -10,
-                  bottom: -12,
-                  child: Container(
-                    width: 120,
-                    height: 120,
-                    decoration: BoxDecoration(
-                      color: accentColor.withOpacity(0.20),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                ),
-                Positioned(
-                  right: 18,
-                  top: 18,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      "Featured Event",
-                      style: TextStyle(
-                        color: primaryColor,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                ),
-                Positioned(
-                  left: 18,
-                  right: 18,
-                  bottom: 18,
-                  child: Text(
-                    "Community Clarity Event",
-                    style: TextStyle(
-                      color: textDark,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: const [
-                    Icon(Icons.star, color: Colors.amber, size: 18),
-                    SizedBox(width: 6),
-                    Text(
-                      "4.3",
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        "Community event for all residents",
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.black54,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      // 🔥 跳转到 EventCalendarScreen
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => EventCalendarScreen(),
-                        ),
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: primaryColor,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                    child: const Text("View Event"),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+  // ── Upcoming events section ───────────────────
+
+  Widget buildUpcomingEventsSection() {
+    if (_eventsLoading) {
+      return SizedBox(
+        height: 200,
+        child: Center(child: CircularProgressIndicator(color: primaryColor)),
+      );
+    }
+
+    if (_upcomingEvents.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 32),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(22),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 12,
+                offset: const Offset(0, 4)),
+          ],
+        ),
+        child: Column(
+          children: [
+            Icon(Icons.event_busy_rounded,
+                size: 44, color: primaryColor.withOpacity(0.3)),
+            const SizedBox(height: 10),
+            Text("No upcoming events",
+                style: TextStyle(color: primaryColor.withOpacity(0.5))),
+          ],
+        ),
+      );
+    }
+
+    return SizedBox(
+      height: 260,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.only(right: 4),
+        itemCount: _upcomingEvents.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 14),
+        itemBuilder: (context, index) =>
+            _buildEventCard(_upcomingEvents[index]),
       ),
     );
   }
+
+  Widget _buildEventCard(CommunityEvent event) {
+    // Format date as "Mon, 22 Apr"
+    const months = [
+      'Jan','Feb','Mar','Apr','May','Jun',
+      'Jul','Aug','Sep','Oct','Nov','Dec'
+    ];
+    const days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+    final d = event.eventDate;
+    final dateLabel =
+        '${days[d.weekday - 1]}, ${d.day} ${months[d.month - 1]}';
+
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => EventCalendarScreen(highlightEventId: event.id),
+        ),
+      ).then((_) => _loadUpcomingEvents()),
+      child: Container(
+        width: 200,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(22),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withOpacity(0.06),
+                blurRadius: 12,
+                offset: const Offset(0, 4)),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Image / gradient banner
+            ClipRRect(
+              borderRadius:
+              const BorderRadius.vertical(top: Radius.circular(22)),
+              child: event.imageUrl != null && event.imageUrl!.isNotEmpty
+                  ? Image.network(event.imageUrl!,
+                  height: 120, width: double.infinity, fit: BoxFit.cover)
+                  : Container(
+                height: 120,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      accentColor.withOpacity(0.6),
+                      primaryColor.withOpacity(0.8)
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                ),
+                child: const Icon(Icons.event_rounded,
+                    color: Colors.white, size: 40),
+              ),
+            ),
+
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Date pill
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: primaryColor.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.calendar_today_rounded,
+                            size: 11, color: primaryColor),
+                        const SizedBox(width: 4),
+                        Text(dateLabel,
+                            style: TextStyle(
+                                fontSize: 11,
+                                color: primaryColor,
+                                fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  // Title
+                  Text(
+                    event.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: textDark,
+                        height: 1.3),
+                  ),
+                  const SizedBox(height: 4),
+                  // Time
+                  Row(
+                    children: [
+                      Icon(Icons.access_time_rounded,
+                          size: 11, color: Colors.black38),
+                      const SizedBox(width: 3),
+                      Expanded(
+                        child: Text(
+                          "${event.startTime} – ${event.endTime}",
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 11, color: Colors.black45),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Tabs ──────────────────────────────────────
 
   Widget buildHomeTab() {
     return SingleChildScrollView(
@@ -291,6 +358,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Location chip
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
@@ -298,10 +366,9 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
               borderRadius: BorderRadius.circular(18),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
+                    color: Colors.black.withOpacity(0.04),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4)),
               ],
             ),
             child: Row(
@@ -309,28 +376,20 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
               children: [
                 Icon(Icons.location_on_outlined, color: primaryColor, size: 18),
                 const SizedBox(width: 6),
-                Text(
-                  "BLOCK A",
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: primaryColor,
-                    letterSpacing: 0.5,
-                  ),
-                ),
+                Text("BLOCK A",
+                    style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: primaryColor,
+                        letterSpacing: 0.5)),
                 const SizedBox(width: 4),
                 const Icon(Icons.keyboard_arrow_down_rounded),
               ],
             ),
           ),
           const SizedBox(height: 20),
-          Text(
-            "Welcome back",
-            style: TextStyle(
-              fontSize: 28,
-              fontWeight: FontWeight.bold,
-              color: textDark,
-            ),
-          ),
+          Text("Welcome back",
+              style: TextStyle(
+                  fontSize: 28, fontWeight: FontWeight.bold, color: textDark)),
           const SizedBox(height: 6),
           const Text(
             "Manage your community services and stay informed.",
@@ -338,6 +397,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
           ),
           const SizedBox(height: 22),
 
+          // Banner
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(18),
@@ -351,26 +411,20 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                   child: Text(
                     "JiranMu keeps your community connected, safe and informed.",
                     style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: primaryColor,
-                      height: 1.5,
-                    ),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: primaryColor,
+                        height: 1.5),
                   ),
                 ),
                 const SizedBox(width: 12),
                 Container(
-                  width: 54,
-                  height: 54,
+                  width: 54, height: 54,
                   decoration: BoxDecoration(
                     color: Colors.white.withOpacity(0.85),
                     borderRadius: BorderRadius.circular(18),
                   ),
-                  child: Icon(
-                    Icons.groups_rounded,
-                    color: primaryColor,
-                    size: 28,
-                  ),
+                  child: Icon(Icons.groups_rounded, color: primaryColor, size: 28),
                 ),
               ],
             ),
@@ -378,58 +432,42 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
 
           const SizedBox(height: 24),
           buildSectionTitle("Services"),
-
           Row(
             children: [
               buildServiceItem(
                 icon: Icons.badge_outlined,
                 color: const Color(0xFFE96B9E),
                 label: "Visitors",
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Visitors clicked")),
-                  );
-                },
+                onTap: () => ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Visitors clicked"))),
               ),
               const SizedBox(width: 10),
               buildServiceItem(
                 icon: Icons.fitness_center,
                 color: const Color(0xFF4BC0B8),
                 label: "Facility",
-                onTap: () {
-                  Navigator.push(
+                onTap: () => Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => FacilityBookingPage(),
-                    ),
-                  );
-                },
+                        builder: (context) => FacilityBookingPage())),
               ),
               const SizedBox(width: 10),
               buildServiceItem(
                 icon: Icons.event_note_outlined,
                 color: const Color(0xFF758BFD),
                 label: "Events",
-                onTap: () {
-                  // 🔥 跳转到 EventCalendarScreen
-                  Navigator.push(
+                onTap: () => Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => EventCalendarScreen(),
-                    ),
-                  );
-                },
+                        builder: (context) => EventCalendarScreen())),
               ),
               const SizedBox(width: 10),
               buildServiceItem(
                 icon: Icons.sos_outlined,
                 color: const Color(0xFFFF5A5A),
                 label: "SOS",
-                onTap: () {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(const SnackBar(content: Text("SOS clicked")));
-                },
+                onTap: () => ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("SOS clicked"))),
               ),
             ],
           ),
@@ -439,8 +477,15 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
           buildAnnouncementCard(),
 
           const SizedBox(height: 28),
-          buildSectionTitle("Events"),
-          buildEventCard(),
+          // "See all" navigates to the full calendar
+          buildSectionTitle(
+            "Upcoming Events",
+            onSeeAll: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => EventCalendarScreen()),
+            ).then((_) => _loadUpcomingEvents()),
+          ),
+          buildUpcomingEventsSection(),
         ],
       ),
     );
@@ -448,30 +493,13 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
 
   Widget buildCommunityTab() {
     return Center(
-      child: Text(
-        "Community Page",
-        style: TextStyle(
-          fontSize: 20,
-          fontWeight: FontWeight.bold,
-          color: primaryColor,
-        ),
-      ),
+      child: Text("Community Page",
+          style: TextStyle(
+              fontSize: 20, fontWeight: FontWeight.bold, color: primaryColor)),
     );
   }
 
-  Widget buildChatsTab() {
-    // const String roomId = 'community_chat';
-    // const String communityName = 'Condo Community';
-    // final String currentUser = Supabase.instance.client.auth.currentUser?.email ?? 'guest';
-    //
-    // return CommunityChatScreen(
-    //   roomId: roomId,
-    //   communityName: communityName,
-    //   currentUserId: currentUser,
-    //   currentUser: currentUser,
-    // );
-    return CommunityChatsListScreen();
-  }
+  Widget buildChatsTab() => CommunityChatsListScreen();
 
   Widget buildAccountTab() {
     return SingleChildScrollView(
@@ -484,19 +512,12 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
             child: Icon(Icons.person, size: 42, color: primaryColor),
           ),
           const SizedBox(height: 14),
-          Text(
-            "Resident Account",
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              color: textDark,
-            ),
-          ),
+          Text("Resident Account",
+              style: TextStyle(
+                  fontSize: 22, fontWeight: FontWeight.bold, color: textDark)),
           const SizedBox(height: 6),
-          const Text(
-            "Manage your profile and account settings",
-            style: TextStyle(color: Colors.black54),
-          ),
+          const Text("Manage your profile and account settings",
+              style: TextStyle(color: Colors.black54)),
           const SizedBox(height: 24),
           Container(
             width: double.infinity,
@@ -506,10 +527,9 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
               borderRadius: BorderRadius.circular(22),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                ),
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4)),
               ],
             ),
             child: Column(
@@ -533,8 +553,10 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                   leading: Icon(Icons.badge_outlined, color: primaryColor),
                   title: const Text("Visitor Pass"),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () => Navigator.push(context,
-                      MaterialPageRoute(builder: (_) => const VisitorPassListScreen())),
+                  onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const VisitorPassListScreen())),
                 ),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
@@ -553,16 +575,11 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
 
   Widget getCurrentPage() {
     switch (currentIndex) {
-      case 0:
-        return buildHomeTab();
-      case 1:
-        return buildCommunityTab();
-      case 2:
-        return buildChatsTab();
-      case 3:
-        return buildAccountTab();
-      default:
-        return buildHomeTab();
+      case 0:  return buildHomeTab();
+      case 1:  return buildCommunityTab();
+      case 2:  return buildChatsTab();
+      case 3:  return buildAccountTab();
+      default: return buildHomeTab();
     }
   }
 
@@ -578,21 +595,16 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
           borderRadius: BorderRadius.circular(24),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.08),
-              blurRadius: 18,
-              offset: const Offset(0, 6),
-            ),
+                color: Colors.black.withOpacity(0.08),
+                blurRadius: 18,
+                offset: const Offset(0, 6)),
           ],
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(24),
           child: BottomNavigationBar(
             currentIndex: currentIndex,
-            onTap: (index) {
-              setState(() {
-                currentIndex = index;
-              });
-            },
+            onTap: (index) => setState(() => currentIndex = index),
             type: BottomNavigationBarType.fixed,
             backgroundColor: Colors.white,
             selectedItemColor: primaryColor,
@@ -602,21 +614,13 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
             elevation: 0,
             items: const [
               BottomNavigationBarItem(
-                icon: Icon(Icons.home_rounded),
-                label: "Home",
-              ),
+                  icon: Icon(Icons.home_rounded), label: "Home"),
               BottomNavigationBarItem(
-                icon: Icon(Icons.groups_rounded),
-                label: "Community",
-              ),
+                  icon: Icon(Icons.groups_rounded), label: "Community"),
               BottomNavigationBarItem(
-                icon: Icon(Icons.chat_bubble_outline_rounded),
-                label: "Chats",
-              ),
+                  icon: Icon(Icons.chat_bubble_outline_rounded), label: "Chats"),
               BottomNavigationBarItem(
-                icon: Icon(Icons.person_outline_rounded),
-                label: "Account",
-              ),
+                  icon: Icon(Icons.person_outline_rounded), label: "Account"),
             ],
           ),
         ),
