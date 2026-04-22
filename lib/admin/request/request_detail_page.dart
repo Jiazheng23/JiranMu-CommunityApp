@@ -14,12 +14,6 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
   final supabase = Supabase.instance.client;
   final TextEditingController reasonController = TextEditingController();
 
-  @override
-  void dispose() {
-    reasonController.dispose();
-    super.dispose();
-  }
-
   // 辅助函数 (放到上面方便其他方法调用)
   Map? extractSubData(dynamic raw) {
     if (raw == null) return null;
@@ -34,9 +28,13 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
       final String userId = widget.data['user_id'];
       final String type = widget.data['type'];
 
-      // 1. Resident approval
+      print("--- 开始审批流程 ---");
+      print("Request ID: $requestId, User ID: $userId, Type: $type");
+
+      // 1. 处理居民 (Resident)
       if (type == 'resident') {
         final subData = extractSubData(widget.data['resident_requests']);
+        print("抓取到的居民子表数据: $subData");
 
         if (subData != null) {
           await supabase.from('resident').upsert({
@@ -51,7 +49,6 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
             'resident_type': 'owner',
           });
         }
-
         await supabase.from('requests').update({
           'status': 'approved',
           'respond_time': DateTime.now().toIso8601String(),
@@ -59,7 +56,8 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
         }).eq('request_id', requestId);
       }
 
-      // 2. Admin approval
+
+      // 2. 处理管理员 (Admin)
       else if (type == 'admin') {
         final subData = extractSubData(widget.data['admin_requests']);
 
@@ -167,11 +165,12 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Approved successfully")),
+          const SnackBar(content: Text("Approved and data migrated!")),
         );
         Navigator.pop(context);
       }
     } catch (e) {
+      print("‼️ 审批发生崩溃: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text("Approve Error: $e")),
@@ -221,8 +220,9 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
     if (type == 'admin') details = extractSubData(data['admin_requests']);
     if (type == 'resident') details = extractSubData(data['resident_requests']);
     if (type == 'visitor') details = extractSubData(data['visitor_requests']);
-    if (type == 'facility') details = extractSubData(data['facility_requests']);
+    if (type == 'booking') details = extractSubData(data['facility_requests']);
     if (type == 'complaint') details = extractSubData(data['event_requests']);
+
 
     return Scaffold(
       appBar: AppBar(title: const Text("Request Detail")),
@@ -240,7 +240,6 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
             const Text("Details:", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 10),
 
-            // 动态显示详情内容
             if (details != null)
               ...details.entries
                   .where((e) => e.key != 'request_id') // 隐藏数据库ID

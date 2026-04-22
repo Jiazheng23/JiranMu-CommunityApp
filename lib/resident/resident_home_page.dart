@@ -1,10 +1,10 @@
 import 'package:assignment/chat/CommunityChatScreen.dart';
 import 'package:assignment/chat/CommunityChatsListScreen.dart';
+import 'package:assignment/facility/facility_booking_page.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../admin/request/event/event_calendar_screen.dart';
-import 'package:assignment/facility/facility_booking_page.dart';
-import 'package:assignment/resident/resident_booking_history_page.dart';
+import 'VisitorPassListScreen.dart';
 
 class ResidentHomePage extends StatefulWidget {
   const ResidentHomePage({super.key});
@@ -18,7 +18,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
 
   final Color bgColor = const Color(0xFFF5F1ED);
   final Color primaryColor = const Color(0xFF9A4B3C);
-  final Color accentColor = const Color(0xFFFC9D7E);
+  final Color accentColor = const Color(0xFFF26A3D);
   final Color softYellow = const Color(0xFFF0E6B8);
   final Color textDark = const Color(0xFF2B2B2B);
 
@@ -318,6 +318,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                   ),
                 ),
                 const SizedBox(width: 4),
+                const Icon(Icons.keyboard_arrow_down_rounded),
               ],
             ),
           ),
@@ -399,7 +400,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => const FacilityBookingPage(),
+                      builder: (context) => FacilityBookingPage(),
                     ),
                   );
                 },
@@ -445,8 +446,17 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     );
   }
 
-  Widget buildMyFacilityTab() {
-    return const FacilityBookingPage(showBackButton: false);
+  Widget buildCommunityTab() {
+    return Center(
+      child: Text(
+        "Community Page",
+        style: TextStyle(
+          fontSize: 20,
+          fontWeight: FontWeight.bold,
+          color: primaryColor,
+        ),
+      ),
+    );
   }
 
   Widget buildChatsTab() {
@@ -516,14 +526,15 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                   leading: Icon(Icons.history, color: primaryColor),
                   title: const Text("Booking History"),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const ResidentBookingHistoryPage(),
-                      ),
-                    );
-                  },
+                  onTap: () {},
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.badge_outlined, color: primaryColor),
+                  title: const Text("Visitor Pass"),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => const VisitorPassListScreen())),
                 ),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
@@ -545,7 +556,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
       case 0:
         return buildHomeTab();
       case 1:
-        return buildMyFacilityTab();
+        return buildCommunityTab();
       case 2:
         return buildChatsTab();
       case 3:
@@ -595,8 +606,8 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                 label: "Home",
               ),
               BottomNavigationBarItem(
-                icon: Icon(Icons.fitness_center_rounded),
-                label: "Facility",
+                icon: Icon(Icons.groups_rounded),
+                label: "Community",
               ),
               BottomNavigationBarItem(
                 icon: Icon(Icons.chat_bubble_outline_rounded),

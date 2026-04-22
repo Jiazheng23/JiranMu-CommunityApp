@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:assignment/chat/user_session.dart';
 import 'resident_home_page.dart';
 
 class ResidentLoginPage extends StatefulWidget {
@@ -36,9 +37,7 @@ class _ResidentLoginPageState extends State<ResidentLoginPage> {
       return;
     }
 
-    setState(() {
-      isLoading = true;
-    });
+    setState(() => isLoading = true);
 
     try {
       final response = await supabase.auth.signInWithPassword(
@@ -52,15 +51,17 @@ class _ResidentLoginPageState extends State<ResidentLoginPage> {
         throw Exception("Login failed");
       }
 
-      // 1. 先查 resident 表，看看是不是已经是正式入驻的住户
+      // 1. Check resident table
       final residentData = await supabase
           .from('resident')
           .select()
-          .eq('id', user.id) // 假设 resident 表里用 id 关联 auth 用户的 id
+          .eq('id', user.id)
           .maybeSingle();
 
       if (residentData != null) {
-        // 如果在 resident 表里找到了，说明已经 approve 并且落库了
+        // ✅ Initialize UserSession so role is set to 'resident'
+        await UserSession.init();
+
         if (!mounted) return;
         Navigator.pushReplacement(
           context,
@@ -68,56 +69,70 @@ class _ResidentLoginPageState extends State<ResidentLoginPage> {
             builder: (_) => const ResidentHomePage(),
           ),
         );
-        return; // 登录成功，直接结束
+        return;
       }
 
-      // 2. 如果 resident 表里没找到，去 requests 表查他的申请状态
-      // 注意：这里的 'user_id' 需要替换成你 requests 表里实际关联用户ID的字段名（可能是 'id' 或 'user_id'）
+      // 2. Not an approved resident — check requests table
       final requestData = await supabase
           .from('requests')
           .select('status')
-          .eq('user_id', user.id) // 🔥 请根据你数据库实际的外键名字修改这里
+          .eq('user_id', user.id)
           .eq('type', 'resident')
           .order('created_at', ascending: false)
           .limit(1)
           .maybeSingle();
 
-      // 因为他目前还不是正式 resident，安全起见先强制登出他的 Auth
+      // Sign out since they're not an approved resident
       await supabase.auth.signOut();
+
+      // Reset UserSession to safe default on sign out
+      UserSession.role = 'resident';
+      UserSession.uid = null;
+      UserSession.email = null;
 
       if (requestData != null) {
         final status = requestData['status'];
 
         if (status == 'pending') {
+          if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Your account is still pending approval by the Admin.")),
+            const SnackBar(
+                content:
+                Text("Your account is still pending approval by the Admin.")),
           );
         } else if (status == 'rejected') {
+          if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Your account application was rejected.")),
+            const SnackBar(
+                content: Text("Your account application was rejected.")),
           );
         } else {
+          if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Account state unknown. Please contact support.")),
+            const SnackBar(
+                content:
+                Text("Account state unknown. Please contact support.")),
           );
         }
       } else {
-        // 3. 两个表都找不到数据
+        // 3. Not found in either table
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Account profile not found. Please register first.")),
+          const SnackBar(
+              content:
+              Text("Account profile not found. Please register first.")),
         );
       }
-
     } on AuthException catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text("Error: $e")));
     } finally {
-      if (mounted) {
-        setState(() {
-          isLoading = false;
-        });
-      }
+      if (mounted) setState(() => isLoading = false);
     }
   }
 
@@ -147,6 +162,7 @@ class _ResidentLoginPageState extends State<ResidentLoginPage> {
 
             TextField(
               controller: emailController,
+              keyboardType: TextInputType.emailAddress,
               decoration: inputDecoration("Email"),
             ),
 
@@ -158,12 +174,12 @@ class _ResidentLoginPageState extends State<ResidentLoginPage> {
               decoration: inputDecoration("Password").copyWith(
                 suffixIcon: IconButton(
                   icon: Icon(
-                    obscurePassword ? Icons.visibility_off : Icons.visibility,
+                    obscurePassword
+                        ? Icons.visibility_off
+                        : Icons.visibility,
                   ),
                   onPressed: () {
-                    setState(() {
-                      obscurePassword = !obscurePassword;
-                    });
+                    setState(() => obscurePassword = !obscurePassword);
                   },
                 ),
               ),
@@ -176,9 +192,29 @@ class _ResidentLoginPageState extends State<ResidentLoginPage> {
               height: 54,
               child: ElevatedButton(
                 onPressed: isLoading ? null : login,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF8B5E4A),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
                 child: isLoading
-                    ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text("Login"),
+                    ? const SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    color: Colors.white,
+                  ),
+                )
+                    : const Text(
+                  "Login",
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
             ),
           ],
