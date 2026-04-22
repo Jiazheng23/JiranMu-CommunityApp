@@ -46,7 +46,7 @@ class _RequestListPageState extends State<RequestListPage> {
       } else if (uiType == 'event') {
         query = query.eq('type', 'complaint');
       } else if (uiType == 'facilities') {
-        query = query.eq('type', 'booking');
+        query = query.eq('type', 'facility');
       } else {
         query = query.eq('type', uiType);
       }
@@ -91,7 +91,7 @@ class _RequestListPageState extends State<RequestListPage> {
       return extractSubData(data['resident_requests'])?['full_name'] ?? "Resident Request";
     } else if (type == 'visitor') {
       return extractSubData(data['visitor_requests'])?['visitor_name'] ?? "Visitor Request";
-    } else if (type == 'booking') {
+    } else if (type == 'facility') {
       return extractSubData(data['facility_requests'])?['facility_name'] ?? "Facility Booking";
     } else if (type == 'complaint') {
       return extractSubData(data['event_requests'])?['event_title'] ?? "Event/Complaint";

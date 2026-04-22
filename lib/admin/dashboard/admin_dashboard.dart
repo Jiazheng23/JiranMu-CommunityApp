@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../../chat/CommunityChatsListScreen.dart';
+import '../AdminCreateChatScreen.dart';
 import '../emergency/location.dart';
 import 'dashboard_page.dart';
 import '../profile/admin_profile_page.dart';
@@ -24,7 +26,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
   // 🔥 使用 getter 完美解决了 widget.user 的初始化报错
   List<Widget> get pages => [
     const DashboardPage(),
-    const Center(child: Text("Message Page")),
+    const CommunityChatsListScreen(),
     AdminProfilePage(user: widget.user),
   ];
 
@@ -83,7 +85,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
           if (userId != null) {
             try {
               final position = await getCurrentLocation();
-              // ⚠️ 确保你的 createEmergency 方法已正确定义
               await createEmergency(userId.toString(), 'SOS', position);
 
               if (mounted) {
@@ -178,14 +179,35 @@ class _AdminDashboardState extends State<AdminDashboard> {
         width: 65,
         height: 65,
         child: FloatingActionButton(
-          onPressed: handleEmergency,
-          // 🔥 换回原来的纯红/纯橙色
-          backgroundColor: isEmergency ? Colors.red : (isWaiting ? Colors.orange : Colors.red),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(60)),
+          onPressed: () {
+            if (selectedIndex == 1) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const AdminCreateChatScreen(),
+                ),
+              );
+            } else {
+              handleEmergency();
+            }
+          },
+          backgroundColor: selectedIndex == 1
+              ? const Color(0xFF9A4B3C)
+              : (isEmergency
+              ? Colors.red
+              : (isWaiting ? Colors.orange : Colors.red)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(60),
+          ),
           elevation: 4,
           child: Icon(
-            isEmergency ? Icons.warning : (isWaiting ? Icons.access_time : Icons.add),
-            size: 30, color: Colors.white,
+            selectedIndex == 1
+                ? Icons.add
+                : (isEmergency
+                ? Icons.warning
+                : (isWaiting ? Icons.access_time : Icons.add)),
+            size: 30,
+            color: Colors.white,
           ),
         ),
       ),

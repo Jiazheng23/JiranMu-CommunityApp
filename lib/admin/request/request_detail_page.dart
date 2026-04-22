@@ -14,6 +14,7 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
   final supabase = Supabase.instance.client;
   final TextEditingController reasonController = TextEditingController();
 
+  // 辅助函数 (放到上面方便其他方法调用)
   Map? extractSubData(dynamic raw) {
     if (raw == null) return null;
     if (raw is List && raw.isNotEmpty) return raw[0];
@@ -27,8 +28,14 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
       final String userId = widget.data['user_id'];
       final String type = widget.data['type'];
 
+      print("--- 开始审批流程 ---");
+      print("Request ID: $requestId, User ID: $userId, Type: $type");
+
+      // 1. 处理居民 (Resident)
       if (type == 'resident') {
         final subData = extractSubData(widget.data['resident_requests']);
+        print("抓取到的居民子表数据: $subData");
+
         if (subData != null) {
           await supabase.from('resident').upsert({
             'id': userId,
@@ -42,8 +49,18 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
             'resident_type': 'owner',
           });
         }
-      } else if (type == 'admin') {
+        await supabase.from('requests').update({
+          'status': 'approved',
+          'respond_time': DateTime.now().toIso8601String(),
+          'reject_reason': null,
+        }).eq('request_id', requestId);
+      }
+
+
+      // 2. 处理管理员 (Admin)
+      else if (type == 'admin') {
         final subData = extractSubData(widget.data['admin_requests']);
+
         if (subData != null) {
           await supabase.from('admin_new').upsert({
             'id': userId,
@@ -53,23 +70,110 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
             'status': 'active',
           });
         }
+
+        await supabase.from('requests').update({
+          'status': 'approved',
+          'respond_time': DateTime.now().toIso8601String(),
+          'reject_reason': null,
+        }).eq('request_id', requestId);
       }
 
-      await supabase.from('requests').update({
-        'status': 'approved',
-        'respond_time': DateTime.now().toIso8601String(),
-      }).eq('request_id', requestId);
+      // 3. Facility approval
+      else if (type == 'facility') {
+        final subData = extractSubData(widget.data['facility_requests']);
+
+        if (subData == null) {
+          throw Exception('Facility request detail not found.');
+        }
+
+        final facilityId = subData['facility_id'];
+        final bookingDate = subData['booking_date'];
+        final startTime = subData['start_time'];
+        final endTime = subData['end_time'];
+        final slotLabel = subData['slot_label'];
+        final participants = subData['participants'] ?? 1;
+        final purpose = subData['purpose'];
+
+        // overlap check
+        final existingBookings = await supabase
+            .from('facility_bookings')
+            .select('id, start_time, end_time')
+            .eq('facility_id', facilityId)
+            .eq('booking_date', bookingDate)
+            .eq('status', 'approved');
+
+        bool hasOverlap = false;
+
+        for (final row in existingBookings) {
+          final existingStart = row['start_time']?.toString();
+          final existingEnd = row['end_time']?.toString();
+
+          if (existingStart == null || existingEnd == null) continue;
+
+          final overlap = !(
+              endTime.compareTo(existingStart) <= 0 ||
+                  startTime.compareTo(existingEnd) >= 0
+          );
+
+          if (overlap) {
+            hasOverlap = true;
+            break;
+          }
+        }
+
+        if (hasOverlap) {
+          throw Exception('This facility time range is already booked.');
+        }
+
+        String? bookingId;
+
+        try {
+          final bookingResponse = await supabase
+              .from('facility_bookings')
+              .insert({
+            'request_id': requestId,
+            'facility_id': facilityId,
+            'resident_id': userId,
+            'booking_date': bookingDate,
+            'start_time': startTime,
+            'end_time': endTime,
+            'slot_label': slotLabel,
+            'participants': participants,
+            'purpose': purpose,
+            'status': 'approved',
+          })
+              .select('id')
+              .single();
+
+          bookingId = bookingResponse['id'] as String;
+
+          await supabase.from('requests').update({
+            'status': 'approved',
+            'respond_time': DateTime.now().toIso8601String(),
+            'reject_reason': null,
+          }).eq('request_id', requestId);
+        } catch (e) {
+          if (bookingId != null) {
+            await supabase
+                .from('facility_bookings')
+                .delete()
+                .eq('id', bookingId);
+          }
+          rethrow;
+        }
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Approved and data migrated!"), backgroundColor: Color(0xFF6B8E6B)),
+          const SnackBar(content: Text("Approved and data migrated!")),
         );
         Navigator.pop(context);
       }
     } catch (e) {
+      print("‼️ 审批发生崩溃: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Approve Error: $e"), backgroundColor: const Color(0xFFC67B75)),
+          SnackBar(content: Text("Approve Error: $e")),
         );
       }
     }
@@ -83,72 +187,25 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
         'respond_time': DateTime.now().toIso8601String(),
       }).eq('request_id', widget.data['request_id']);
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Request Rejected"), backgroundColor: Color(0xFFC67B75)),
-        );
-        Navigator.pop(context);
-      }
+      if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Reject Error: $e"), backgroundColor: const Color(0xFFC67B75)),
+          SnackBar(content: Text("Reject Error: $e")),
         );
       }
     }
   }
 
-  /// 每一条信息的 UI 优化
-  Widget buildInfo(String label, String value, {bool isStatus = false}) {
+  Widget buildInfo(String label, String value) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 10),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            flex: 2,
-            child: Text(
-                label,
-                style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)
-            ),
-          ),
-          Expanded(
-            flex: 3,
-            child: isStatus
-                ? _buildStatusBadge(value)
-                : Text(
-                value,
-                style: const TextStyle(fontWeight: FontWeight.w500, color: Color(0xFF2B2B2B), fontSize: 15)
-            ),
-          ),
+          Text("$label: ", style: const TextStyle(fontWeight: FontWeight.bold)),
+          Expanded(child: Text(value)),
         ],
-      ),
-    );
-  }
-
-  Widget _buildStatusBadge(String status) {
-    status = status.toLowerCase();
-    Color statusColor;
-    if (status == 'approved') {
-      statusColor = const Color(0xFF6B8E6B);
-    } else if (status == 'rejected') {
-      statusColor = const Color(0xFFC67B75);
-    } else {
-      statusColor = const Color(0xFFD49A6A);
-    }
-
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: statusColor.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Text(
-          status.toUpperCase(),
-          style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 12),
-        ),
       ),
     );
   }
@@ -158,6 +215,7 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
     final data = widget.data;
     final type = data['type'];
 
+    // 提取子表数据供展示
     Map? details;
     if (type == 'admin') details = extractSubData(data['admin_requests']);
     if (type == 'resident') details = extractSubData(data['resident_requests']);
@@ -165,141 +223,60 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
     if (type == 'booking') details = extractSubData(data['facility_requests']);
     if (type == 'complaint') details = extractSubData(data['event_requests']);
 
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF5EBE6), // 统一米棕色背景
-      appBar: AppBar(
-        title: const Text("Request Detail", style: TextStyle(fontWeight: FontWeight.bold)),
-        backgroundColor: const Color(0xFFF5EBE6),
-        foregroundColor: const Color(0xFF2B2B2B),
-        elevation: 0,
-        centerTitle: true,
-      ),
+      appBar: AppBar(title: const Text("Request Detail")),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 🔥 将信息包裹在一个精致的白色卡片中
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF8B5E4A).withOpacity(0.08),
-                    blurRadius: 15,
-                    spreadRadius: 0,
-                    offset: const Offset(0, 8),
-                  )
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  buildInfo("Request Type", type?.toString().toUpperCase() ?? "-"),
-                  buildInfo("Title", data['title'] ?? "-"),
-                  buildInfo("Description", data['description'] ?? "-"),
-                  buildInfo("Status", data['status'] ?? "-", isStatus: true),
+            buildInfo("Request Type", type?.toString().toUpperCase() ?? "-"),
+            buildInfo("Title", data['title'] ?? "-"),
+            buildInfo("Description", data['description'] ?? "-"),
+            buildInfo("Status", data['status'] ?? "-"),
 
-                  if (details != null) ...[
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 10),
-                      child: Divider(thickness: 1, color: Color(0xFFF5EBE6)),
-                    ),
-                    const Text(
-                        "Details Information",
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF8B5E4A))
-                    ),
-                    const SizedBox(height: 15),
-                    ...details.entries
-                        .where((e) => e.key != 'request_id')
-                        .map((e) => buildInfo(
-                        e.key.toString().replaceAll('_', ' ').toUpperCase(),
-                        e.value?.toString() ?? "-"
-                    )),
-                  ],
-                ],
-              ),
-            ),
+            const Divider(height: 30, thickness: 1),
+            const Text("Details:", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            const SizedBox(height: 10),
 
-            const SizedBox(height: 30),
+            if (details != null)
+              ...details.entries
+                  .where((e) => e.key != 'request_id') // 隐藏数据库ID
+                  .map((e) => buildInfo(e.key.toString(), e.value?.toString() ?? "-")),
+
+            const SizedBox(height: 20),
 
             if (data['status'] == 'pending') ...[
               TextField(
                 controller: reasonController,
-                decoration: InputDecoration(
-                  labelText: "Reject Reason (Optional)",
-                  labelStyle: const TextStyle(color: Colors.grey),
-                  filled: true,
-                  fillColor: Colors.white,
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Color(0xFF8B5E4A), width: 2),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: Colors.grey.shade300),
-                  ),
+                decoration: const InputDecoration(
+                  labelText: "Reject Reason (if any)",
+                  border: OutlineInputBorder(),
                 ),
               ),
               const SizedBox(height: 20),
               Row(
                 children: [
                   Expanded(
-                    child: SizedBox(
-                      height: 50,
-                      child: ElevatedButton(
-                        onPressed: approve,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF6B8E6B), // 莫兰迪绿
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                        child: const Text("Approve", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                      ),
+                    child: ElevatedButton(
+                      onPressed: approve,
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+                      child: const Text("Approve"),
                     ),
                   ),
-                  const SizedBox(width: 15),
+                  const SizedBox(width: 10),
                   Expanded(
-                    child: SizedBox(
-                      height: 50,
-                      child: ElevatedButton(
-                        onPressed: reject,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFC67B75), // 砖红色
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                        child: const Text("Reject", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                      ),
+                    child: ElevatedButton(
+                      onPressed: reject,
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+                      child: const Text("Reject"),
                     ),
                   ),
                 ],
               )
             ] else if (data['status'] == 'rejected') ...[
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFC67B75).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFC67B75).withOpacity(0.5)),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.info_outline, color: Color(0xFFC67B75)),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        "Reject Reason: ${data['reject_reason'] ?? 'No reason provided'}",
-                        style: const TextStyle(color: Color(0xFFC67B75), fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              buildInfo("Reject Reason", data['reject_reason'] ?? "No reason provided"),
             ]
           ],
         ),

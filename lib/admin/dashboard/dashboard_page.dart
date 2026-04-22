@@ -591,105 +591,220 @@ class _DashboardPageState extends State<DashboardPage> {
   // ─────────────────────────────────────────────
   void _showAnnouncementDetails(Map<String, dynamic> data) {
     final dt = data['event_date'] != null
-        ? DateTime.parse(data['event_date']).toLocal() : null;
-    final dateDisplay = dt != null ? "${dt.day}/${dt.month}/${dt.year}" : "No specific date";
+        ? DateTime.parse(data['event_date']).toLocal()
+        : null;
+    final dateDisplay =
+    dt != null ? "${dt.day}/${dt.month}/${dt.year}" : "No specific date";
     final bool hasImage = data['image_url'] != null;
 
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-        contentPadding: EdgeInsets.zero,
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (hasImage)
-              ClipRRect(
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
-                child: Image.network(data['image_url'],
-                    width: double.infinity, height: 180, fit: BoxFit.cover),
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (dialogContext) => DraggableScrollableSheet(
+        initialChildSize: 0.75,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        builder: (_, scrollController) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+          ),
+          child: Column(
+            children: [
+              // ── Drag handle ──
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 10),
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
-            Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(children: [
-                    Icon(data['is_urgent'] ? Icons.warning : Icons.campaign,
-                        color: data['is_urgent'] ? Colors.red : primaryColor),
-                    const SizedBox(width: 10),
-                    Expanded(
-                        child: Text(data['title'],
-                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDark))),
-                  ]),
-                  const SizedBox(height: 12),
-                  // Category chip
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                        color: primaryColor.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(20)),
-                    child: Text(data['category'] ?? '',
-                        style: const TextStyle(
-                            color: primaryColor, fontWeight: FontWeight.w600, fontSize: 12)),
+
+              Expanded(
+                child: SingleChildScrollView(
+                  controller: scrollController,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // ── Image ──
+                      if (hasImage)
+                        Image.network(
+                          data['image_url'],
+                          width: double.infinity,
+                          height: 200,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Container(
+                            height: 200,
+                            color: Colors.grey[200],
+                            child: const Center(
+                              child: Icon(Icons.broken_image_outlined,
+                                  color: Colors.grey, size: 40),
+                            ),
+                          ),
+                        ),
+
+                      Padding(
+                        padding: const EdgeInsets.all(20),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // ── Urgent badge ──
+                            if (data['is_urgent'] == true)
+                              Container(
+                                margin: const EdgeInsets.only(bottom: 10),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.red.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.warning_amber_rounded,
+                                        color: Colors.red, size: 14),
+                                    SizedBox(width: 4),
+                                    Text("URGENT",
+                                        style: TextStyle(
+                                            color: Colors.red,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12)),
+                                  ],
+                                ),
+                              ),
+
+                            // ── Title ──
+                            Text(
+                              data['title'] ?? '',
+                              style: const TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: textDark),
+                            ),
+                            const SizedBox(height: 8),
+
+                            // ── Category + Date row ──
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: primaryColor.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Text(
+                                    data['category'] ?? '',
+                                    style: const TextStyle(
+                                        color: primaryColor,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 12),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                const Icon(Icons.calendar_today_outlined,
+                                    size: 13, color: Colors.grey),
+                                const SizedBox(width: 4),
+                                Text(dateDisplay,
+                                    style: const TextStyle(
+                                        color: Colors.grey, fontSize: 12)),
+                              ],
+                            ),
+
+                            const Divider(height: 28),
+
+                            // ── Content ──
+                            Text(
+                              data['content'] ?? '',
+                              style: const TextStyle(
+                                  fontSize: 14,
+                                  height: 1.7,
+                                  color: Colors.black87),
+                            ),
+
+                            const SizedBox(height: 30),
+
+                            // ── Action buttons ──
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: () =>
+                                        Navigator.pop(dialogContext),
+                                    icon: const Icon(Icons.close,
+                                        size: 16, color: Colors.grey),
+                                    label: const Text("Close",
+                                        style:
+                                        TextStyle(color: Colors.grey)),
+                                    style: OutlinedButton.styleFrom(
+                                      side: const BorderSide(
+                                          color: Colors.grey),
+                                      shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                          BorderRadius.circular(12)),
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 12),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: () =>
+                                        _showEditAnnouncementSheet(
+                                            dialogContext, data),
+                                    icon: const Icon(Icons.edit_outlined,
+                                        size: 16, color: primaryColor),
+                                    label: const Text("Edit",
+                                        style: TextStyle(
+                                            color: primaryColor)),
+                                    style: OutlinedButton.styleFrom(
+                                      side: const BorderSide(
+                                          color: primaryColor),
+                                      shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                          BorderRadius.circular(12)),
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 12),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: () => _deleteAnnouncement(
+                                        dialogContext, data['id']),
+                                    icon: const Icon(Icons.delete_outline,
+                                        size: 16, color: Colors.red),
+                                    label: const Text("Delete",
+                                        style:
+                                        TextStyle(color: Colors.red)),
+                                    style: OutlinedButton.styleFrom(
+                                      side: const BorderSide(
+                                          color: Colors.red),
+                                      shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                          BorderRadius.circular(12)),
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 12),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 20),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 8),
-                  Row(children: [
-                    const Icon(Icons.calendar_today_outlined, size: 13, color: Colors.grey),
-                    const SizedBox(width: 4),
-                    Text(dateDisplay, style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                  ]),
-                  const Divider(height: 24),
-                  Text(data['content'], style: const TextStyle(fontSize: 14, height: 1.6)),
-                ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        actions: [
-          Row(children: [
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: () => Navigator.pop(dialogContext),
-                icon: const Icon(Icons.close, size: 16, color: Colors.grey),
-                label: const Text("Close", style: TextStyle(color: Colors.grey)),
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Colors.grey, width: 1),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: () => _showEditAnnouncementSheet(dialogContext, data),
-                icon: const Icon(Icons.edit_outlined, size: 16, color: primaryColor),
-                label: const Text("Edit", style: TextStyle(color: primaryColor)),
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: primaryColor, width: 1),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: () => _deleteAnnouncement(dialogContext, data['id']),
-                icon: const Icon(Icons.delete_outline, size: 16, color: Colors.red),
-                label: const Text("Delete", style: TextStyle(color: Colors.red)),
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Colors.red, width: 1),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-              ),
-            ),
-          ]),
-        ],
       ),
     );
   }
@@ -805,7 +920,6 @@ class _DashboardPageState extends State<DashboardPage> {
                 ),
               ),
 
-              // ── 📜 公告列表 (使用 SliverList 实现高性能无限滑动) ──
               if (announcements.isEmpty)
                 const SliverToBoxAdapter(
                   child: Padding(
@@ -815,7 +929,7 @@ class _DashboardPageState extends State<DashboardPage> {
                 )
               else
                 SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 100), // 底部留白
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
                   sliver: SliverList(
                     delegate: SliverChildBuilderDelegate(
                           (context, index) {
@@ -844,23 +958,51 @@ class _DashboardPageState extends State<DashboardPage> {
                             child: Row(
                               children: [
                                 hasImage
-                                    ? ClipOval(
+                                    ? ClipRRect(
+                                  borderRadius: BorderRadius.circular(10),
                                   child: Image.network(
                                     item['image_url'],
-                                    width: 46, height: 46, fit: BoxFit.cover,
-                                    errorBuilder: (context, error, stackTrace) => const Icon(Icons.image_not_supported, color: Colors.grey),
+                                    width: 56, height: 56, fit: BoxFit.cover,
+                                    loadingBuilder: (context, child, loadingProgress) {
+                                      if (loadingProgress == null) return child;
+                                      return Container(
+                                        width: 56, height: 56,
+                                        decoration: BoxDecoration(
+                                          color: Colors.grey[200],
+                                          borderRadius: BorderRadius.circular(10),
+                                        ),
+                                        child: const Center(
+                                          child: SizedBox(
+                                            width: 18, height: 18,
+                                            child: CircularProgressIndicator(strokeWidth: 2),
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                    errorBuilder: (context, error, stackTrace) {
+                                      debugPrint("Image load error: $error"); // 👈 helps you debug
+                                      return Container(
+                                        width: 56, height: 56,
+                                        decoration: BoxDecoration(
+                                          color: Colors.grey[200],
+                                          borderRadius: BorderRadius.circular(10),
+                                        ),
+                                        child: const Icon(Icons.broken_image_outlined, color: Colors.grey),
+                                      );
+                                    },
                                   ),
                                 )
                                     : Container(
-                                  width: 46, height: 46,
+                                  width: 56, height: 56,
                                   decoration: BoxDecoration(
                                     color: (urgent ? Colors.red : primaryColor).withOpacity(0.12),
-                                    shape: BoxShape.circle,
+                                    borderRadius: BorderRadius.circular(10), // square instead of circle
                                   ),
                                   child: Icon(
-                                      urgent ? Icons.priority_high : Icons.campaign_outlined,
-                                      color: urgent ? Colors.red : primaryColor,
-                                      size: 22),
+                                    urgent ? Icons.priority_high : Icons.campaign_outlined,
+                                    color: urgent ? Colors.red : primaryColor,
+                                    size: 22,
+                                  ),
                                 ),
                                 const SizedBox(width: 14),
                                 Expanded(
