@@ -9,12 +9,14 @@ class CreateEventScreen extends StatefulWidget {
   final String userRole;
   final String userEmail;
   final String userName;
+  final String currentUserId;
 
   const CreateEventScreen({
     super.key,
     required this.userRole,
     required this.userEmail,
     required this.userName,
+    required this.currentUserId,
   });
 
   @override
@@ -198,7 +200,12 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
           // Residents go to their History to see the "Pending" status
           Navigator.pushReplacement(
             context,
-            MaterialPageRoute(builder: (context) => const ResidentEventHistoryScreen()),
+            MaterialPageRoute(
+              builder: (context) => ResidentEventHistoryScreen(
+                currentUserId: widget.currentUserId,
+                currentUserName: widget.userName,
+              ),
+            ),
           );
         }
       }

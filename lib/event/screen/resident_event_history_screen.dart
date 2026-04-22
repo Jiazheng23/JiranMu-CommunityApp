@@ -2,25 +2,34 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../model/event_model.dart';
 import '../service/event_service.dart';
+import 'share_event_sheet.dart';
 
 class ResidentEventHistoryScreen extends StatefulWidget {
-  const ResidentEventHistoryScreen({super.key});
+  final String currentUserId;
+  final String currentUserName;
+
+  const ResidentEventHistoryScreen({
+    super.key,
+    required this.currentUserId,
+    required this.currentUserName,
+  });
 
   @override
-  State<ResidentEventHistoryScreen> createState() => _ResidentEventHistoryScreenState();
+  State<ResidentEventHistoryScreen> createState() =>
+      _ResidentEventHistoryScreenState();
 }
 
-class _ResidentEventHistoryScreenState extends State<ResidentEventHistoryScreen> {
+class _ResidentEventHistoryScreenState
+    extends State<ResidentEventHistoryScreen> {
   final EventService _eventService = EventService();
 
-  // Theme Colors
   final Color cork = const Color(0xFFAD8762);
   final Color apricot = const Color(0xFFFFB38A);
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFFFF8F0), // Light cream background
+      backgroundColor: const Color(0xFFFFF8F0),
       appBar: AppBar(
         title: const Text(
           "My Event History",
@@ -37,7 +46,6 @@ class _ResidentEventHistoryScreenState extends State<ResidentEventHistoryScreen>
         },
         color: apricot,
         child: FutureBuilder<List<CommunityEvent>>(
-          // Uses the specific User Request fetcher we updated in EventService
           future: _eventService.fetchUserRequests(),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
@@ -49,8 +57,8 @@ class _ResidentEventHistoryScreenState extends State<ResidentEventHistoryScreen>
                 child: Padding(
                   padding: const EdgeInsets.all(20.0),
                   child: Text(
-                      "Error loading history: ${snapshot.error}",
-                      textAlign: TextAlign.center
+                    "Error loading history: ${snapshot.error}",
+                    textAlign: TextAlign.center,
                   ),
                 ),
               );
@@ -65,7 +73,7 @@ class _ResidentEventHistoryScreenState extends State<ResidentEventHistoryScreen>
             return ListView.builder(
               padding: const EdgeInsets.all(16),
               itemCount: requests.length,
-              physics: const AlwaysScrollableScrollPhysics(), // Ensures pull-to-refresh always works
+              physics: const AlwaysScrollableScrollPhysics(),
               itemBuilder: (context, index) {
                 final event = requests[index];
                 return _buildHistoryCard(event);
@@ -77,9 +85,26 @@ class _ResidentEventHistoryScreenState extends State<ResidentEventHistoryScreen>
     );
   }
 
+  void _showShareSheet(CommunityEvent event) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => ShareEventSheet(
+        event: event,
+        currentUserId: widget.currentUserId,
+        currentUserName: widget.currentUserName,
+      ),
+    );
+  }
+
   Widget _buildHistoryCard(CommunityEvent event) {
     final bool isApproved = event.status.toLowerCase() == 'approved';
     final bool isRejected = event.status.toLowerCase() == 'rejected';
+    final bool isPrivate = event.isPrivate;
 
     return Card(
       elevation: 3,
@@ -91,37 +116,98 @@ class _ResidentEventHistoryScreenState extends State<ResidentEventHistoryScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header: Title and Status Badge + Share Button
+            // Header: Title + Privacy badge + Status + Share
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
-                  child: Text(
-                    event.title,
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: cork,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        event.title,
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: cork,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: isPrivate
+                              ? Colors.purple.withOpacity(0.1)
+                              : Colors.blue.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: isPrivate
+                                ? Colors.purple.withOpacity(0.4)
+                                : Colors.blue.withOpacity(0.4),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              isPrivate ? Icons.lock_outline : Icons.public,
+                              size: 11,
+                              color: isPrivate ? Colors.purple : Colors.blue,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              isPrivate ? 'Private' : 'Public',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: isPrivate
+                                    ? Colors.purple
+                                    : Colors.blue,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                Row(
+                const SizedBox(width: 8),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    if (isApproved)
-                      IconButton(
-                        onPressed: () {
-                          // TODO: Implement share_plus logic later
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text("Sharing function coming soon!")),
-                          );
-                        },
-                        icon: const Icon(Icons.share_outlined, size: 20, color: Colors.blue),
-                        tooltip: "Share Event",
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                      ),
-                    if (isApproved) const SizedBox(width: 10),
                     _buildStatusBadge(event.status),
+                    if (isApproved) ...[
+                      const SizedBox(height: 8),
+                      GestureDetector(
+                        onTap: () => _showShareSheet(event),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: apricot.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(20),
+                            border:
+                            Border.all(color: apricot.withOpacity(0.5)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.share_outlined, size: 13, color: cork),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Share',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: cork,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ],
@@ -141,19 +227,55 @@ class _ResidentEventHistoryScreenState extends State<ResidentEventHistoryScreen>
               "${event.startTime} - ${event.endTime}",
             ),
             const SizedBox(height: 8),
-            _buildIconInfo(Icons.people_outline, "Max Capacity: ${event.maxCapacity} people"),
+            _buildIconInfo(Icons.people_outline,
+                "Max Capacity: ${event.maxCapacity} people"),
 
-            // Feedback section for Rejected requests
+            if (isApproved) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(10),
+                  border:
+                  Border.all(color: Colors.blue.withOpacity(0.15)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      isPrivate ? Icons.lock_outline : Icons.public,
+                      color: isPrivate ? Colors.purple : Colors.blue,
+                      size: 14,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        isPrivate
+                            ? 'Private event · Share via direct messages only'
+                            : 'Public event · Share via direct messages or group chats',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color:
+                          isPrivate ? Colors.purple : Colors.blue,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
             if (isRejected) ...[
               const SizedBox(height: 16),
               _buildFeedbackBox(
                 title: "Admin Feedback",
-                message: event.rejectReason ?? "No specific feedback provided.",
+                message:
+                event.rejectReason ?? "No specific feedback provided.",
                 baseColor: Colors.red,
               ),
             ],
 
-            // Message for Approved requests
             if (isApproved) ...[
               const SizedBox(height: 12),
               const Row(
@@ -164,9 +286,9 @@ class _ResidentEventHistoryScreenState extends State<ResidentEventHistoryScreen>
                     child: Text(
                       "Your event is live on the community calendar!",
                       style: TextStyle(
-                          color: Colors.green,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500
+                        color: Colors.green,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
                   ),
@@ -186,7 +308,10 @@ class _ResidentEventHistoryScreenState extends State<ResidentEventHistoryScreen>
         const SizedBox(width: 10),
         Text(
           text,
-          style: const TextStyle(fontSize: 14, color: Colors.black87, fontWeight: FontWeight.w400),
+          style: const TextStyle(
+              fontSize: 14,
+              color: Colors.black87,
+              fontWeight: FontWeight.w400),
         ),
       ],
     );
@@ -202,7 +327,7 @@ class _ResidentEventHistoryScreenState extends State<ResidentEventHistoryScreen>
         color = Colors.red;
         break;
       default:
-        color = Colors.orange; // Pending status
+        color = Colors.orange;
     }
 
     return Container(
@@ -215,16 +340,19 @@ class _ResidentEventHistoryScreenState extends State<ResidentEventHistoryScreen>
       child: Text(
         status.toUpperCase(),
         style: TextStyle(
-            color: color,
-            fontSize: 10,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 0.5
+          color: color,
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+          letterSpacing: 0.5,
         ),
       ),
     );
   }
 
-  Widget _buildFeedbackBox({required String title, required String message, required Color baseColor}) {
+  Widget _buildFeedbackBox(
+      {required String title,
+        required String message,
+        required Color baseColor}) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
@@ -269,11 +397,13 @@ class _ResidentEventHistoryScreenState extends State<ResidentEventHistoryScreen>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.history_outlined, size: 80, color: cork.withOpacity(0.2)),
+          Icon(Icons.history_outlined,
+              size: 80, color: cork.withOpacity(0.2)),
           const SizedBox(height: 16),
           Text(
             "No requests yet",
-            style: TextStyle(color: cork, fontSize: 18, fontWeight: FontWeight.w500),
+            style: TextStyle(
+                color: cork, fontSize: 18, fontWeight: FontWeight.w500),
           ),
           const SizedBox(height: 8),
           Text(

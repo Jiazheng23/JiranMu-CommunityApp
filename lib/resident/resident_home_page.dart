@@ -1,12 +1,13 @@
+import 'package:assignment/chat/CommunityChatScreen.dart';
+import 'package:assignment/chat/CommunityChatsListScreen.dart';
 import 'package:assignment/facility/facility_booking_page.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:assignment/event/screen/event_calendar_screen.dart';
 import 'VisitorPassListScreen.dart';
 import 'resident_booking_history_page.dart';
-import 'package:assignment/chat/CommunityChatsListScreen.dart';
 import 'package:assignment/resident/resident_login_page.dart';
 import 'package:assignment/resident/resident_profile_page.dart';
+import '../event/screen/event_calendar_screen.dart';
 
 class ResidentHomePage extends StatefulWidget {
   const ResidentHomePage({super.key});
@@ -247,7 +248,10 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                         "Community event for all residents",
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 12, color: Colors.black54),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.black54,
+                        ),
                       ),
                     ),
                   ],
@@ -449,6 +453,16 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
   }
 
   Widget buildChatsTab() {
+    // const String roomId = 'community_chat';
+    // const String communityName = 'Condo Community';
+    // final String currentUser = Supabase.instance.client.auth.currentUser?.email ?? 'guest';
+    //
+    // return CommunityChatScreen(
+    //   roomId: roomId,
+    //   communityName: communityName,
+    //   currentUserId: currentUser,
+    //   currentUser: currentUser,
+    // );
     return CommunityChatsListScreen();
   }
 
@@ -507,6 +521,14 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => Navigator.push(context,
                       MaterialPageRoute(builder: (_) => const ResidentBookingHistoryPage())),
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.badge_outlined, color: primaryColor),
+                  title: const Text("Visitor Pass"),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => const VisitorPassListScreen())),
                 ),
                 ListTile(
                   contentPadding: EdgeInsets.zero,

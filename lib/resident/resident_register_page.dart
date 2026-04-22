@@ -25,6 +25,14 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
   bool obscureConfirmPassword = true;
   bool isLoading = false;
 
+  String selectedResidentType = 'owner';
+
+  final List<Map<String, String>> residentTypes = [
+    {'label': 'Owner', 'value': 'owner'},
+    {'label': 'Tenant', 'value': 'tenant'},
+    {'label': 'Family Member', 'value': 'family_member'},
+  ];
+
   static const Color bgColor = Color(0xFFF8F3EE);
   static const Color primaryBrown = Color(0xFF8B5E4A);
   static const Color softBrown = Color(0xFFEADFD6);
@@ -92,7 +100,7 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
       return 'Please confirm password';
     }
 
-    if (value != passwordController.text.trim()) {
+    if (value.trim() != passwordController.text.trim()) {
       return 'Passwords do not match';
     }
 
@@ -102,6 +110,7 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
   Future<void> _registerResident() async {
     if (!_formKey.currentState!.validate()) return;
 
+    FocusScope.of(context).unfocus();
     setState(() => isLoading = true);
 
     final supabase = Supabase.instance.client;
@@ -121,17 +130,22 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
 
       final user = response.user;
       if (user == null) {
-        throw Exception("User registration failed");
+        throw Exception('User registration failed');
       }
 
-      final requestData = await supabase.from('requests').insert({
+      final requestData = await supabase
+          .from('requests')
+          .insert({
         'user_id': user.id,
         'type': 'resident',
         'title': 'Resident Registration',
         'description': 'Block $block, Unit $unit',
-      }).select('request_id').single();
+        'status': 'pending',
+      })
+          .select('request_id')
+          .single();
 
-      final String requestId = requestData['request_id'];
+      final String requestId = requestData['request_id'] as String;
 
       await supabase.from('resident_requests').insert({
         'request_id': requestId,
@@ -141,28 +155,39 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
         'role': 'resident',
         'block': block,
         'unit_number': unit,
+        'resident_type': selectedResidentType,
       });
+
+      await supabase.auth.signOut();
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text("Registration submitted. Waiting for Admin approval."),
+          content: Text('Registration submitted. Waiting for Admin approval.'),
+          backgroundColor: Color(0xFF6B8E6B),
         ),
       );
 
-      Navigator.pushReplacement(
+      Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (_) => const ResidentLoginPage()),
+            (route) => false,
       );
     } on AuthException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message)),
+        SnackBar(
+          content: Text(e.message),
+          backgroundColor: Colors.redAccent,
+        ),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error: $e")),
+        SnackBar(
+          content: Text('Error: $e'),
+          backgroundColor: Colors.redAccent,
+        ),
       );
     } finally {
       if (mounted) {
@@ -179,6 +204,7 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
     bool obscureText = false,
     Widget? suffixIcon,
     TextInputType keyboardType = TextInputType.text,
+    ValueChanged<String>? onChanged,
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -191,6 +217,7 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
         keyboardType: keyboardType,
         autovalidateMode: AutovalidateMode.onUserInteraction,
         validator: validator,
+        onChanged: onChanged,
         decoration: InputDecoration(
           hintText: hintText,
           hintStyle: const TextStyle(color: Colors.black38),
@@ -229,6 +256,58 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildResidentTypeDropdown() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: DropdownButtonFormField<String>(
+        value: selectedResidentType,
+        autovalidateMode: AutovalidateMode.onUserInteraction,
+        icon: const Icon(Icons.keyboard_arrow_down_rounded),
+        decoration: InputDecoration(
+          hintText: 'I am a...',
+          hintStyle: const TextStyle(color: Colors.black38),
+          prefixIcon: const Icon(Icons.people_outline, color: Colors.black38),
+          filled: true,
+          fillColor: Colors.white,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 18,
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(18),
+            borderSide: BorderSide.none,
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(18),
+            borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(18),
+            borderSide: const BorderSide(
+              color: primaryBrown,
+              width: 1.2,
+            ),
+          ),
+        ),
+        items: residentTypes.map((type) {
+          return DropdownMenuItem<String>(
+            value: type['value'],
+            child: Text(type['label']!),
+          );
+        }).toList(),
+        onChanged: (value) {
+          if (value == null) return;
+          setState(() {
+            selectedResidentType = value;
+          });
+        },
       ),
     );
   }
@@ -273,7 +352,7 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
 
                 const Center(
                   child: Text(
-                    "JiranMu",
+                    'JiranMu',
                     style: TextStyle(
                       fontSize: 30,
                       fontWeight: FontWeight.bold,
@@ -285,7 +364,7 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
 
                 const Center(
                   child: Text(
-                    "Building a supportive and caring community.",
+                    'Building a supportive and caring community.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 14.5,
@@ -298,7 +377,7 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
 
                 const Center(
                   child: Text(
-                    "Resident register to continue",
+                    'Resident register to continue',
                     style: TextStyle(
                       fontSize: 14,
                       color: Colors.black45,
@@ -309,7 +388,7 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
 
                 _buildTextFormField(
                   controller: fullNameController,
-                  hintText: "Full Name",
+                  hintText: 'Full Name',
                   icon: Icons.badge_outlined,
                   validator: (value) => _validateRequired(value, 'full name'),
                 ),
@@ -317,7 +396,7 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
 
                 _buildTextFormField(
                   controller: emailController,
-                  hintText: "Email",
+                  hintText: 'Email',
                   icon: Icons.person_outline,
                   validator: _validateEmail,
                   keyboardType: TextInputType.emailAddress,
@@ -326,7 +405,7 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
 
                 _buildTextFormField(
                   controller: phoneController,
-                  hintText: "Phone Number",
+                  hintText: 'Phone Number',
                   icon: Icons.phone_outlined,
                   validator: _validatePhone,
                   keyboardType: TextInputType.phone,
@@ -335,7 +414,7 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
 
                 _buildTextFormField(
                   controller: blockController,
-                  hintText: "Block",
+                  hintText: 'Block',
                   icon: Icons.apartment_outlined,
                   validator: (value) => _validateRequired(value, 'block'),
                 ),
@@ -343,18 +422,22 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
 
                 _buildTextFormField(
                   controller: unitController,
-                  hintText: "Unit Number",
+                  hintText: 'Unit Number',
                   icon: Icons.home_outlined,
                   validator: (value) => _validateRequired(value, 'unit number'),
                 ),
                 const SizedBox(height: 16),
 
+                _buildResidentTypeDropdown(),
+                const SizedBox(height: 16),
+
                 _buildTextFormField(
                   controller: passwordController,
-                  hintText: "Password",
+                  hintText: 'Password',
                   icon: Icons.lock_outline,
                   obscureText: obscurePassword,
                   validator: _validatePassword,
+                  onChanged: (_) => setState(() {}),
                   suffixIcon: IconButton(
                     onPressed: () {
                       setState(() => obscurePassword = !obscurePassword);
@@ -371,10 +454,11 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
 
                 _buildTextFormField(
                   controller: confirmPasswordController,
-                  hintText: "Confirm Password",
+                  hintText: 'Confirm Password',
                   icon: Icons.lock_outline,
                   obscureText: obscureConfirmPassword,
                   validator: _validateConfirmPassword,
+                  onChanged: (_) => setState(() {}),
                   suffixIcon: IconButton(
                     onPressed: () {
                       setState(() {
@@ -414,7 +498,7 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
                       ),
                     )
                         : const Text(
-                      "Resident Register",
+                      'Resident Register',
                       style: TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.w600,
@@ -429,7 +513,7 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
                     alignment: WrapAlignment.center,
                     children: [
                       const Text(
-                        "Already have an account? ",
+                        'Already have an account? ',
                         style: TextStyle(
                           fontSize: 14.5,
                           color: Colors.black54,
@@ -445,7 +529,7 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
                           );
                         },
                         child: const Text(
-                          "Resident Login",
+                          'Resident Login',
                           style: TextStyle(
                             fontSize: 14.5,
                             color: primaryBrown,
@@ -469,7 +553,7 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
                       );
                     },
                     child: const Text(
-                      "Switch to Admin Login",
+                      'Switch to Admin Login',
                       style: TextStyle(
                         fontSize: 14.5,
                         color: primaryBrown,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../AdminVisitorPassScreen.dart';
 import 'request_detail_page.dart';
 import 'request_list_page.dart';
 
@@ -323,7 +324,14 @@ class _AdminRequestsPageState extends State<AdminRequestsPage> {
                 buildTopButton("Users", Icons.person, () => navigateTo("Users")),
                 buildTopButton("Event", Icons.event, () => navigateTo("Event")),
                 buildTopButton("Facilities", Icons.home, () => navigateTo("Facilities")),
-                buildTopButton("Visitor", Icons.badge, () => navigateTo("Visitor")),
+                buildTopButton("Visitor", Icons.badge, () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const AdminVisitorPassScreen(),
+                    ),
+                  );
+                }),
               ],
             ),
             const SizedBox(height: 25),
