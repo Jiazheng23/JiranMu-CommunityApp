@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:assignment/event/screen/event_calendar_screen.dart';
 import 'VisitorPassListScreen.dart';
 import 'resident_booking_history_page.dart';
+import 'package:assignment/chat/CommunityChatsListScreen.dart';
 
 class ResidentHomePage extends StatefulWidget {
   const ResidentHomePage({super.key});
@@ -447,16 +448,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
   }
 
   Widget buildChatsTab() {
-    return Center(
-      child: Text(
-        "Chats Page",
-        style: TextStyle(
-          fontSize: 20,
-          fontWeight: FontWeight.bold,
-          color: primaryColor,
-        ),
-      ),
-    );
+    return CommunityChatsListScreen();
   }
 
   Widget buildAccountTab() {
