@@ -12,6 +12,7 @@ class _VisitorPassRequestScreenState extends State<VisitorPassRequestScreen> {
   final _client = Supabase.instance.client;
   final _nameCtrl = TextEditingController();
   final _icCtrl = TextEditingController();
+  final _reasonCtrl = TextEditingController();
   String _purpose = 'event';
   DateTime _validDate = DateTime.now().add(const Duration(days: 1));
   List<Map<String, dynamic>> _events = [];
@@ -26,17 +27,67 @@ class _VisitorPassRequestScreenState extends State<VisitorPassRequestScreen> {
     _loadEvents();
   }
 
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _icCtrl.dispose();
+    _reasonCtrl.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadEvents() async {
-    final res = await _client
+    final userId = _client.auth.currentUser!.id;
+
+    final organized = await _client
         .from('events')
         .select('id, title, event_date')
+        .eq('organizer_id', userId)
         .gte('event_date', DateTime.now().toIso8601String())
         .order('event_date');
-    setState(() => _events = List<Map<String, dynamic>>.from(res));
+
+    final participated = await _client
+        .from('event_participants')
+        .select('event_id, events(id, title, event_date)')
+        .eq('user_id', userId)
+        .gte('events.event_date', DateTime.now().toIso8601String());
+
+    final Map<String, Map<String, dynamic>> merged = {};
+
+    for (final e in List<Map<String, dynamic>>.from(organized)) {
+      merged[e['id'] as String] = e;
+    }
+    for (final row in List<Map<String, dynamic>>.from(participated)) {
+      final e = row['events'] as Map<String, dynamic>?;
+      if (e != null) merged[e['id'] as String] = e;
+    }
+
+    final sorted = merged.values.toList()
+      ..sort((a, b) =>
+          (a['event_date'] as String).compareTo(b['event_date'] as String));
+
+    setState(() => _events = sorted);
   }
 
   Future<void> _submit() async {
-    if (_nameCtrl.text.isEmpty) return;
+    if (_nameCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter the visitor\'s name.')),
+      );
+      return;
+    }
+    if (_purpose == 'event' && _selectedEventId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select an event.')),
+      );
+      return;
+    }
+    if (_purpose == 'normal' && _reasonCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please state a reason for the visit.')),
+      );
+      return;
+    }
+
     setState(() => _loading = true);
     try {
       final userId = _client.auth.currentUser!.id;
@@ -46,18 +97,21 @@ class _VisitorPassRequestScreenState extends State<VisitorPassRequestScreen> {
         'visitor_ic': _icCtrl.text.trim(),
         'purpose': _purpose,
         'event_id': _purpose == 'event' ? _selectedEventId : null,
+        'reason': _purpose == 'normal' ? _reasonCtrl.text.trim() : null,
         'valid_date': DateFormat('yyyy-MM-dd').format(_validDate),
         'status': 'pending',
       });
       if (!mounted) return;
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Visitor pass requested! Await admin approval.')),
+        const SnackBar(
+            content: Text('Visitor pass requested! Await admin approval.')),
       );
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
-      setState(() => _loading = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -73,66 +127,156 @@ class _VisitorPassRequestScreenState extends State<VisitorPassRequestScreen> {
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          // ── Visitor Details ─────────────────────────────────────────
           _card(children: [
-            const Text('Visitor Details', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            const Text('Visitor Details',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 16),
             _field('Visitor Full Name', _nameCtrl),
             const SizedBox(height: 12),
             _field('IC / Passport Number', _icCtrl),
           ]),
           const SizedBox(height: 16),
+
+          // ── Purpose ─────────────────────────────────────────────────
           _card(children: [
-            const Text('Purpose', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            const Text('Purpose',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 12),
             Row(children: [
               _chip('Event', 'event'),
               const SizedBox(width: 10),
-              _chip('Facility', 'facility'),
+              _chip('Normal Visit', 'normal'),
             ]),
+
+            // Event dropdown
             if (_purpose == 'event') ...[
               const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
+              _events.isEmpty
+                  ? Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF3CD),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Row(children: [
+                  Icon(Icons.info_outline,
+                      size: 16, color: Colors.orange),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'You have no upcoming events to invite visitors to.',
+                      style:
+                      TextStyle(fontSize: 13, color: Colors.orange),
+                    ),
+                  ),
+                ]),
+              )
+                  : DropdownButtonFormField<String>(
                 value: _selectedEventId,
-                hint: const Text('Select Event'),
+                hint: const Text('Select your event'),
                 decoration: _inputDeco('Event'),
-                items: _events.map((e) => DropdownMenuItem(
+                items: _events
+                    .map((e) => DropdownMenuItem(
                   value: e['id'] as String,
                   child: Text(e['title'] as String),
-                )).toList(),
-                onChanged: (v) => setState(() => _selectedEventId = v),
+                ))
+                    .toList(),
+                onChanged: (v) {
+                  setState(() {
+                    _selectedEventId = v;
+                    if (v != null) {
+                      final event =
+                      _events.firstWhere((e) => e['id'] == v);
+                      _validDate = DateTime.parse(
+                          event['event_date'] as String);
+                    }
+                  });
+                },
+              ),
+            ],
+
+            // Normal visit reason
+            if (_purpose == 'normal') ...[
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _reasonCtrl,
+                maxLines: 3,
+                decoration: _inputDeco('Reason for visit').copyWith(
+                  hintText: 'e.g. Family gathering, delivery assistance…',
+                  alignLabelWithHint: true,
+                ),
               ),
             ],
           ]),
           const SizedBox(height: 16),
+
+          // ── Visit Date ───────────────────────────────────────────────
           _card(children: [
-            const Text('Visit Date', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            const Text('Visit Date',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 12),
-            InkWell(
-              onTap: () async {
-                final picked = await showDatePicker(
-                  context: context,
-                  initialDate: _validDate,
-                  firstDate: DateTime.now(),
-                  lastDate: DateTime.now().add(const Duration(days: 90)),
-                );
-                if (picked != null) setState(() => _validDate = picked);
-              },
-              child: Container(
+            if (_purpose == 'event') ...[
+              // Read-only — auto-filled from selected event
+              Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  border: Border.all(color: Colors.black26),
+                  color: Colors.grey.shade100,
+                  border: Border.all(color: Colors.black12),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Row(children: [
                   Icon(Icons.calendar_today, color: primary, size: 20),
                   const SizedBox(width: 10),
-                  Text(DateFormat('d MMM yyyy').format(_validDate),
-                      style: const TextStyle(fontSize: 15)),
+                  Text(
+                    _selectedEventId != null
+                        ? DateFormat('d MMM yyyy').format(_validDate)
+                        : '',
+                    style: TextStyle(
+                      fontSize: 15,
+                      color: _selectedEventId != null
+                          ? Colors.black87
+                          : Colors.black38,
+                    ),
+                  ),
+                  const Spacer(),
+                  if (_selectedEventId != null)
+                    const Icon(Icons.lock_outline,
+                        size: 16, color: Colors.black26),
                 ]),
               ),
-            ),
+            ] else ...[
+              // Normal visit — manual date picker
+              InkWell(
+                onTap: () async {
+                  final picked = await showDatePicker(
+                    context: context,
+                    initialDate: _validDate,
+                    firstDate: DateTime.now(),
+                    lastDate:
+                    DateTime.now().add(const Duration(days: 90)),
+                  );
+                  if (picked != null) setState(() => _validDate = picked);
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.black26),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(children: [
+                    Icon(Icons.calendar_today, color: primary, size: 20),
+                    const SizedBox(width: 10),
+                    Text(DateFormat('d MMM yyyy').format(_validDate),
+                        style: const TextStyle(fontSize: 15)),
+                  ]),
+                ),
+              ),
+            ],
           ]),
           const SizedBox(height: 24),
+
+          // ── Submit ───────────────────────────────────────────────────
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
@@ -141,11 +285,14 @@ class _VisitorPassRequestScreenState extends State<VisitorPassRequestScreen> {
                 backgroundColor: primary,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
               ),
               child: _loading
-                  ? const CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
-                  : const Text('Submit Request', style: TextStyle(fontSize: 16)),
+                  ? const CircularProgressIndicator(
+                  color: Colors.white, strokeWidth: 2)
+                  : const Text('Submit Request',
+                  style: TextStyle(fontSize: 16)),
             ),
           ),
         ]),
@@ -153,33 +300,46 @@ class _VisitorPassRequestScreenState extends State<VisitorPassRequestScreen> {
     );
   }
 
+  // ── Helpers ────────────────────────────────────────────────────────
+
   Widget _card({required List<Widget> children}) => Container(
     width: double.infinity,
     padding: const EdgeInsets.all(16),
     decoration: BoxDecoration(
       color: Colors.white,
       borderRadius: BorderRadius.circular(18),
-      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))],
+      boxShadow: [
+        BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4))
+      ],
     ),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: children),
+    child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start, children: children),
   );
 
-  Widget _field(String label, TextEditingController ctrl) => TextFormField(
-    controller: ctrl,
-    decoration: _inputDeco(label),
-  );
+  Widget _field(String label, TextEditingController ctrl) =>
+      TextFormField(controller: ctrl, decoration: _inputDeco(label));
 
   InputDecoration _inputDeco(String label) => InputDecoration(
     labelText: label,
     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+    contentPadding:
+    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
   );
 
   Widget _chip(String label, String value) => ChoiceChip(
     label: Text(label),
     selected: _purpose == value,
-    onSelected: (_) => setState(() => _purpose = value),
+    onSelected: (_) => setState(() {
+      _purpose = value;
+      _selectedEventId = null;
+      _reasonCtrl.clear();
+      _validDate = DateTime.now().add(const Duration(days: 1));
+    }),
     selectedColor: const Color(0xFF9A4B3C),
-    labelStyle: TextStyle(color: _purpose == value ? Colors.white : Colors.black87),
+    labelStyle: TextStyle(
+        color: _purpose == value ? Colors.white : Colors.black87),
   );
 }
