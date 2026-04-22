@@ -107,7 +107,7 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
 
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
-  String _filter = 'All';
+  String _filter = 'all';
 
   // ── Resident state ──────────────────────────
   List<ResidentProfile> _blockNeighbours = [];
@@ -176,14 +176,26 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
           .map((e) => ResidentProfile.fromMap(e as Map<String, dynamic>))
           .toList();
 
-      // 1-on-1 chat rooms
-      final roomsData = await supabase
+      // ── FIX: fetch all rooms for current user using two separate queries
+      // then merge, instead of using .or() with compound filters which
+      // can be rejected by some Supabase/PostgREST configurations.
+      final roomsAsUser1 = await supabase
           .from('chat_rooms')
           .select('room_id, user1_id, user2_id')
-          .or('user1_id.eq.$_currentUserId,user2_id.eq.$_currentUserId');
+          .eq('user1_id', _currentUserId);
+
+      final roomsAsUser2 = await supabase
+          .from('chat_rooms')
+          .select('room_id, user1_id, user2_id')
+          .eq('user2_id', _currentUserId);
+
+      final allRooms = [
+        ...(roomsAsUser1 as List<dynamic>),
+        ...(roomsAsUser2 as List<dynamic>),
+      ];
 
       final Map<String, String> userRoomMap = {};
-      for (final row in (roomsData as List<dynamic>)) {
+      for (final row in allRooms) {
         final roomId = row['room_id'] as String;
         final u1 = row['user1_id'] as String;
         final u2 = row['user2_id'] as String;
@@ -209,7 +221,7 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
             : 'Tap to start chatting';
         final lastTime = msgList.isNotEmpty
             ? DateTime.parse(msgList[0]['created_at'] as String)
-            : DateTime.now().subtract(const Duration(days: 999));
+            : DateTime.now();
 
         convos.add(ConversationPreview(
           resident: neighbour,
@@ -253,7 +265,7 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
             : 'No messages yet';
         final lastTime = msgList.isNotEmpty
             ? DateTime.parse(msgList[0]['created_at'] as String)
-            : DateTime.now().subtract(const Duration(days: 999));
+            : DateTime.now();
 
         groupChats.add(GroupChatPreview(
           groupId: groupData['id'] as String,
@@ -280,25 +292,44 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
 
   Future<String> _generateRoomId() async {
     final existing = await supabase.from('chat_rooms').select('room_id');
-    final count = (existing as List<dynamic>).length + 1;
-    return 'ROOM_${count.toString().padLeft(2, '0')}';
+    final ids = (existing as List<dynamic>)
+        .map((e) => e['room_id']?.toString() ?? '')
+        .where((id) => id.startsWith('ROOM_'))
+        .map((id) => int.tryParse(id.replaceFirst('ROOM_', '')) ?? 0)
+        .toList();
+    final nextNum = ids.isEmpty ? 1 : (ids.reduce((a, b) => a > b ? a : b) + 1);
+    return 'ROOM_${nextNum.toString().padLeft(2, '0')}';
   }
 
   Future<void> _openOrCreateResidentDM(ResidentProfile resident) async {
     try {
-      final existing = await supabase
+      // ── FIX: use two separate queries instead of compound .or() filter
+      String? roomId;
+
+      final asUser1 = await supabase
           .from('chat_rooms')
           .select('room_id')
-          .or(
-        'and(user1_id.eq.$_currentUserId,user2_id.eq.${resident.id}),'
-            'and(user1_id.eq.${resident.id},user2_id.eq.$_currentUserId)',
-      )
+          .eq('user1_id', _currentUserId)
+          .eq('user2_id', resident.id)
           .maybeSingle();
 
-      String roomId;
-      if (existing != null) {
-        roomId = existing['room_id'] as String;
+      if (asUser1 != null) {
+        roomId = asUser1['room_id'] as String;
       } else {
+        final asUser2 = await supabase
+            .from('chat_rooms')
+            .select('room_id')
+            .eq('user1_id', resident.id)
+            .eq('user2_id', _currentUserId)
+            .maybeSingle();
+
+        if (asUser2 != null) {
+          roomId = asUser2['room_id'] as String;
+        }
+      }
+
+      // No existing room — create one
+      if (roomId == null) {
         roomId = await _generateRoomId();
         await supabase.from('chat_rooms').insert({
           'room_id': roomId,
@@ -312,7 +343,7 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
         context,
         MaterialPageRoute(
           builder: (_) => CommunityChatScreen(
-            roomId: roomId,
+            roomId: roomId!,
             communityName: resident.name,
             currentUserId: _currentUserId,
             currentUser: _currentUserEmail,
@@ -321,12 +352,11 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
         ),
       );
       _loadResidentData();
-    } catch (e) {
-      debugPrint('Error opening DM: $e');
+    } catch (e, stack) {
+      debugPrint('Error opening DM: $e\n$stack');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Could not open chat. Please try again.')),
+          SnackBar(content: Text('Could not open chat: $e')),
         );
       }
     }
@@ -460,10 +490,9 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
   }
 
   // ══════════════════════════════════════════════
-  // RESIDENT layout — CustomScrollView so all
-  // sections scroll together with no overflow
+  // RESIDENT layout
   // ══════════════════════════════════════════════
-  //
+
   Widget _buildResidentLayout() {
     final filteredConvos = _searchQuery.isEmpty
         ? _conversations
@@ -472,7 +501,6 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
         c.resident.name.toLowerCase().contains(_searchQuery))
         .toList();
 
-    // 🔥 Combine group + DM
     final List<Map<String, dynamic>> combinedList = [];
 
     if (_filter == 'all' || _filter == 'group') {
@@ -489,7 +517,6 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
       }));
     }
 
-    // 🔥 Sort by latest message
     combinedList.sort((a, b) {
       final aTime = a['type'] == 'group'
           ? (a['data'] as GroupChatPreview).lastTime
@@ -516,7 +543,6 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
 
         const SliverToBoxAdapter(child: SizedBox(height: 8)),
 
-        // 🔥 FILTER BUTTONS
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(22, 8, 22, 8),
@@ -530,7 +556,6 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
           ),
         ),
 
-        // ── Invitations (unchanged)
         SliverToBoxAdapter(
           child: ResidentInvitationsWidget(
             currentUserId: _currentUserId,
@@ -538,7 +563,6 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
           ),
         ),
 
-        // 🔥 UNIFIED LIST
         if (combinedList.isEmpty)
           SliverFillRemaining(
             hasScrollBody: false,
@@ -651,6 +675,8 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
             padding: const EdgeInsets.symmetric(horizontal: 22),
             itemCount: _blockNeighbours.length,
             separatorBuilder: (_, __) => const SizedBox(width: 14),
+            // ── FIX: pass neighbour directly so tapping always works,
+            // even if no prior conversation exists in _conversations.
             itemBuilder: (context, i) => _NeighbourCard(
               profile: _blockNeighbours[i],
               primaryColor: _primary,
@@ -1057,10 +1083,7 @@ class _GroupChatTile extends StatelessWidget {
                   formatTime(group.lastTime),
                   style: const TextStyle(
                       fontSize: 12, color: Colors.black38),
-                ),
-                const SizedBox(height: 4),
-                const Icon(Icons.arrow_forward_ios_rounded,
-                    size: 12, color: Colors.black26),
+                )
               ],
             ),
           ],

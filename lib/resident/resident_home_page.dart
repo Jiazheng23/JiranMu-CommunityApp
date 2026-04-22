@@ -1,9 +1,8 @@
-import 'package:assignment/chat/CommunityChatScreen.dart';
 import 'package:assignment/chat/CommunityChatsListScreen.dart';
 import 'package:assignment/facility/facility_booking_page.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../admin/request/event/event_calendar_screen.dart';
+import '../event/screen/event_calendar_screen.dart';
 import 'VisitorPassListScreen.dart';
 
 class ResidentHomePage extends StatefulWidget {
