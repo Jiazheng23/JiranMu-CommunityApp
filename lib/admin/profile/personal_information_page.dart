@@ -11,6 +11,11 @@ class PersonalInformationPage extends StatefulWidget {
 }
 
 class _PersonalInformationPageState extends State<PersonalInformationPage> {
+  // ── Design Tokens ──
+  static const Color bgColor = Color(0xFFF5F1ED);
+  static const Color primaryColor = Color(0xFF9A4B3C);
+  static const Color textDark = Color(0xFF2B2B2B);
+
   // 基本信息 Controllers
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
@@ -68,7 +73,7 @@ class _PersonalInformationPageState extends State<PersonalInformationPage> {
     setState(() => _isLoading = true);
 
     try {
-      final userId = widget.user['id']; // 获取当前用户 ID
+      final userId = widget.user['id'];
 
       // 1. 准备要更新的数据包
       final updates = {
@@ -83,11 +88,11 @@ class _PersonalInformationPageState extends State<PersonalInformationPage> {
 
       // 2. 调用 Supabase 更新 admin_new 表
       await Supabase.instance.client
-          .from('admin_new') // 替换成你实际的表名
+          .from('admin_new')
           .update(updates)
           .eq('id', userId);
 
-      // 3. (可选) 如果用户填了新密码，调用 Auth API 更新密码
+      // 3. 更新密码
       if (_newPasswordController.text.isNotEmpty) {
         await Supabase.instance.client.auth.updateUser(
           UserAttributes(password: _newPasswordController.text),
@@ -96,14 +101,14 @@ class _PersonalInformationPageState extends State<PersonalInformationPage> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Profile updated successfully!"), backgroundColor: Colors.green),
+          const SnackBar(content: Text("Profile updated successfully!"), backgroundColor: Color(0xFF6B8E6B)),
         );
-        Navigator.pop(context); // 返回上一页
+        Navigator.pop(context);
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error updating profile: $e"), backgroundColor: Colors.red),
+          SnackBar(content: Text("Error updating profile: $e"), backgroundColor: Colors.redAccent),
         );
       }
     } finally {
@@ -116,49 +121,64 @@ class _PersonalInformationPageState extends State<PersonalInformationPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF0F0F5),
+      backgroundColor: bgColor,
       appBar: AppBar(
-        title: const Text("Personal Information"),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
+        backgroundColor: Colors.transparent,
         elevation: 0,
+        centerTitle: true,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: textDark),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text(
+          "Personal Information",
+          style: TextStyle(color: textDark, fontWeight: FontWeight.bold, fontSize: 18),
+        ),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20.0),
+        padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // --- 1. 基础信息区 ---
-            const Text("Basic Details", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 15),
-            _buildTextField("Full Name", Icons.person_outline, _nameController),
-            const SizedBox(height: 15),
+            _buildSectionHeader("Basic Details"),
+            _buildTextField("Full Name", Icons.person_outline_rounded, _nameController),
+            const SizedBox(height: 16),
             _buildTextField("Email Address", Icons.email_outlined, _emailController, readOnly: true),
-            const SizedBox(height: 15),
+            const SizedBox(height: 16),
             _buildTextField("Phone Number", Icons.phone_outlined, _phoneController, keyboardType: TextInputType.phone),
-            const SizedBox(height: 15),
+            const SizedBox(height: 16),
             _buildTextField("IC Number", Icons.badge_outlined, _icController),
 
-            const SizedBox(height: 30),
+            const SizedBox(height: 35),
 
             // --- 2. 生理信息区 ---
-            const Text("Physical Attributes", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 15),
+            _buildSectionHeader("Physical Attributes"),
             Row(
               children: [
                 Expanded(child: _buildTextField("Age", Icons.cake_outlined, _ageController, keyboardType: TextInputType.number)),
-                const SizedBox(width: 15),
+                const SizedBox(width: 16),
                 Expanded(
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15)),
+                    height: 58, // 匹配 TextField 的高度
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, 2)),
+                      ],
+                    ),
                     child: DropdownButtonHideUnderline(
                       child: DropdownButton<String>(
                         value: _selectedBloodType,
-                        hint: const Text("Blood Type"),
+                        hint: const Text("Blood Type", style: TextStyle(color: Colors.black45, fontSize: 14)),
+                        icon: const Icon(Icons.keyboard_arrow_down_rounded, color: primaryColor),
                         isExpanded: true,
+                        dropdownColor: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
                         items: _bloodTypes.map((String type) {
-                          return DropdownMenuItem(value: type, child: Text(type));
+                          return DropdownMenuItem(value: type, child: Text(type, style: const TextStyle(fontSize: 15, color: textDark)));
                         }).toList(),
                         onChanged: (String? newValue) {
                           setState(() { _selectedBloodType = newValue; });
@@ -169,52 +189,63 @@ class _PersonalInformationPageState extends State<PersonalInformationPage> {
                 ),
               ],
             ),
-            const SizedBox(height: 15),
+            const SizedBox(height: 16),
             Row(
               children: [
-                Expanded(child: _buildTextField("Height (cm)", Icons.height, _heightController, keyboardType: TextInputType.number)),
-                const SizedBox(width: 15),
+                Expanded(child: _buildTextField("Height (cm)", Icons.height_rounded, _heightController, keyboardType: TextInputType.number)),
+                const SizedBox(width: 16),
                 Expanded(child: _buildTextField("Weight (kg)", Icons.monitor_weight_outlined, _weightController, keyboardType: TextInputType.number)),
               ],
             ),
 
-            const SizedBox(height: 30),
+            const SizedBox(height: 35),
 
             // --- 3. 安全区 ---
-            const Text("Security", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 15),
-            TextField(
-              controller: _newPasswordController,
-              obscureText: _obscurePassword,
-              decoration: InputDecoration(
-                labelText: "New Password",
-                hintText: "Enter a new password",
-                prefixIcon: const Icon(Icons.lock_outline),
-                suffixIcon: IconButton(
-                  icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility),
-                  onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+            _buildSectionHeader("Security"),
+            Container(
+              decoration: BoxDecoration(
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, 2))],
+              ),
+              child: TextField(
+                controller: _newPasswordController,
+                obscureText: _obscurePassword,
+                style: const TextStyle(fontSize: 15, color: textDark),
+                decoration: InputDecoration(
+                  labelText: "New Password",
+                  labelStyle: const TextStyle(color: Colors.black45, fontSize: 14),
+                  hintText: "Enter a new password",
+                  hintStyle: const TextStyle(color: Colors.black26, fontSize: 14),
+                  prefixIcon: const Icon(Icons.lock_outline_rounded, color: primaryColor),
+                  suffixIcon: IconButton(
+                    icon: Icon(_obscurePassword ? Icons.visibility_off_rounded : Icons.visibility_rounded, color: Colors.black38),
+                    onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                  ),
+                  filled: true,
+                  fillColor: Colors.white,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 18),
                 ),
-                filled: true,
-                fillColor: Colors.white,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
               ),
             ),
 
-            const SizedBox(height: 40),
+            const SizedBox(height: 45),
 
             // --- 4. 保存按钮 ---
             SizedBox(
               width: double.infinity,
-              height: 55,
+              height: 56,
               child: ElevatedButton(
                 onPressed: _isLoading ? null : _saveChanges,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1E88E5),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                  backgroundColor: primaryColor,
+                  disabledBackgroundColor: primaryColor.withOpacity(0.5),
+                  elevation: 4,
+                  shadowColor: primaryColor.withOpacity(0.4),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 ),
                 child: _isLoading
-                    ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text("Save Changes", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+                    ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
+                    : const Text("Save Changes", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: 0.5)),
               ),
             ),
             const SizedBox(height: 40),
@@ -224,18 +255,39 @@ class _PersonalInformationPageState extends State<PersonalInformationPage> {
     );
   }
 
+  // 辅助组件：Section 标题
+  Widget _buildSectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12, left: 4),
+      child: Text(
+        title,
+        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textDark, letterSpacing: 0.3),
+      ),
+    );
+  }
+
   // 辅助组件：快速构建文本输入框
   Widget _buildTextField(String label, IconData icon, TextEditingController controller, {bool readOnly = false, TextInputType? keyboardType}) {
-    return TextField(
-      controller: controller,
-      readOnly: readOnly,
-      keyboardType: keyboardType,
-      decoration: InputDecoration(
-        labelText: label,
-        prefixIcon: Icon(icon),
-        filled: true,
-        fillColor: readOnly ? Colors.grey.shade200 : Colors.white,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
+    return Container(
+      decoration: BoxDecoration(
+        boxShadow: [
+          if (!readOnly) BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, 2)),
+        ],
+      ),
+      child: TextField(
+        controller: controller,
+        readOnly: readOnly,
+        keyboardType: keyboardType,
+        style: TextStyle(fontSize: 15, color: readOnly ? Colors.black54 : textDark),
+        decoration: InputDecoration(
+          labelText: label,
+          labelStyle: TextStyle(color: readOnly ? Colors.black38 : Colors.black45, fontSize: 14),
+          prefixIcon: Icon(icon, color: readOnly ? Colors.black26 : primaryColor),
+          filled: true,
+          fillColor: readOnly ? Colors.black.withOpacity(0.04) : Colors.white,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+          contentPadding: const EdgeInsets.symmetric(vertical: 18), // 增加高度使其更饱满
+        ),
       ),
     );
   }

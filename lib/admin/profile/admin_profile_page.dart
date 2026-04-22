@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import '../AdminQRScannerScreen.dart';
 import 'personal_information_page.dart';
 import 'package:assignment/welcome_page.dart';
+import 'admin_notifications_page.dart';
 
 class AdminProfilePage extends StatefulWidget {
   final Map<String, dynamic> user;
@@ -217,7 +218,14 @@ class _AdminProfilePageState extends State<AdminProfilePage> {
                   );
                 }),
                 _buildDivider(),
-                _buildListTile(Icons.notifications_none, "Notifications", () {}),
+                _buildListTile(Icons.notifications_none, "Notifications", () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const AdminNotificationsPage(),
+                    ),
+                  );
+                }),
               ],
             ),
           ),

@@ -16,6 +16,8 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
   final unitController = TextEditingController();
   final passwordController = TextEditingController();
   final confirmPasswordController = TextEditingController();
+  String selectedResidentType = 'Owner';
+  final List<String> residentTypes = ['Owner', 'Tenant', 'Family Member'];
 
   bool isLoading = false;
   bool obscurePassword = true;
@@ -79,13 +81,7 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
       return;
     }
 
-    if (password != confirmPassword) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Passwords do not match")),
-      );
-      return;
-    }
-
+    // 修复：去掉了重复的密码校验
     if (password != confirmPassword) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Passwords do not match")),
@@ -115,6 +111,7 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
         'type': 'resident',
         'title': 'Resident Registration',
         'description': 'Block $block, Unit $unit',
+        'status': 'pending', // ✅ 修复: 将 status 放入 requests 主表中 (如果数据库有默认值这行不加也行，但加上更保险)
       }).select('request_id').single();
 
       final String requestId = requestData['request_id'];
@@ -125,27 +122,27 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
         'full_name': fullName,
         'email': email,
         'phone_number': phone,
-        'role': 'resident',
         'block': block,
         'unit_number': unit,
-        'role': 'resident',
-        'status': 'pending',
+        'role': 'resident', // ✅ 修复: 去掉了重复的 role 和报错的 status 字段
+        'resident_type': selectedResidentType,
       });
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text("Registration submitted. Waiting for Admin approval."),
+          backgroundColor: Color(0xFF6B8E6B),
         ),
       );
       Navigator.pop(context);
     } on AuthException catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message)),
+        SnackBar(content: Text(e.message), backgroundColor: Colors.redAccent),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error: $e")),
+        SnackBar(content: Text("Error: $e"), backgroundColor: Colors.redAccent),
       );
     } finally {
       if (mounted) setState(() => isLoading = false);
@@ -157,9 +154,10 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F3EE),
       appBar: AppBar(
-        title: const Text("Resident Register"),
+        title: const Text("Resident Register", style: TextStyle(color: Color(0xFF2B2B2B))),
         backgroundColor: const Color(0xFFF8F3EE),
         elevation: 0,
+        iconTheme: const IconThemeData(color: Color(0xFF2B2B2B)),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -215,6 +213,23 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
               ),
               const SizedBox(height: 14),
 
+              DropdownButtonFormField<String>(
+                value: selectedResidentType,
+                decoration: inputDecoration("I am a..."),
+                items: residentTypes.map((String type) {
+                  return DropdownMenuItem(
+                    value: type,
+                    child: Text(type),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  setState(() {
+                    selectedResidentType = value!;
+                  });
+                },
+              ),
+
+              const SizedBox(height: 14),
               TextField(
                 controller: passwordController,
                 obscureText: obscurePassword,
