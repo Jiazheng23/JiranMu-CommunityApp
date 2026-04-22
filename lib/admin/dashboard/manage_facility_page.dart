@@ -117,6 +117,48 @@ class _ManageFacilityPageState extends State<ManageFacilityPage> {
     );
   }
 
+  Widget _buildFacilityImage(FacilityModel facility) {
+    if (facility.imageUrl.isEmpty) {
+      return Container(
+        width: 72,
+        height: 72,
+        decoration: BoxDecoration(
+          color: const Color(0xFFEAF3FF),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: const Icon(
+          Icons.apartment_rounded,
+          color: Color(0xFF1E88E5),
+          size: 30,
+        ),
+      );
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: Image.network(
+        facility.imageUrl,
+        width: 72,
+        height: 72,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) {
+          return Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              color: const Color(0xFFEAF3FF),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Icon(
+              Icons.broken_image_outlined,
+              color: Color(0xFF1E88E5),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildFacilityCard(FacilityModel facility) {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -131,19 +173,9 @@ class _ManageFacilityPageState extends State<ManageFacilityPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: 54,
-                  height: 54,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEAF3FF),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: const Icon(
-                    Icons.apartment_rounded,
-                    color: Color(0xFF1E88E5),
-                  ),
-                ),
+                _buildFacilityImage(facility),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -227,32 +259,29 @@ class _ManageFacilityPageState extends State<ManageFacilityPage> {
                     label: const Text('Edit'),
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Container(
-                    padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade100,
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Row(
-                      children: [
-                        const Expanded(
-                          child: Text(
-                            'Available',
-                            style: TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                        Switch(
-                          value: facility.isActive,
-                          onChanged: (value) => _toggleActive(facility, value),
-                        ),
-                      ],
+              ],
+            ),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Available',
+                      style: TextStyle(fontWeight: FontWeight.w600),
                     ),
                   ),
-                ),
-              ],
+                  Switch(
+                    value: facility.isActive,
+                    onChanged: (value) => _toggleActive(facility, value),
+                  ),
+                ],
+              ),
             ),
           ],
         ),

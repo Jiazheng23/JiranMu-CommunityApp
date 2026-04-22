@@ -1,4 +1,6 @@
+import 'dart:io';
 import 'package:assignment/facility/facility_model.dart';
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class FacilityService {
@@ -29,6 +31,23 @@ class FacilityService {
     return (data as List)
         .map((item) => FacilityModel.fromMap(item as Map<String, dynamic>))
         .toList();
+  }
+
+  Future<String?> uploadFacilityImage(File imageFile) async {
+    try {
+      final fileName = 'facility_${DateTime.now().millisecondsSinceEpoch}.jpg';
+
+      await _supabase.storage.from('facility_images').upload(
+        fileName,
+        imageFile,
+        fileOptions: const FileOptions(upsert: true),
+      );
+
+      return _supabase.storage.from('facility_images').getPublicUrl(fileName);
+    } catch (e) {
+      debugPrint('Facility image upload error: $e');
+      return null;
+    }
   }
 
   Future<void> createFacility({

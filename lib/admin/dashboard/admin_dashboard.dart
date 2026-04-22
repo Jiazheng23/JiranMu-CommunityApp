@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import '../../chat/CommunityChatsListScreen.dart';
 import '../AdminCreateChatScreen.dart';
 import '../emergency/location.dart';
+import 'create_facility_page.dart';
 import 'dashboard_page.dart';
+import 'manage_facility_page.dart';
 import '../profile/admin_profile_page.dart';
 
 class AdminDashboard extends StatefulWidget {
@@ -23,15 +25,18 @@ class _AdminDashboardState extends State<AdminDashboard> {
   Timer? _timer;
   int countdown = 10;
 
-  // 🔥 使用 getter 完美解决了 widget.user 的初始化报错
   List<Widget> get pages => [
     const DashboardPage(),
+    const CreateFacilityPage(),
+    const ManageFacilityPage(),
     const CommunityChatsListScreen(),
     AdminProfilePage(user: widget.user),
   ];
 
   final List<Map<String, dynamic>> navItems = [
     {'icon': Icons.home_outlined, 'label': 'Dashboard'},
+    {'icon': Icons.add_business_outlined, 'label': 'Create'},
+    {'icon': Icons.home_work_outlined, 'label': 'Manage'},
     {'icon': Icons.chat_bubble_outline, 'label': 'Message'},
     {'icon': Icons.person_outline, 'label': 'Profile'},
   ];
@@ -56,6 +61,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
         isWaiting = true;
         countdown = 10;
       });
+
       StateSetter? dialogSetState;
 
       _timer = Timer.periodic(const Duration(seconds: 1), (t) async {
@@ -91,7 +97,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text("Emergency SOS Sent with Location!"),
-                    backgroundColor: Color(0xFF6B8E6B), // 莫兰迪绿
+                    backgroundColor: Color(0xFF6B8E6B),
                   ),
                 );
               }
@@ -100,7 +106,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text("Failed to send SOS: $e"),
-                    backgroundColor: const Color(0xFFC67B75), // 砖红色
+                    backgroundColor: const Color(0xFFC67B75),
                   ),
                 );
               }
@@ -116,30 +122,54 @@ class _AdminDashboardState extends State<AdminDashboard> {
         builder: (context) {
           return AlertDialog(
             backgroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             content: StatefulBuilder(
               builder: (context, setStepState) {
                 dialogSetState = setStepState;
                 return Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.warning_amber_rounded, color: Color(0xFFD49A6A), size: 70), // 焦糖橙
+                    const Icon(
+                      Icons.warning_amber_rounded,
+                      color: Color(0xFFD49A6A),
+                      size: 70,
+                    ),
                     const SizedBox(height: 20),
-                    const Text("Confirm sending emergency notification?", textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Color(0xFF2B2B2B))),
+                    const Text(
+                      "Confirm sending emergency notification?",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                        color: Color(0xFF2B2B2B),
+                      ),
+                    ),
                     const SizedBox(height: 25),
                     Stack(
                       alignment: Alignment.center,
                       children: [
                         SizedBox(
-                          width: 80, height: 80,
+                          width: 80,
+                          height: 80,
                           child: CircularProgressIndicator(
                             value: countdown / 10,
                             strokeWidth: 6,
                             backgroundColor: Colors.grey.shade200,
-                            valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFD49A6A)), // 焦糖橙
+                            valueColor:
+                            const AlwaysStoppedAnimation<Color>(
+                              Color(0xFFD49A6A),
+                            ),
                           ),
                         ),
-                        Text("$countdown", style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Color(0xFF2B2B2B))),
+                        Text(
+                          "$countdown",
+                          style: const TextStyle(
+                            fontSize: 32,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF2B2B2B),
+                          ),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 30),
@@ -149,7 +179,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         style: OutlinedButton.styleFrom(
                           foregroundColor: const Color(0xFF8B5E4A),
                           side: const BorderSide(color: Color(0xFF8B5E4A)),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
                         onPressed: () {
                           resetState();
@@ -170,17 +202,26 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   @override
   Widget build(BuildContext context) {
+    final bool isFacilityTab = selectedIndex == 1 || selectedIndex == 2;
+    final bool isMessageTab = selectedIndex == 3;
+
     return Scaffold(
       extendBody: true,
-      backgroundColor: const Color(0xFFF5EBE6), // 🔥 统一的浅米棕色背景
-      body: SafeArea(child: pages[selectedIndex]),
-
-      floatingActionButton: SizedBox(
+      backgroundColor: const Color(0xFFF5EBE6),
+      body: SafeArea(
+        child: IndexedStack(
+          index: selectedIndex,
+          children: pages,
+        ),
+      ),
+      floatingActionButton: isFacilityTab
+          ? null
+          : SizedBox(
         width: 65,
         height: 65,
         child: FloatingActionButton(
           onPressed: () {
-            if (selectedIndex == 1) {
+            if (isMessageTab) {
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -191,7 +232,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
               handleEmergency();
             }
           },
-          backgroundColor: selectedIndex == 1
+          backgroundColor: isMessageTab
               ? const Color(0xFF9A4B3C)
               : (isEmergency
               ? Colors.red
@@ -201,7 +242,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
           ),
           elevation: 4,
           child: Icon(
-            selectedIndex == 1
+            isMessageTab
                 ? Icons.add
                 : (isEmergency
                 ? Icons.warning
@@ -212,7 +253,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
         ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.only(left: 15, right: 15, bottom: 15),
@@ -222,14 +262,22 @@ class _AdminDashboardState extends State<AdminDashboard> {
               color: Colors.white,
               borderRadius: BorderRadius.circular(35),
               boxShadow: [
-                // 🔥 阴影带有一点点温暖的棕色调
-                BoxShadow(color: const Color(0xFF8B5E4A).withOpacity(0.08), blurRadius: 20, spreadRadius: 5, offset: const Offset(0, 5)),
+                BoxShadow(
+                  color: const Color(0xFF8B5E4A).withOpacity(0.08),
+                  blurRadius: 20,
+                  spreadRadius: 5,
+                  offset: const Offset(0, 5),
+                ),
               ],
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: List.generate(navItems.length, (index) {
-                return _buildNavItem(navItems[index]['icon'], navItems[index]['label'], index);
+                return _buildNavItem(
+                  navItems[index]['icon'],
+                  navItems[index]['label'],
+                  index,
+                );
               }),
             ),
           ),
@@ -239,7 +287,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   Widget _buildNavItem(IconData icon, String label, int index) {
-    bool isSelected = selectedIndex == index;
+    final bool isSelected = selectedIndex == index;
+
     return GestureDetector(
       onTap: () {
         setState(() {
@@ -249,19 +298,30 @@ class _AdminDashboardState extends State<AdminDashboard> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeOutCubic,
-        padding: EdgeInsets.symmetric(horizontal: isSelected ? 12 : 12, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF8B5E4A) : Colors.transparent, // 🔥 选中背景：深棕色
+          color: isSelected ? const Color(0xFF8B5E4A) : Colors.transparent,
           borderRadius: BorderRadius.circular(25),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: isSelected ? Colors.white : Colors.grey.shade400, size: 26), // 🔥 未选中图标：柔和灰
+            Icon(
+              icon,
+              color: isSelected ? Colors.white : Colors.grey.shade400,
+              size: 26,
+            ),
             if (isSelected)
               Padding(
                 padding: const EdgeInsets.only(left: 6.0),
-                child: Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
               ),
           ],
         ),

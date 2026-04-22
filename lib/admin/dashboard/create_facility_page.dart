@@ -1,6 +1,8 @@
-import 'package:flutter/material.dart';
+import 'dart:io';
 import 'package:assignment/facility/facility_model.dart';
 import 'package:assignment/facility/facility_service.dart';
+import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 class CreateFacilityPage extends StatefulWidget {
   const CreateFacilityPage({
@@ -19,6 +21,7 @@ class CreateFacilityPage extends StatefulWidget {
 class _CreateFacilityPageState extends State<CreateFacilityPage> {
   final _formKey = GlobalKey<FormState>();
   final FacilityService _facilityService = FacilityService();
+  final ImagePicker _picker = ImagePicker();
 
   late final TextEditingController _nameController;
   late final TextEditingController _descriptionController;
@@ -36,6 +39,7 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
 
   TimeOfDay? _openTime;
   TimeOfDay? _closeTime;
+  File? _selectedImageFile;
 
   @override
   void initState() {
@@ -136,6 +140,77 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
     });
   }
 
+  Future<void> _pickImage(ImageSource source) async {
+    final pickedFile = await _picker.pickImage(
+      source: source,
+      imageQuality: 75,
+    );
+
+    if (pickedFile == null) return;
+
+    setState(() {
+      _selectedImageFile = File(pickedFile.path);
+    });
+  }
+
+  Future<void> _showImageSourceSheet() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.photo_camera_outlined),
+                title: const Text('Take photo'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickImage(ImageSource.camera);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library_outlined),
+                title: const Text('Choose from gallery'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickImage(ImageSource.gallery);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _clearImage() {
+    setState(() {
+      _selectedImageFile = null;
+      _imageUrlController.clear();
+    });
+  }
+
+  void _resetCreateForm() {
+    _nameController.clear();
+    _descriptionController.clear();
+    _imageUrlController.clear();
+    _locationController.clear();
+    _capacityController.text = '1';
+    _slotDurationController.text = '60';
+    _maxDurationController.clear();
+
+    setState(() {
+      _bookingMode = 'instant';
+      _isActive = true;
+      _purposeRequired = false;
+      _isShared = false;
+      _openTime = null;
+      _closeTime = null;
+      _selectedImageFile = null;
+    });
+  }
+
   Future<void> _saveFacility() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -175,12 +250,25 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
         _isSaving = true;
       });
 
+      var finalImageUrl = _imageUrlController.text.trim();
+
+      if (_selectedImageFile != null) {
+        final uploadedUrl =
+        await _facilityService.uploadFacilityImage(_selectedImageFile!);
+
+        if (uploadedUrl == null || uploadedUrl.isEmpty) {
+          throw Exception('Failed to upload facility image');
+        }
+
+        finalImageUrl = uploadedUrl;
+      }
+
       if (widget.isEditMode) {
         await _facilityService.updateFacility(
           id: widget.facility!.id,
           name: _nameController.text.trim(),
           description: _descriptionController.text.trim(),
-          imageUrl: _imageUrlController.text.trim(),
+          imageUrl: finalImageUrl,
           location: _locationController.text.trim(),
           capacity: capacity,
           openTime: _formatToDbTime(_openTime!),
@@ -192,11 +280,14 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
           purposeRequired: _purposeRequired,
           isShared: _isShared,
         );
+
+        if (!mounted) return;
+        Navigator.pop(context, true);
       } else {
         await _facilityService.createFacility(
           name: _nameController.text.trim(),
           description: _descriptionController.text.trim(),
-          imageUrl: _imageUrlController.text.trim(),
+          imageUrl: finalImageUrl,
           location: _locationController.text.trim(),
           capacity: capacity,
           openTime: _formatToDbTime(_openTime!),
@@ -208,10 +299,13 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
           purposeRequired: _purposeRequired,
           isShared: _isShared,
         );
-      }
 
-      if (!mounted) return;
-      Navigator.pop(context, true);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Facility created successfully')),
+        );
+        _resetCreateForm();
+      }
     } catch (e) {
       if (!mounted) return;
 
@@ -254,6 +348,103 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
     );
   }
 
+  Widget _buildImageSection() {
+    final existingImageUrl = _imageUrlController.text.trim();
+
+    Widget previewChild;
+
+    if (_selectedImageFile != null) {
+      previewChild = ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Image.file(
+          _selectedImageFile!,
+          fit: BoxFit.cover,
+          width: double.infinity,
+        ),
+      );
+    } else if (existingImageUrl.isNotEmpty) {
+      previewChild = ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Image.network(
+          existingImageUrl,
+          fit: BoxFit.cover,
+          width: double.infinity,
+          errorBuilder: (context, error, stackTrace) {
+            return _buildImagePlaceholder();
+          },
+        ),
+      );
+    } else {
+      previewChild = _buildImagePlaceholder();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Facility Image',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 10),
+        Container(
+          height: 180,
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.grey.shade300),
+          ),
+          child: previewChild,
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _showImageSourceSheet,
+                icon: const Icon(Icons.add_a_photo_outlined),
+                label: const Text('Camera / Gallery'),
+              ),
+            ),
+            const SizedBox(width: 10),
+            if (_selectedImageFile != null || existingImageUrl.isNotEmpty)
+              OutlinedButton.icon(
+                onPressed: _clearImage,
+                icon: const Icon(Icons.delete_outline, color: Colors.red),
+                label: const Text(
+                  'Remove',
+                  style: TextStyle(color: Colors.red),
+                ),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Colors.redAccent),
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildImagePlaceholder() {
+    return const Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.image_outlined,
+            size: 40,
+            color: Colors.grey,
+          ),
+          SizedBox(height: 8),
+          Text(
+            'No image selected',
+            style: TextStyle(color: Colors.grey),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -269,6 +460,17 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            _buildImageSection(),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _imageUrlController,
+              onChanged: (_) => setState(() {}),
+              decoration: const InputDecoration(
+                labelText: 'Image URL (optional fallback)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
             TextFormField(
               controller: _nameController,
               decoration: const InputDecoration(
@@ -288,14 +490,6 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
               maxLines: 3,
               decoration: const InputDecoration(
                 labelText: 'Description',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _imageUrlController,
-              decoration: const InputDecoration(
-                labelText: 'Image URL (optional)',
                 border: OutlineInputBorder(),
               ),
             ),
