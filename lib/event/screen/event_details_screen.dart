@@ -1,6 +1,6 @@
 import 'package:assignment/event/screen/share_event_sheet.dart';
 import 'package:flutter/material.dart';
-import '../model/event_model.dart';
+import 'package:assignment/event/model/event_model.dart';
 import '../service/event_service.dart';
 
 class EventDetailsScreen extends StatelessWidget {

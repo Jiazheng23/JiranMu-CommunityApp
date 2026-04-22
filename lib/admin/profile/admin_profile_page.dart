@@ -5,8 +5,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import '../AdminQRScannerScreen.dart';
 import 'personal_information_page.dart';
-import 'admin_notifications_page.dart';
-
 
 class AdminProfilePage extends StatefulWidget {
   final Map<String, dynamic> user;
@@ -218,15 +216,6 @@ class _AdminProfilePageState extends State<AdminProfilePage> {
                     ),
                   );
                 }),
-                _buildDivider(),
-                _buildListTile(Icons.notifications_none, "Notifications", () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const AdminNotificationsPage(),
-                    ),
-                  );
-                }),
               ],
             ),
           ),
@@ -252,27 +241,9 @@ class _AdminProfilePageState extends State<AdminProfilePage> {
               iconColor: const Color(0xFF9A4B3C),
             ),
           ),
-          // ─────────────────────────────────────────────────────────────
-
-          const SizedBox(height: 30),
-
-          // ── System ────────────────────────────────────────────────────
-          _buildSectionTitle("System"),
-          Container(
-            decoration: _cardDecoration(),
-            child: Column(
-              children: [
-                _buildListTile(Icons.help_outline, "Help & Support", () {}),
-                _buildDivider(),
-                _buildListTile(Icons.info_outline, "About App", () {},
-                    trailingText: "v1.0.0"),
-              ],
-            ),
-          ),
 
           const SizedBox(height: 40),
 
-          // ── Logout Button ─────────────────────────────────────────────
           SizedBox(
             width: double.infinity,
             height: 55,
