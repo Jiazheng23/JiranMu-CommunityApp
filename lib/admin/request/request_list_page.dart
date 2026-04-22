@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../AdminVisitorPassScreen.dart';
 import 'request_detail_page.dart';
 
 class RequestListPage extends StatefulWidget {
@@ -32,7 +33,6 @@ class _RequestListPageState extends State<RequestListPage> {
     try {
       setState(() => isLoading = true);
 
-      // 1. Get the current admin's full name for filtering
       String adminIdentifier = "";
       if (currentAdminEmail != null) {
         final adminData = await supabase
@@ -40,11 +40,9 @@ class _RequestListPageState extends State<RequestListPage> {
             .select('full_name')
             .eq('email', currentAdminEmail!)
             .maybeSingle();
-
         adminIdentifier = adminData?['full_name'] ?? currentAdminEmail!;
       }
 
-      // 2. Build Query with all sub-tables
       var query = supabase.from('requests').select('''
         *, 
         admin_requests(*), 
@@ -54,7 +52,6 @@ class _RequestListPageState extends State<RequestListPage> {
         facility_requests(*) 
       ''');
 
-      // 3. Map UI Types to Database Types
       String uiType = widget.type.toLowerCase().trim();
       if (uiType == 'users' || uiType == 'user') {
         query = query.inFilter('type', ['admin', 'resident']);
@@ -68,21 +65,16 @@ class _RequestListPageState extends State<RequestListPage> {
         query = query.eq('type', uiType);
       }
 
-      // 4. Status and Admin Filtering Logic
-      // - Pending: Everyone sees everything
-      // - Approved/Rejected: Admins only see what THEY processed
       if (statusFilter == "pending") {
         query = query.eq('status', 'pending');
       } else if (statusFilter == "approved" || statusFilter == "rejected") {
         query = query.eq('status', statusFilter).eq('processed_by', adminIdentifier);
       } else {
-        // "All" Tab: Show all pending + my handled history
         query = query.or('status.eq.pending,and(status.in.(approved,rejected),processed_by.eq."$adminIdentifier")');
       }
 
       final data = await query.order('created_at', ascending: false);
 
-      // 5. Local Search Filtering
       List filteredData = data;
       if (searchText.isNotEmpty) {
         filteredData = data.where((r) {
@@ -131,11 +123,9 @@ class _RequestListPageState extends State<RequestListPage> {
     String displayName = extractNameForRequest(data);
     String type = data['type'] ?? '';
 
-    // Label logic
     String displayLabel = type.toUpperCase();
     if (type == 'booking') displayLabel = "EVENT REQUEST";
 
-    // Privacy Badge logic
     final eventData = extractSubData(data['event_requests']);
     bool isPrivate = eventData?['is_private'] ?? false;
 
@@ -153,10 +143,21 @@ class _RequestListPageState extends State<RequestListPage> {
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
         onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => RequestDetailPage(data: data)),
-          ).then((_) => fetchRequests());
+          // ── VISITOR: go to AdminVisitorPassScreen ──
+          // ── ALL OTHERS: go to RequestDetailPage ──
+          if (type == 'visitor') {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const AdminVisitorPassScreen(),
+              ),
+            ).then((_) => fetchRequests());
+          } else {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => RequestDetailPage(data: data)),
+            ).then((_) => fetchRequests());
+          }
         },
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -166,16 +167,23 @@ class _RequestListPageState extends State<RequestListPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(displayName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    Text(displayName,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 16)),
                     const SizedBox(height: 4),
                     Row(
                       children: [
                         Text(displayLabel,
-                            style: TextStyle(color: Colors.blue.shade700, fontSize: 11, fontWeight: FontWeight.bold)),
+                            style: TextStyle(
+                                color: Colors.blue.shade700,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold)),
                         if (isPrivate && type == 'booking') ...[
                           const SizedBox(width: 8),
                           const Icon(Icons.lock, size: 10, color: Colors.grey),
-                          const Text(" PRIVATE", style: TextStyle(fontSize: 9, color: Colors.grey)),
+                          const Text(" PRIVATE",
+                              style: TextStyle(
+                                  fontSize: 9, color: Colors.grey)),
                         ],
                       ],
                     ),
@@ -184,7 +192,8 @@ class _RequestListPageState extends State<RequestListPage> {
                       data['processed_by'] != null
                           ? "Handled by: ${data['processed_by']}"
                           : data['created_at'].toString().substring(0, 10),
-                      style: TextStyle(color: Colors.grey.shade500, fontSize: 11),
+                      style: TextStyle(
+                          color: Colors.grey.shade500, fontSize: 11),
                     ),
                   ],
                 ),
@@ -193,16 +202,21 @@ class _RequestListPageState extends State<RequestListPage> {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
                       color: statusColor.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(status.toUpperCase(),
-                        style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 10)),
+                        style: TextStyle(
+                            color: statusColor,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 10)),
                   ),
                   const SizedBox(height: 12),
-                  const Icon(Icons.chevron_right, color: Colors.grey, size: 20),
+                  const Icon(Icons.chevron_right,
+                      color: Colors.grey, size: 20),
                 ],
               ),
             ],
@@ -220,11 +234,13 @@ class _RequestListPageState extends State<RequestListPage> {
         prefixIcon: const Icon(Icons.search),
         filled: true,
         fillColor: Colors.white,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+        border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none),
       ),
       onChanged: (value) {
         setState(() => searchText = value);
-        fetchRequests(); // Re-fetch to apply search
+        fetchRequests();
       },
     );
   }
@@ -245,12 +261,21 @@ class _RequestListPageState extends State<RequestListPage> {
             fetchRequests();
           },
           child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+            padding:
+            const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
             decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: isSelected ? Colors.blue : Colors.transparent, width: 2)),
+              border: Border(
+                  bottom: BorderSide(
+                      color: isSelected ? Colors.blue : Colors.transparent,
+                      width: 2)),
             ),
             child: Text(label,
-                style: TextStyle(fontSize: 10, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal, color: isSelected ? Colors.blue : Colors.grey)),
+                style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: isSelected
+                        ? FontWeight.bold
+                        : FontWeight.normal,
+                    color: isSelected ? Colors.blue : Colors.grey)),
           ),
         );
       }).toList(),
@@ -262,7 +287,8 @@ class _RequestListPageState extends State<RequestListPage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F6FA),
       appBar: AppBar(
-        title: Text("${widget.type} Requests", style: const TextStyle(fontWeight: FontWeight.bold)),
+        title: Text("${widget.type} Requests",
+            style: const TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
         elevation: 0,
@@ -280,10 +306,13 @@ class _RequestListPageState extends State<RequestListPage> {
               child: isLoading
                   ? const Center(child: CircularProgressIndicator())
                   : requests.isEmpty
-                  ? Center(child: Text("No $statusFilter requests found"))
+                  ? Center(
+                  child:
+                  Text("No $statusFilter requests found"))
                   : ListView.builder(
                 itemCount: requests.length,
-                itemBuilder: (context, index) => buildRequestCard(requests[index]),
+                itemBuilder: (context, index) =>
+                    buildRequestCard(requests[index]),
               ),
             )
           ],

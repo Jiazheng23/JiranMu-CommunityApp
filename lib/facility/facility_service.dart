@@ -1,4 +1,6 @@
+import 'dart:io';
 import 'package:assignment/facility/facility_model.dart';
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class FacilityService {
@@ -6,16 +8,121 @@ class FacilityService {
 
   final SupabaseClient _supabase = Supabase.instance.client;
 
-  Future<List<FacilityModel>> fetchFacilities() async {
-    final data = await _supabase
-        .from('facilities')
-        .select()
-        .eq('is_active', true)
-        .order('name');
+  Future<List<FacilityModel>> fetchFacilities({bool activeOnly = true}) async {
+    var query = _supabase.from('facilities').select();
+
+    if (activeOnly) {
+      query = query.eq('is_active', true);
+    }
+
+    final data = await query.order('name');
 
     return (data as List)
         .map((item) => FacilityModel.fromMap(item as Map<String, dynamic>))
         .toList();
+  }
+
+  Future<List<FacilityModel>> fetchAllFacilities() async {
+    final data = await _supabase
+        .from('facilities')
+        .select()
+        .order('created_at', ascending: false);
+
+    return (data as List)
+        .map((item) => FacilityModel.fromMap(item as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<String?> uploadFacilityImage(File imageFile) async {
+    try {
+      final fileName = 'facility_${DateTime.now().millisecondsSinceEpoch}.jpg';
+
+      await _supabase.storage.from('facility_images').upload(
+        fileName,
+        imageFile,
+        fileOptions: const FileOptions(upsert: true),
+      );
+
+      return _supabase.storage.from('facility_images').getPublicUrl(fileName);
+    } catch (e) {
+      debugPrint('Facility image upload error: $e');
+      return null;
+    }
+  }
+
+  Future<void> createFacility({
+    required String name,
+    required String description,
+    required String imageUrl,
+    required String location,
+    required int capacity,
+    required String openTime,
+    required String closeTime,
+    required String bookingMode,
+    required bool isActive,
+    required int slotDurationMinutes,
+    int? maxDurationMinutes,
+    required bool purposeRequired,
+    required bool isShared,
+  }) async {
+    await _supabase.from('facilities').insert({
+      'name': name,
+      'description': description.isEmpty ? null : description,
+      'image_url': imageUrl.isEmpty ? null : imageUrl,
+      'location': location,
+      'capacity': capacity,
+      'open_time': openTime,
+      'close_time': closeTime,
+      'booking_mode': bookingMode,
+      'is_active': isActive,
+      'slot_duration_minutes': slotDurationMinutes,
+      'max_duration_minutes': maxDurationMinutes,
+      'purpose_required': purposeRequired,
+      'is_shared': isShared,
+    });
+  }
+
+  Future<void> updateFacility({
+    required String id,
+    required String name,
+    required String description,
+    required String imageUrl,
+    required String location,
+    required int capacity,
+    required String openTime,
+    required String closeTime,
+    required String bookingMode,
+    required bool isActive,
+    required int slotDurationMinutes,
+    int? maxDurationMinutes,
+    required bool purposeRequired,
+    required bool isShared,
+  }) async {
+    await _supabase.from('facilities').update({
+      'name': name,
+      'description': description.isEmpty ? null : description,
+      'image_url': imageUrl.isEmpty ? null : imageUrl,
+      'location': location,
+      'capacity': capacity,
+      'open_time': openTime,
+      'close_time': closeTime,
+      'booking_mode': bookingMode,
+      'is_active': isActive,
+      'slot_duration_minutes': slotDurationMinutes,
+      'max_duration_minutes': maxDurationMinutes,
+      'purpose_required': purposeRequired,
+      'is_shared': isShared,
+    }).eq('id', id);
+  }
+
+  Future<void> updateFacilityActiveStatus({
+    required String id,
+    required bool isActive,
+  }) async {
+    await _supabase
+        .from('facilities')
+        .update({'is_active': isActive})
+        .eq('id', id);
   }
 
   Future<List<Map<String, dynamic>>> fetchUnavailableRanges({
@@ -72,7 +179,6 @@ class FacilityService {
     final slotLabel =
         '${_formatDbTimeTo12Hour(startTime)} - ${_formatDbTimeTo12Hour(endTime)}';
 
-    // 先取同 facility / same date / approved booking
     final approvedBookings = await _supabase
         .from('facility_bookings')
         .select('participants, start_time, end_time')
@@ -80,23 +186,17 @@ class FacilityService {
         .eq('booking_date', dateOnly)
         .eq('status', 'approved');
 
-    // =========================
-    // A. SHARED INSTANT FACILITY
-    // Gym Room / Swimming Pool
-    // =========================
     if (facility.isInstantBooking && facility.isShared) {
       int usedCapacity = 0;
 
       for (final row in approvedBookings) {
         final existingStart =
         _parseTimeToMinutes(row['start_time']?.toString() ?? '');
-        final existingEnd =
-        _parseTimeToMinutes(row['end_time']?.toString() ?? '');
+        final existingEnd = _parseTimeToMinutes(row['end_time']?.toString() ?? '');
 
         if (existingStart == null || existingEnd == null) continue;
 
-        final overlap =
-        !(endMinutes <= existingStart || startMinutes >= existingEnd);
+        final overlap = !(endMinutes <= existingStart || startMinutes >= existingEnd);
 
         if (overlap) {
           usedCapacity += ((row['participants'] ?? 1) as int);
@@ -128,15 +228,9 @@ class FacilityService {
       return;
     }
 
-    // =========================
-    // B. EXCLUSIVE CHECK
-    // instant exclusive / approval facility
-    // =========================
     final hasApprovedOverlap = approvedBookings.any((item) {
-      final bookedStart =
-      _parseTimeToMinutes(item['start_time']?.toString() ?? '');
-      final bookedEnd =
-      _parseTimeToMinutes(item['end_time']?.toString() ?? '');
+      final bookedStart = _parseTimeToMinutes(item['start_time']?.toString() ?? '');
+      final bookedEnd = _parseTimeToMinutes(item['end_time']?.toString() ?? '');
 
       if (bookedStart == null || bookedEnd == null) return false;
 
@@ -147,10 +241,6 @@ class FacilityService {
       throw Exception('This time range has already been booked.');
     }
 
-    // =========================
-    // C. EXCLUSIVE INSTANT
-    // Tennis / Basketball
-    // =========================
     if (facility.isInstantBooking) {
       await _supabase.from('facility_bookings').insert({
         'request_id': null,
@@ -167,11 +257,6 @@ class FacilityService {
       return;
     }
 
-    // =========================
-    // D. APPROVAL FACILITY
-    // Function Hall / BBQ Area
-    // same resident duplicate pending/approved request check
-    // =========================
     final myExistingRequests = await _supabase
         .from('facility_requests')
         .select('start_time, end_time, requests!inner(user_id, status)')
@@ -181,10 +266,8 @@ class FacilityService {
         .inFilter('requests.status', ['pending', 'approved']);
 
     final hasMyOwnPendingOverlap = myExistingRequests.any((item) {
-      final bookedStart =
-      _parseTimeToMinutes(item['start_time']?.toString() ?? '');
-      final bookedEnd =
-      _parseTimeToMinutes(item['end_time']?.toString() ?? '');
+      final bookedStart = _parseTimeToMinutes(item['start_time']?.toString() ?? '');
+      final bookedEnd = _parseTimeToMinutes(item['end_time']?.toString() ?? '');
 
       if (bookedStart == null || bookedEnd == null) return false;
 

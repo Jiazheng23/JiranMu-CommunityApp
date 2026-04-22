@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../chat/CommunityChatsListScreen.dart';
 import '../AdminCreateChatScreen.dart';
+import 'create_facility_page.dart';
 import 'dashboard_page.dart';
 import '../profile/admin_profile_page.dart';
 
@@ -29,12 +30,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
   // 使用 getter 初始化页面
   List<Widget> get pages => [
     const DashboardPage(),
+    const CreateFacilityPage(),
     const CommunityChatsListScreen(),
     AdminProfilePage(user: widget.user),
   ];
 
   final List<Map<String, dynamic>> navItems = [
     {'icon': Icons.home_outlined, 'label': 'Dashboard'},
+    {'icon': Icons.add_business_outlined, 'label': 'Create'},
     {'icon': Icons.chat_bubble_outline, 'label': 'Message'},
     {'icon': Icons.person_outline, 'label': 'Profile'},
   ];
@@ -276,6 +279,25 @@ class _AdminDashboardState extends State<AdminDashboard> {
           onPressed: () => Navigator.push(
             context,
             MaterialPageRoute(
+              builder: (_) => const CreateFacilityPage(),
+            ),
+          ),
+          backgroundColor: const Color(0xFF9A4B3C),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(60),
+          ),
+          elevation: 4,
+          child: const Icon(Icons.add, size: 30, color: Colors.white),
+        ),
+      )
+          : selectedIndex == 2
+          ? SizedBox(
+        width: 65,
+        height: 65,
+        child: FloatingActionButton(
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(
               builder: (_) => const AdminCreateChatScreen(),
             ),
           ),
@@ -289,6 +311,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
       )
           : null,
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(15),
@@ -309,7 +332,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: List.generate(navItems.length, (index) {
-                return _buildNavItem(navItems[index]['icon'], navItems[index]['label'], index);
+                return _buildNavItem(
+                  navItems[index]['icon'],
+                  navItems[index]['label'],
+                  index,
+                );
               }),
             ),
           ),

@@ -81,7 +81,8 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Reject Pass?'),
-        content: Text('Reject visitor pass for ${pass['visitor_name']}?'),
+        content:
+        Text('Reject visitor pass for ${pass['visitor_name']}?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -89,7 +90,8 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Reject', style: TextStyle(color: Colors.red)),
+            child: const Text('Reject',
+                style: TextStyle(color: Colors.red)),
           ),
         ],
       ),
@@ -114,12 +116,11 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
     showDialog(
       context: context,
       builder: (_) => Dialog(
-        shape:
-        RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24)),
         child: Padding(
           padding: const EdgeInsets.all(28),
-          child:
-          Column(mainAxisSize: MainAxisSize.min, children: [
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
             Text(
               'Visitor Pass QR',
               style: TextStyle(
@@ -327,13 +328,11 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
       ),
       child: Column(
         children: [
-          // ── Top section ──
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Avatar
                 CircleAvatar(
                   radius: 24,
                   backgroundColor: const Color(0xFFEADFD6),
@@ -362,7 +361,6 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
                               ),
                             ),
                           ),
-                          // Status chip
                           Container(
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 9, vertical: 3),
@@ -416,11 +414,8 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
               ],
             ),
           ),
-
-          // ── Divider ──
-          const Divider(height: 1, thickness: 1, color: Color(0xFFF0EBE6)),
-
-          // ── Action buttons ──
+          const Divider(
+              height: 1, thickness: 1, color: Color(0xFFF0EBE6)),
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
             child: Row(
@@ -435,7 +430,8 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
                       side: const BorderSide(color: Colors.red),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10)),
-                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      padding:
+                      const EdgeInsets.symmetric(vertical: 10),
                       textStyle: const TextStyle(
                           fontSize: 13, fontWeight: FontWeight.w600),
                     ),
@@ -453,7 +449,8 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10)),
-                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      padding:
+                      const EdgeInsets.symmetric(vertical: 10),
                       textStyle: const TextStyle(
                           fontSize: 13, fontWeight: FontWeight.w600),
                       elevation: 0,
@@ -496,13 +493,11 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
       ),
       child: Column(
         children: [
-          // ── Top section ──
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Avatar
                 CircleAvatar(
                   radius: 24,
                   backgroundColor: const Color(0xFFEADFD6),
@@ -531,7 +526,6 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
                               ),
                             ),
                           ),
-                          // Status chip
                           Container(
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 9, vertical: 3),
@@ -577,20 +571,20 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
               ],
             ),
           ),
-
-          // ── View QR button (approved only) ──
           if (!isUsed) ...[
-            const Divider(height: 1, thickness: 1, color: Color(0xFFF0EBE6)),
+            const Divider(
+                height: 1, thickness: 1, color: Color(0xFFF0EBE6)),
             InkWell(
               onTap: () => _showQRDialog(pass),
-              borderRadius:
-              const BorderRadius.vertical(bottom: Radius.circular(16)),
+              borderRadius: const BorderRadius.vertical(
+                  bottom: Radius.circular(16)),
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: const [
-                    Icon(Icons.qr_code_2, size: 18, color: Color(0xFF9A4B3C)),
+                    Icon(Icons.qr_code_2,
+                        size: 18, color: Color(0xFF9A4B3C)),
                     SizedBox(width: 6),
                     Text(
                       'View QR Code',
@@ -609,19 +603,6 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
       ),
     );
   }
-
-  Widget _cardInfoRow(IconData icon, String text) => Padding(
-    padding: const EdgeInsets.only(bottom: 5),
-    child: Row(children: [
-      Icon(icon, size: 14, color: Colors.black45),
-      const SizedBox(width: 6),
-      Expanded(
-        child: Text(text,
-            style: const TextStyle(
-                fontSize: 13, color: Colors.black54)),
-      ),
-    ]),
-  );
 
   Widget _buildEmpty(IconData icon, String msg) => Center(
     child: Column(

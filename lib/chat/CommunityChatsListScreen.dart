@@ -102,8 +102,11 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
   bool get _isResident => UserSession.isResident;
 
   bool _loading = true;
-  late final String _currentUserId;
-  late final String _currentUserEmail;
+  String? _errorMessage;
+
+  // These are now re-assigned after UserSession.init() completes
+  String _currentUserId = '';
+  String _currentUserEmail = '';
 
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
@@ -121,16 +124,55 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
 
   late final TabController _tabController;
 
+  // ══════════════════════════════════════════════
+  // INIT
+  // ══════════════════════════════════════════════
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _currentUserId = supabase.auth.currentUser?.id ?? '';
-    _currentUserEmail = supabase.auth.currentUser?.email ?? '';
-    if (_isAdmin) {
-      _loadAdminData();
-    } else if (_isResident) {
-      _loadResidentData();
+    _initAndLoad();
+  }
+
+  /// Awaits UserSession.init() so the role is guaranteed to be set
+  /// before we decide which data to load.
+  Future<void> _initAndLoad() async {
+    setState(() {
+      _loading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      // ✅ Always await init so role/uid are populated
+      await UserSession.init();
+
+      _currentUserId = UserSession.uid ?? '';
+      _currentUserEmail = UserSession.email ?? '';
+
+      debugPrint(
+          '✅ UserSession ready — role: ${UserSession.role}, uid: $_currentUserId');
+
+      if (_currentUserId.isEmpty) {
+        debugPrint('❌ No authenticated user found');
+        setState(() => _loading = false);
+        return;
+      }
+
+      if (UserSession.isAdmin) {
+        await _loadAdminData();
+      } else if (UserSession.isResident) {
+        await _loadResidentData();
+      } else {
+        debugPrint('❌ Unknown role — not found in admin_new or resident');
+        setState(() => _loading = false);
+      }
+    } catch (e, stack) {
+      debugPrint('❌ _initAndLoad error: $e\n$stack');
+      setState(() {
+        _loading = false;
+        _errorMessage = e.toString();
+      });
     }
   }
 
@@ -146,7 +188,7 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
   // ══════════════════════════════════════════════
 
   Future<void> _loadResidentData() async {
-    setState(() => _loading = true);
+    // Note: _loading is already true from _initAndLoad; no need to set again.
     try {
       final myProfile = await supabase
           .from('resident')
@@ -155,12 +197,14 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
           .maybeSingle();
 
       if (myProfile == null) {
+        debugPrint('❌ Resident profile not found for uid: $_currentUserId');
         setState(() => _loading = false);
         return;
       }
 
       final myBlock = myProfile['block'] as String? ?? '';
       if (myBlock.isEmpty) {
+        debugPrint('❌ Resident has no block assigned');
         setState(() => _loading = false);
         return;
       }
@@ -176,9 +220,7 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
           .map((e) => ResidentProfile.fromMap(e as Map<String, dynamic>))
           .toList();
 
-      // ── FIX: fetch all rooms for current user using two separate queries
-      // then merge, instead of using .or() with compound filters which
-      // can be rejected by some Supabase/PostgREST configurations.
+      // Fetch all rooms for current user using two separate queries
       final roomsAsUser1 = await supabase
           .from('chat_rooms')
           .select('room_id, user1_id, user2_id')
@@ -285,8 +327,11 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
         _loading = false;
       });
     } catch (e, stack) {
-      debugPrint('Resident load error: $e\n$stack');
-      setState(() => _loading = false);
+      debugPrint('❌ Resident load error: $e\n$stack');
+      setState(() {
+        _loading = false;
+        _errorMessage = e.toString();
+      });
     }
   }
 
@@ -297,13 +342,13 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
         .where((id) => id.startsWith('ROOM_'))
         .map((id) => int.tryParse(id.replaceFirst('ROOM_', '')) ?? 0)
         .toList();
-    final nextNum = ids.isEmpty ? 1 : (ids.reduce((a, b) => a > b ? a : b) + 1);
+    final nextNum =
+    ids.isEmpty ? 1 : (ids.reduce((a, b) => a > b ? a : b) + 1);
     return 'ROOM_${nextNum.toString().padLeft(2, '0')}';
   }
 
   Future<void> _openOrCreateResidentDM(ResidentProfile resident) async {
     try {
-      // ── FIX: use two separate queries instead of compound .or() filter
       String? roomId;
 
       final asUser1 = await supabase
@@ -353,7 +398,7 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
       );
       _loadResidentData();
     } catch (e, stack) {
-      debugPrint('Error opening DM: $e\n$stack');
+      debugPrint('❌ Error opening DM: $e\n$stack');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Could not open chat: $e')),
@@ -383,7 +428,6 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
   // ══════════════════════════════════════════════
 
   Future<void> _loadAdminData() async {
-    setState(() => _loading = true);
     try {
       final blocksData =
       await supabase.from('resident').select('block').neq('block', '');
@@ -435,7 +479,10 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
       });
     } catch (e, stack) {
       debugPrint('❌ Admin load error: $e\n$stack');
-      setState(() => _loading = false);
+      setState(() {
+        _loading = false;
+        _errorMessage = e.toString();
+      });
     }
   }
 
@@ -480,11 +527,94 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
       body: SafeArea(
         child: _loading
             ? const Center(child: CircularProgressIndicator())
+            : _errorMessage != null
+            ? _buildErrorState()
             : _isAdmin
             ? _buildAdminLayout()
             : _isResident
             ? _buildResidentLayout()
-            : const Center(child: Text('Unknown role')),
+            : _buildUnknownRoleState(),
+      ),
+    );
+  }
+
+  Widget _buildErrorState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.error_outline, size: 56, color: Colors.redAccent),
+            const SizedBox(height: 16),
+            const Text(
+              'Something went wrong',
+              style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF2B2B2B)),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _errorMessage ?? '',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 12, color: Colors.black45),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: _initAndLoad,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Retry'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _primary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUnknownRoleState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.person_off_outlined,
+                size: 56, color: Colors.black38),
+            const SizedBox(height: 16),
+            const Text(
+              'Account not recognised',
+              style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF2B2B2B)),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'UID: $_currentUserId\nRole: ${UserSession.role}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 12, color: Colors.black45),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: _initAndLoad,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Retry'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _primary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -497,8 +627,8 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
     final filteredConvos = _searchQuery.isEmpty
         ? _conversations
         : _conversations
-        .where((c) =>
-        c.resident.name.toLowerCase().contains(_searchQuery))
+        .where(
+            (c) => c.resident.name.toLowerCase().contains(_searchQuery))
         .toList();
 
     final List<Map<String, dynamic>> combinedList = [];
@@ -532,17 +662,12 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
     return CustomScrollView(
       slivers: [
         SliverToBoxAdapter(child: _buildHeader(title: 'Messages')),
-
         SliverToBoxAdapter(child: _buildNeighboursStrip()),
-
         SliverToBoxAdapter(child: _buildDivider()),
-
         SliverToBoxAdapter(
           child: _buildSearchBar(hint: 'Search neighbours…'),
         ),
-
         const SliverToBoxAdapter(child: SizedBox(height: 8)),
-
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(22, 8, 22, 8),
@@ -555,14 +680,12 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
             ),
           ),
         ),
-
         SliverToBoxAdapter(
           child: ResidentInvitationsWidget(
             currentUserId: _currentUserId,
             currentUser: _currentUserEmail,
           ),
         ),
-
         if (combinedList.isEmpty)
           SliverFillRemaining(
             hasScrollBody: false,
@@ -592,7 +715,6 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
 
                   if (item['type'] == 'group') {
                     final group = item['data'] as GroupChatPreview;
-
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 8),
                       child: _GroupChatTile(
@@ -605,7 +727,6 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
                     );
                   } else {
                     final convo = item['data'] as ConversationPreview;
-
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 8),
                       child: _ConversationTile(
@@ -613,8 +734,7 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
                         primaryColor: _primary,
                         accentColor: _accent,
                         formatTime: _formatTime,
-                        onTap: () =>
-                            _openOrCreateResidentDM(convo.resident),
+                        onTap: () => _openOrCreateResidentDM(convo.resident),
                       ),
                     );
                   }
@@ -675,8 +795,6 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
             padding: const EdgeInsets.symmetric(horizontal: 22),
             itemCount: _blockNeighbours.length,
             separatorBuilder: (_, __) => const SizedBox(width: 14),
-            // ── FIX: pass neighbour directly so tapping always works,
-            // even if no prior conversation exists in _conversations.
             itemBuilder: (context, i) => _NeighbourCard(
               profile: _blockNeighbours[i],
               primaryColor: _primary,
@@ -859,8 +977,7 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
           style: const TextStyle(fontSize: 14, color: _textDark),
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle:
-            const TextStyle(color: Colors.black38, fontSize: 14),
+            hintStyle: const TextStyle(color: Colors.black38, fontSize: 14),
             prefixIcon: const Icon(Icons.search_rounded,
                 color: Colors.black38, size: 20),
             border: InputBorder.none,
@@ -893,97 +1010,6 @@ class _CountBadge extends StatelessWidget {
         '$count',
         style: TextStyle(
             fontSize: 11, fontWeight: FontWeight.w700, color: color),
-      ),
-    );
-  }
-}
-
-class _GroupChatChip extends StatelessWidget {
-  final GroupChatPreview group;
-  final Color primaryColor;
-  final String Function(DateTime) formatTime;
-  final VoidCallback onTap;
-
-  const _GroupChatChip({
-    required this.group,
-    required this.primaryColor,
-    required this.formatTime,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 160,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [primaryColor, primaryColor.withOpacity(0.7)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Center(
-                    child: Text(
-                      group.block,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  formatTime(group.lastTime),
-                  style:
-                  const TextStyle(fontSize: 10, color: Colors.black38),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              group.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF2B2B2B),
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              group.lastMessage,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 11, color: Colors.black45),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -1069,8 +1095,8 @@ class _GroupChatTile extends StatelessWidget {
                     group.lastMessage,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        fontSize: 13, color: Colors.black45),
+                    style:
+                    const TextStyle(fontSize: 13, color: Colors.black45),
                   ),
                 ],
               ),
@@ -1081,8 +1107,8 @@ class _GroupChatTile extends StatelessWidget {
               children: [
                 Text(
                   formatTime(group.lastTime),
-                  style: const TextStyle(
-                      fontSize: 12, color: Colors.black38),
+                  style:
+                  const TextStyle(fontSize: 12, color: Colors.black38),
                 )
               ],
             ),
