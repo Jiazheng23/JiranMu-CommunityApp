@@ -54,8 +54,25 @@ class _EmergencyListPageState extends State<EmergencyListPage> {
         });
       }
 
+      // 🔥 核心逻辑：在这里进行自定义排序，把 Active 强行置顶
+      processedEmergencies.sort((a, b) {
+        String statusA = (a['status'] ?? '').toString().toLowerCase();
+        String statusB = (b['status'] ?? '').toString().toLowerCase();
+
+        // 如果 A 是 active 而 B 不是，A 排在前面 (-1)
+        if (statusA == 'active' && statusB != 'active') return -1;
+        // 如果 B 是 active 而 A 不是，B 排在前面 (1)
+        if (statusA != 'active' && statusB == 'active') return 1;
+
+        // 如果状态相同（都是 active 或都是 solved），按时间倒序排列 (最新的在最上面)
+        DateTime timeA = DateTime.tryParse(a['created_at'] ?? '') ?? DateTime.now();
+        DateTime timeB = DateTime.tryParse(b['created_at'] ?? '') ?? DateTime.now();
+        return timeB.compareTo(timeA);
+      });
+
       if (mounted) {
         setState(() {
+          // 赋值已经排好序的数据
           emergencies = processedEmergencies;
         });
       }
