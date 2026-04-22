@@ -1,4 +1,4 @@
-import 'dart:async'; // 🔥 新增 Timer 需要的包
+import 'dart:async';
 import 'package:assignment/chat/CommunityChatScreen.dart';
 import 'package:assignment/chat/CommunityChatsListScreen.dart';
 import 'package:assignment/facility/facility_booking_page.dart';
@@ -6,8 +6,10 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../admin/request/event/event_calendar_screen.dart';
 import '../resident/emergency_form.dart';
-import '../admin//emergency/location.dart'; // 🔥 新增 location，用于获取位置和 createEmergency
+import '../admin/emergency/location.dart';
 import 'VisitorPassListScreen.dart';
+import 'announcement_detail_page.dart';
+import 'announcement_list_page.dart';
 
 class ResidentHomePage extends StatefulWidget {
   const ResidentHomePage({super.key});
@@ -25,6 +27,10 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
   Timer? _timer;
   int countdown = 10;
 
+  // 🔥 公告状态变量 (使用 List 存放多条用于滑动的公告)
+  List<Map<String, dynamic>> latestAnnouncements = [];
+  bool isLoadingAnnouncement = true;
+
   final Color bgColor = const Color(0xFFF5F1ED);
   final Color primaryColor = const Color(0xFF9A4B3C);
   final Color accentColor = const Color(0xFFFC9D7E);
@@ -32,9 +38,55 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
   final Color textDark = const Color(0xFF2B2B2B);
 
   @override
+  void initState() {
+    super.initState();
+    _fetchLatestAnnouncements(); // 页面初始化时获取最新的公告
+  }
+
+  @override
   void dispose() {
-    _timer?.cancel(); // 🔥 页面销毁时清理定时器
+    _timer?.cancel(); // 页面销毁时清理定时器
     super.dispose();
+  }
+
+  // 🔥 从 Supabase 获取最新 5 条公告
+  Future<void> _fetchLatestAnnouncements() async {
+    try {
+      final response = await Supabase.instance.client
+          .from('announcements') // 对应你的数据库表名
+          .select()
+          .order('created_at', ascending: false)
+          .limit(5); // 拿最新 5 条
+
+      if (mounted) {
+        setState(() {
+          latestAnnouncements = List<Map<String, dynamic>>.from(response);
+          isLoadingAnnouncement = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error fetching announcements: $e');
+      if (mounted) {
+        setState(() {
+          isLoadingAnnouncement = false;
+        });
+      }
+    }
+  }
+
+  // 辅助函数：格式化日期为 "5 Jan, 2026"
+  String _formatDate(String? dateStr) {
+    if (dateStr == null) return '';
+    try {
+      final DateTime date = DateTime.parse(dateStr).toLocal();
+      final List<String> months = [
+        'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      ];
+      return '${date.day} ${months[date.month - 1]}, ${date.year}';
+    } catch (e) {
+      return dateStr.substring(0, 10);
+    }
   }
 
   Future<void> logout() async {
@@ -44,12 +96,11 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
 
     Navigator.popUntil(context, (route) => route.isFirst);
 
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text("Logged out successfully")));
+    ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Logged out successfully")));
   }
 
-  // 🔥 重置紧急状态
+  // 重置紧急状态
   void resetState() {
     _timer?.cancel();
     setState(() {
@@ -59,7 +110,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     });
   }
 
-  // 🔥 核心逻辑：带倒计时的紧急求救
+  // 带倒计时的紧急求救
   void handleEmergency() {
     if (isEmergency) {
       resetState();
@@ -95,7 +146,6 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
             Navigator.of(context, rootNavigator: true).pop();
           }
 
-          // 🔥 从 Supabase 获取当前 Resident 的 User ID
           final userId = Supabase.instance.client.auth.currentUser?.id;
 
           if (userId != null) {
@@ -107,7 +157,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text("Emergency SOS Sent with Location!"),
-                    backgroundColor: Color(0xFF6B8E6B), // 成功绿
+                    backgroundColor: Color(0xFF6B8E6B),
                   ),
                 );
               }
@@ -116,7 +166,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text("Failed to send SOS: $e"),
-                    backgroundColor: const Color(0xFFC67B75), // 错误红
+                    backgroundColor: const Color(0xFFC67B75),
                   ),
                 );
               }
@@ -139,7 +189,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                 return Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.warning_amber_rounded, color: Color(0xFFD49A6A), size: 70), // 焦糖橙
+                    const Icon(Icons.warning_amber_rounded, color: Color(0xFFD49A6A), size: 70),
                     const SizedBox(height: 20),
                     const Text(
                       "Confirm sending emergency notification?",
@@ -156,7 +206,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                             value: countdown / 10,
                             strokeWidth: 6,
                             backgroundColor: Colors.grey.shade200,
-                            valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFD49A6A)), // 焦糖橙
+                            valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFD49A6A)),
                           ),
                         ),
                         Text(
@@ -227,77 +277,200 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     );
   }
 
-  Widget buildSectionTitle(String title) {
+  // 🔥 支持右侧显示 "View All" 的标题组件
+  Widget buildSectionTitle(String title, {VoidCallback? onViewAll}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: Text(
-        title,
-        style: TextStyle(
-          fontSize: 18,
-          fontWeight: FontWeight.bold,
-          color: textDark,
-        ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: textDark,
+            ),
+          ),
+          if (onViewAll != null)
+            GestureDetector(
+              onTap: onViewAll,
+              child: Text(
+                "View All",
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: primaryColor,
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
 
-  Widget buildAnnouncementCard() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
+  // 🔥 动态横向滑动公告卡片 (支持点击查看详情)
+  Widget buildAnnouncementSlider() {
+    if (isLoadingAnnouncement) {
+      return Container(
+        width: double.infinity,
+        height: 140, // 固定高度防止页面跳动
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(22),
+        ),
+        child: const Center(child: CircularProgressIndicator(color: Color(0xFF9A4B3C))),
+      );
+    }
+
+    if (latestAnnouncements.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(22),
+        ),
+        child: const Center(
+          child: Text(
+            "No announcements at the moment.",
+            style: TextStyle(color: Colors.black54),
           ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            "Power outage announcement",
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
-              color: textDark,
+        ),
+      );
+    }
+
+    return SizedBox(
+      height: 145,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: latestAnnouncements.length,
+        separatorBuilder: (context, index) => const SizedBox(width: 14),
+        itemBuilder: (context, index) {
+          final announcement = latestAnnouncements[index];
+          final title = announcement['title'] ?? 'Notice';
+          final content = announcement['content'] ?? '';
+          final category = announcement['category'] ?? 'General';
+          final isUrgent = announcement['is_urgent'] ?? false;
+          final dateStr = _formatDate(announcement['created_at']);
+
+          return Container(
+            width: MediaQuery.of(context).size.width * 0.75, // 显示75%的宽度，让右侧露出下一张
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(22),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            "Please be informed that maintenance works are scheduled from 10 AM to 12 PM. Power supply will be temporarily interrupted in Block A.",
-            style: TextStyle(fontSize: 13, color: Colors.black54, height: 1.5),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              const CircleAvatar(
-                radius: 14,
-                backgroundColor: Color(0xFFEADFD6),
-                child: Icon(Icons.business, size: 14, color: Color(0xFF9A4B3C)),
-              ),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text(
-                  "Office Management",
-                  style: TextStyle(fontSize: 12, color: Colors.black54),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(22),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => AnnouncementDetailPage(announcement: announcement),
+                    ),
+                  );
+                },
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          if (isUrgent) ...[
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              margin: const EdgeInsets.only(right: 8),
+                              decoration: BoxDecoration(
+                                color: Colors.red.shade50,
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: Colors.red.shade200),
+                              ),
+                              child: const Text(
+                                "URGENT",
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.redAccent,
+                                ),
+                              ),
+                            ),
+                          ],
+                          Expanded(
+                            child: Text(
+                              title,
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: textDark,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Expanded(
+                        child: Text(
+                          content,
+                          style: const TextStyle(fontSize: 13, color: Colors.black54, height: 1.4),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 12,
+                            backgroundColor: isUrgent ? Colors.red.shade50 : const Color(0xFFEADFD6),
+                            child: Icon(
+                                isUrgent ? Icons.warning_amber_rounded : Icons.campaign_rounded,
+                                size: 12,
+                                color: isUrgent ? Colors.redAccent : const Color(0xFF9A4B3C)
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              category.toUpperCase(),
+                              style: const TextStyle(
+                                fontSize: 10,
+                                color: Colors.black54,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.5,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          Text(
+                            dateStr,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: primaryColor,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              Text(
-                "5 Jan, 2026",
-                style: TextStyle(
-                  fontSize: 12,
-                  color: primaryColor,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -416,7 +589,6 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                   width: double.infinity,
                   child: ElevatedButton(
                     onPressed: () {
-                      // 🔥 跳转到 EventCalendarScreen
                       Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -568,7 +740,6 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                 color: const Color(0xFF758BFD),
                 label: "Events",
                 onTap: () {
-                  // 🔥 跳转到 EventCalendarScreen
                   Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -595,8 +766,18 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
           ),
 
           const SizedBox(height: 28),
-          buildSectionTitle("Announcement"),
-          buildAnnouncementCard(),
+          buildSectionTitle(
+            "Announcement",
+            onViewAll: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const AnnouncementListPage(),
+                ),
+              );
+            },
+          ),
+          buildAnnouncementSlider(), // 🔥 替换为滑动组件
 
           const SizedBox(height: 28),
           buildSectionTitle("Events"),
@@ -620,16 +801,6 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
   }
 
   Widget buildChatsTab() {
-    // const String roomId = 'community_chat';
-    // const String communityName = 'Condo Community';
-    // final String currentUser = Supabase.instance.client.auth.currentUser?.email ?? 'guest';
-    //
-    // return CommunityChatScreen(
-    //   roomId: roomId,
-    //   communityName: communityName,
-    //   currentUserId: currentUser,
-    //   currentUser: currentUser,
-    // );
     return CommunityChatsListScreen();
   }
 
@@ -732,7 +903,6 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
       backgroundColor: bgColor,
       body: SafeArea(child: getCurrentPage()),
 
-      // 🔥 同步 Admin Dashboard 的带倒计时悬浮按钮
       floatingActionButton: SizedBox(
         width: 65,
         height: 65,
@@ -742,7 +912,6 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(60)),
           elevation: 6,
           child: Icon(
-            // 这里用 sos_rounded 或 warning 都可以，我用 sos_rounded 更清晰
             isEmergency ? Icons.warning : (isWaiting ? Icons.access_time : Icons.sos_rounded),
             size: 32, color: Colors.white,
           ),
