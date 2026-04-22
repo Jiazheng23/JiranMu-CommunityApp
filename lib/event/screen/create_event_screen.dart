@@ -2,7 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
-import '../service/event_service.dart';
+import 'package:assignment/event/service/event_service.dart';
 import 'resident_event_history_screen.dart';
 
 class CreateEventScreen extends StatefulWidget {

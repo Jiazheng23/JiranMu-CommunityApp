@@ -7,7 +7,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../event/screen/event_calendar_screen.dart';
 import '../event/model/event_model.dart';       // ← adjust path if needed
 import '../event/service/event_service.dart';   // ← adjust path if needed
-import '../admin/request/event/event_calendar_screen.dart';
 import '../resident/emergency_form.dart';
 import '../admin/emergency/location.dart';
 import 'VisitorPassListScreen.dart';
@@ -50,12 +49,9 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
   void initState() {
     super.initState();
     _fetchLatestAnnouncements(); // 页面初始化时获取最新的公告
+    _loadUpcomingEvents();
   }
 
-  @override
-  void initState() {
-    super.initState();
-    _loadUpcomingEvents();
   void dispose() {
     _timer?.cancel(); // 页面销毁时清理定时器
     super.dispose();
@@ -331,9 +327,10 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
               color: textDark,
             ),
           ),
-          if (onViewAll != null)
+
+          if (onSeeAll != null)
             GestureDetector(
-              onTap: onViewAll,
+              onTap: onSeeAll,
               child: Text(
                 "View All",
                 style: TextStyle(
@@ -676,29 +673,6 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                               fontSize: 11, color: Colors.black45),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => EventCalendarScreen(),
-                        ),
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: primaryColor,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                    child: const Text("View Event"),
                     ],
                   ),
                 ],
@@ -840,7 +814,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
           const SizedBox(height: 28),
           buildSectionTitle(
             "Announcement",
-            onViewAll: () {
+            onSeeAll: () {
               Navigator.push(
                 context,
                 MaterialPageRoute(
