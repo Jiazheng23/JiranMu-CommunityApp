@@ -19,6 +19,12 @@ class CreateFacilityPage extends StatefulWidget {
 }
 
 class _CreateFacilityPageState extends State<CreateFacilityPage> {
+  static const Color bgColor = Color(0xFFF5F1ED);
+  static const Color primaryColor = Color(0xFF9A4B3C);
+  static const Color softYellow = Color(0xFFF0E6B8);
+  static const Color textDark = Color(0xFF2B2B2B);
+  static const Color cardColor = Colors.white;
+
   final _formKey = GlobalKey<FormState>();
   final FacilityService _facilityService = FacilityService();
   final ImagePicker _picker = ImagePicker();
@@ -50,17 +56,13 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
     _nameController = TextEditingController(text: facility?.name ?? '');
     _descriptionController =
         TextEditingController(text: facility?.description ?? '');
-    _imageUrlController =
-        TextEditingController(text: facility?.imageUrl ?? '');
-    _locationController =
-        TextEditingController(text: facility?.location ?? '');
+    _imageUrlController = TextEditingController(text: facility?.imageUrl ?? '');
+    _locationController = TextEditingController(text: facility?.location ?? '');
     _capacityController = TextEditingController(
       text: facility != null ? facility.capacity.toString() : '1',
     );
     _slotDurationController = TextEditingController(
-      text: facility != null
-          ? facility.slotDurationMinutes.toString()
-          : '60',
+      text: facility != null ? facility.slotDurationMinutes.toString() : '60',
     );
     _maxDurationController = TextEditingController(
       text: facility?.maxDurationMinutes?.toString() ?? '',
@@ -121,12 +123,50 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
     return (time.hour * 60) + time.minute;
   }
 
+  InputDecoration _inputDecoration(String label) {
+    return InputDecoration(
+      labelText: label,
+      labelStyle: const TextStyle(
+        color: Color(0xFF7A6258),
+        fontWeight: FontWeight.w500,
+      ),
+      filled: true,
+      fillColor: Colors.white,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: Colors.grey.shade300),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: Colors.grey.shade300),
+      ),
+      focusedBorder: const OutlineInputBorder(
+        borderRadius: BorderRadius.all(Radius.circular(16)),
+        borderSide: BorderSide(color: primaryColor, width: 1.5),
+      ),
+    );
+  }
+
   Future<void> _pickTime(bool isOpen) async {
     final pickedTime = await showTimePicker(
       context: context,
       initialTime: isOpen
           ? (_openTime ?? const TimeOfDay(hour: 8, minute: 0))
           : (_closeTime ?? const TimeOfDay(hour: 22, minute: 0)),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: primaryColor,
+              onPrimary: Colors.white,
+              surface: Colors.white,
+              onSurface: textDark,
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
 
     if (pickedTime == null) return;
@@ -156,22 +196,44 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
   Future<void> _showImageSourceSheet() async {
     await showModalBottomSheet<void>(
       context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
       builder: (context) {
         return SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
-                leading: const Icon(Icons.photo_camera_outlined),
-                title: const Text('Take photo'),
+                leading: const Icon(
+                  Icons.photo_camera_outlined,
+                  color: primaryColor,
+                ),
+                title: const Text(
+                  'Take photo',
+                  style: TextStyle(
+                    color: textDark,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 onTap: () {
                   Navigator.pop(context);
                   _pickImage(ImageSource.camera);
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.photo_library_outlined),
-                title: const Text('Choose from gallery'),
+                leading: const Icon(
+                  Icons.photo_library_outlined,
+                  color: primaryColor,
+                ),
+                title: const Text(
+                  'Choose from gallery',
+                  style: TextStyle(
+                    color: textDark,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 onTap: () {
                   Navigator.pop(context);
                   _pickImage(ImageSource.gallery);
@@ -328,20 +390,20 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(16),
       child: InputDecorator(
-        decoration: InputDecoration(
-          labelText: label,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
+        decoration: _inputDecoration(label).copyWith(
+          suffixIcon: const Icon(
+            Icons.access_time_outlined,
+            color: primaryColor,
           ),
-          suffixIcon: const Icon(Icons.access_time_outlined),
         ),
         child: Text(
           _formatDisplayTime(value),
           style: TextStyle(
-            color: value == null ? Colors.grey.shade600 : Colors.black87,
-            fontSize: 16,
+            color: value == null ? Colors.grey.shade600 : textDark,
+            fontSize: 15,
+            fontWeight: FontWeight.w500,
           ),
         ),
       ),
@@ -355,7 +417,7 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
 
     if (_selectedImageFile != null) {
       previewChild = ClipRRect(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         child: Image.file(
           _selectedImageFile!,
           fit: BoxFit.cover,
@@ -364,7 +426,7 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
       );
     } else if (existingImageUrl.isNotEmpty) {
       previewChild = ClipRRect(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         child: Image.network(
           existingImageUrl,
           fit: BoxFit.cover,
@@ -383,15 +445,19 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
       children: [
         const Text(
           'Facility Image',
-          style: TextStyle(fontWeight: FontWeight.w700),
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            color: textDark,
+          ),
         ),
         const SizedBox(height: 10),
         Container(
-          height: 180,
+          height: 190,
           width: double.infinity,
           decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
+            color: cardColor,
+            borderRadius: BorderRadius.circular(18),
             border: Border.all(color: Colors.grey.shade300),
           ),
           child: previewChild,
@@ -404,19 +470,32 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
                 onPressed: _showImageSourceSheet,
                 icon: const Icon(Icons.add_a_photo_outlined),
                 label: const Text('Camera / Gallery'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: primaryColor,
+                  side: const BorderSide(color: primaryColor),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
               ),
             ),
             const SizedBox(width: 10),
             if (_selectedImageFile != null || existingImageUrl.isNotEmpty)
               OutlinedButton.icon(
                 onPressed: _clearImage,
-                icon: const Icon(Icons.delete_outline, color: Colors.red),
-                label: const Text(
-                  'Remove',
-                  style: TextStyle(color: Colors.red),
-                ),
+                icon: const Icon(Icons.delete_outline),
+                label: const Text('Remove'),
                 style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Colors.redAccent),
+                  foregroundColor: const Color(0xFFC67B75),
+                  side: const BorderSide(color: Color(0xFFC67B75)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 14,
+                  ),
                 ),
               ),
           ],
@@ -432,13 +511,16 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
         children: [
           Icon(
             Icons.image_outlined,
-            size: 40,
-            color: Colors.grey,
+            size: 42,
+            color: Color(0xFF9A4B3C),
           ),
           SizedBox(height: 8),
           Text(
             'No image selected',
-            style: TextStyle(color: Colors.grey),
+            style: TextStyle(
+              color: Color(0xFF7A6258),
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ],
       ),
@@ -448,35 +530,40 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F6FA),
+      backgroundColor: bgColor,
       appBar: AppBar(
-        title: Text(widget.isEditMode ? 'Edit Facility' : 'Create Facility'),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
+        automaticallyImplyLeading: widget.isEditMode,
+        backgroundColor: bgColor,
+        surfaceTintColor: bgColor,
         elevation: 0,
+        centerTitle: false,
+        iconTheme: const IconThemeData(color: primaryColor),
+        title: Text(
+          widget.isEditMode ? 'Edit Facility' : 'Create Facility',
+          style: const TextStyle(
+            color: textDark,
+            fontSize: 22,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
       ),
       body: Form(
         key: _formKey,
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
           children: [
+            const SizedBox(height: 16),
             _buildImageSection(),
             const SizedBox(height: 12),
             TextFormField(
               controller: _imageUrlController,
               onChanged: (_) => setState(() {}),
-              decoration: const InputDecoration(
-                labelText: 'Image URL (optional fallback)',
-                border: OutlineInputBorder(),
-              ),
+              decoration: _inputDecoration('Image URL (optional fallback)'),
             ),
             const SizedBox(height: 12),
             TextFormField(
               controller: _nameController,
-              decoration: const InputDecoration(
-                labelText: 'Facility Name',
-                border: OutlineInputBorder(),
-              ),
+              decoration: _inputDecoration('Facility Name'),
               validator: (value) {
                 if (value == null || value.trim().isEmpty) {
                   return 'Please enter facility name';
@@ -488,18 +575,12 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
             TextFormField(
               controller: _descriptionController,
               maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: 'Description',
-                border: OutlineInputBorder(),
-              ),
+              decoration: _inputDecoration('Description'),
             ),
             const SizedBox(height: 12),
             TextFormField(
               controller: _locationController,
-              decoration: const InputDecoration(
-                labelText: 'Location',
-                border: OutlineInputBorder(),
-              ),
+              decoration: _inputDecoration('Location'),
               validator: (value) {
                 if (value == null || value.trim().isEmpty) {
                   return 'Please enter location';
@@ -514,10 +595,7 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
                   child: TextFormField(
                     controller: _capacityController,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Capacity',
-                      border: OutlineInputBorder(),
-                    ),
+                    decoration: _inputDecoration('Capacity'),
                     validator: (value) {
                       final number = int.tryParse(value ?? '');
                       if (number == null || number <= 0) {
@@ -531,10 +609,7 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
                 Expanded(
                   child: DropdownButtonFormField<String>(
                     value: _bookingMode,
-                    decoration: const InputDecoration(
-                      labelText: 'Booking Mode',
-                      border: OutlineInputBorder(),
-                    ),
+                    decoration: _inputDecoration('Booking Mode'),
                     items: const [
                       DropdownMenuItem(
                         value: 'instant',
@@ -582,10 +657,7 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
                   child: TextFormField(
                     controller: _slotDurationController,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Slot Duration (minutes)',
-                      border: OutlineInputBorder(),
-                    ),
+                    decoration: _inputDecoration('Slot Duration (minutes)'),
                     validator: (value) {
                       final number = int.tryParse(value ?? '');
                       if (number == null || number <= 0) {
@@ -600,10 +672,7 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
                   child: TextFormField(
                     controller: _maxDurationController,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Max Duration (optional)',
-                      border: OutlineInputBorder(),
-                    ),
+                    decoration: _inputDecoration('Max Duration (optional)'),
                     validator: (value) {
                       if (value == null || value.trim().isEmpty) return null;
                       final number = int.tryParse(value);
@@ -616,37 +685,73 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Facility is active'),
-              value: _isActive,
-              onChanged: (value) {
-                setState(() {
-                  _isActive = value;
-                });
-              },
-            ),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Purpose required'),
-              value: _purposeRequired,
-              onChanged: (value) {
-                setState(() {
-                  _purposeRequired = value;
-                });
-              },
-            ),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Shared facility'),
-              subtitle: const Text('Example: gym / swimming pool'),
-              value: _isShared,
-              onChanged: (value) {
-                setState(() {
-                  _isShared = value;
-                });
-              },
+            const SizedBox(height: 12),
+            Container(
+              decoration: BoxDecoration(
+                color: cardColor,
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Column(
+                children: [
+                  SwitchListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                    activeColor: primaryColor,
+                    title: const Text(
+                      'Facility is active',
+                      style: TextStyle(
+                        color: textDark,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    value: _isActive,
+                    onChanged: (value) {
+                      setState(() {
+                        _isActive = value;
+                      });
+                    },
+                  ),
+                  const Divider(height: 1),
+                  SwitchListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                    activeColor: primaryColor,
+                    title: const Text(
+                      'Purpose required',
+                      style: TextStyle(
+                        color: textDark,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    value: _purposeRequired,
+                    onChanged: (value) {
+                      setState(() {
+                        _purposeRequired = value;
+                      });
+                    },
+                  ),
+                  const Divider(height: 1),
+                  SwitchListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                    activeColor: primaryColor,
+                    title: const Text(
+                      'Shared facility',
+                      style: TextStyle(
+                        color: textDark,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    subtitle: const Text(
+                      'Example: gym / swimming pool',
+                      style: TextStyle(color: Color(0xFF7A6258)),
+                    ),
+                    value: _isShared,
+                    onChanged: (value) {
+                      setState(() {
+                        _isShared = value;
+                      });
+                    },
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 20),
             SizedBox(
@@ -654,10 +759,11 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
               child: ElevatedButton(
                 onPressed: _isSaving ? null : _saveFacility,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1E88E5),
+                  backgroundColor: primaryColor,
                   foregroundColor: Colors.white,
+                  elevation: 0,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(16),
                   ),
                 ),
                 child: _isSaving
@@ -673,6 +779,10 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
                   widget.isEditMode
                       ? 'Update Facility'
                       : 'Create Facility',
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ),
