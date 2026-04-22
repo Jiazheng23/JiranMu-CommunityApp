@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../request/request_list_page.dart';
 import 'package:image_picker/image_picker.dart';
-import '../dashboard/admin_dashboard.dart';
 import 'admin_notifications_page.dart';
 import 'package:assignment/resident/announcement_list_page.dart';
 
@@ -47,7 +46,7 @@ class _DashboardPageState extends State<DashboardPage> {
       if (user == null) return;
 
       final data = await supabase
-          .from('admin_new') // ⚠️ 请确保数据库里表名是这个
+          .from('admin_new')
           .select('full_name, image_url')
           .eq('id', user.id)
           .single();
