@@ -5,6 +5,8 @@ import 'package:assignment/event/screen/event_calendar_screen.dart';
 import 'VisitorPassListScreen.dart';
 import 'resident_booking_history_page.dart';
 import 'package:assignment/chat/CommunityChatsListScreen.dart';
+import 'package:assignment/resident/resident_login_page.dart';
+import 'package:assignment/resident/resident_profile_page.dart';
 
 class ResidentHomePage extends StatefulWidget {
   const ResidentHomePage({super.key});
@@ -27,11 +29,10 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
 
     if (!mounted) return;
 
-    Navigator.popUntil(context, (route) => route.isFirst);
-
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text("Logged out successfully")));
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const ResidentLoginPage()),
+          (route) => false,
+    );
   }
 
   Widget buildServiceItem({
@@ -497,7 +498,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                   leading: Icon(Icons.person_outline, color: primaryColor),
                   title: const Text("My Profile"),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () {},
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ResidentProfilePage())),
                 ),
                 ListTile(
                   contentPadding: EdgeInsets.zero,

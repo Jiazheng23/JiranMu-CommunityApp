@@ -1,10 +1,11 @@
 import 'dart:io';
+import 'package:assignment/admin/admin_login_page.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import '../AdminQRScannerScreen.dart';
 import 'personal_information_page.dart';
-import 'package:assignment/welcome_page.dart';
+
 
 class AdminProfilePage extends StatefulWidget {
   final Map<String, dynamic> user;
@@ -92,7 +93,7 @@ class _AdminProfilePageState extends State<AdminProfilePage> {
       if (context.mounted) {
         Navigator.pop(context);
         Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (context) => const WelcomePage()),
+          MaterialPageRoute(builder: (context) => const AdminLoginPage()),
               (route) => false,
         );
       }
