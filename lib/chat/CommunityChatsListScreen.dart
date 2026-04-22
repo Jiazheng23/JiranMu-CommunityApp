@@ -415,7 +415,7 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
             : 'No messages yet';
         final lastTime = msgList.isNotEmpty
             ? DateTime.parse(msgList[0]['created_at'] as String)
-            : DateTime.now().subtract(const Duration(days: 999));
+            : DateTime.now();
 
         groups.add(GroupChatPreview(
           groupId: g['id'] as String,
