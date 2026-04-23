@@ -693,33 +693,86 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Location chip
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              boxShadow: [
-                BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4)),
-              ],
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.location_on_outlined, color: primaryColor, size: 18),
-                const SizedBox(width: 6),
-                Text("BLOCK A",
-                    style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: primaryColor,
-                        letterSpacing: 0.5)),
-                const SizedBox(width: 4),
-                const Icon(Icons.keyboard_arrow_down_rounded),
-              ],
-            ),
+          // 顶部：Location chip & Notification Icon
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              // Location chip (左侧)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(18),
+                  boxShadow: [
+                    BoxShadow(
+                        color: Colors.black.withOpacity(0.04),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4)),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.location_on_outlined, color: primaryColor, size: 18),
+                    const SizedBox(width: 6),
+                    Text("BLOCK A",
+                        style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: primaryColor,
+                            letterSpacing: 0.5)),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.keyboard_arrow_down_rounded),
+                  ],
+                ),
+              ),
+
+              // Notification Bell (右侧)
+              GestureDetector(
+                onTap: () {
+                  // 点击铃铛直接进入 Announcement 列表
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const AnnouncementListPage(),
+                    ),
+                  );
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                          color: Colors.black.withOpacity(0.04),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4)),
+                    ],
+                  ),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Icon(Icons.notifications_none_rounded, color: primaryColor, size: 24),
+                      // 通知小红点 (Badge)
+                      Positioned(
+                        top: 0,
+                        right: 2,
+                        child: Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: Colors.red.shade500,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
+
           const SizedBox(height: 20),
           Text("Welcome back",
               style: TextStyle(
