@@ -313,6 +313,12 @@ class _ManageFacilityPageState extends State<ManageFacilityPage> {
     return Scaffold(
       backgroundColor: bgColor,
       appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: textDark),
+          onPressed: () {
+            Navigator.pop(context);
+          },
+        ),
         automaticallyImplyLeading: false,
         backgroundColor: bgColor,
         surfaceTintColor: bgColor,

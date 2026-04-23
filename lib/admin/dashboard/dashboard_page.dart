@@ -10,7 +10,6 @@ import 'admin_announcement_page.dart';
 import 'admin_notifications_page.dart';
 import 'manage_facility_page.dart';
 
-
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
 
@@ -60,7 +59,6 @@ class _DashboardPageState extends State<DashboardPage>
   List<Map<String, dynamic>> activeEmergencies = [];
   List<dynamic> announcements = [];
 
-  // New state for facility overview and week schedule
   List<Map<String, dynamic>> facilityOverview = [];
   List<Map<String, dynamic>> weekSchedule = [];
 
@@ -203,34 +201,36 @@ class _DashboardPageState extends State<DashboardPage>
 
   Future<void> _fetchFacilityOverview() async {
     try {
+      // Fetch all facilities regardless of active status
       final d = await supabase
           .from('facilities')
-          .select('facility_id, name, capacity, status')
+          .select('id, name, capacity, is_active')
           .order('name');
 
+      // Sum participants from approved bookings today per facility
       final today = DateTime.now().toIso8601String().substring(0, 10);
       final bookings = await supabase
-          .from('requests')
-          .select('facility_id, status')
-          .eq('type', 'booking')
-          .gte('created_at', today)
+          .from('facility_bookings')
+          .select('facility_id, participants')
+          .eq('booking_date', today)
           .eq('status', 'approved');
 
-      final Map<String, int> countMap = {};
+      // Sum participants (not row count) per facility_id
+      final Map<String, int> usedMap = {};
       for (final b in bookings) {
         final fid = b['facility_id']?.toString() ?? '';
-        if (fid.isNotEmpty) countMap[fid] = (countMap[fid] ?? 0) + 1;
+        final p = (b['participants'] as num?)?.toInt() ?? 1;
+        if (fid.isNotEmpty) usedMap[fid] = (usedMap[fid] ?? 0) + p;
       }
 
       if (mounted) {
         setState(() {
-          facilityOverview =
-              List<Map<String, dynamic>>.from(d).map((f) {
-                final fid = f['facility_id']?.toString() ?? '';
-                final cap = (f['capacity'] as num?)?.toInt() ?? 1;
-                final used = countMap[fid] ?? 0;
-                return {...f, 'used': used, 'capacity': cap};
-              }).toList();
+          facilityOverview = List<Map<String, dynamic>>.from(d).map((f) {
+            final fid = f['id']?.toString() ?? '';
+            final cap = (f['capacity'] as num?)?.toInt() ?? 1;
+            final used = usedMap[fid] ?? 0;
+            return {...f, 'used': used, 'capacity': cap};
+          }).toList();
         });
       }
     } catch (e) {
@@ -238,21 +238,26 @@ class _DashboardPageState extends State<DashboardPage>
     }
   }
 
+  // ── UPDATED: fetch from events table ─────────────────────────────────────
   Future<void> _fetchWeekSchedule() async {
     try {
       final now = DateTime.now();
-      final weekEnd =
-      now.add(const Duration(days: 7)).toIso8601String();
-      final d = await supabase
-          .from('requests')
-          .select('request_id, title, type, event_date, created_at, status')
-          .eq('status', 'approved')
-          .gte('event_date', now.toIso8601String())
-          .lte('event_date', weekEnd)
+      final weekEnd = now.add(const Duration(days: 7));
+
+      final events = await supabase
+          .from('events')
+          .select(
+          'id, title, description, location, event_date, start_time, '
+              'end_time, image_url, is_private, max_capacity, participants')
+          .gte('event_date', now.toIso8601String().substring(0, 10))
+          .lte('event_date', weekEnd.toIso8601String().substring(0, 10))
           .order('event_date')
+          .order('start_time')
           .limit(8);
+
       if (mounted)
-        setState(() => weekSchedule = List<Map<String, dynamic>>.from(d));
+        setState(
+                () => weekSchedule = List<Map<String, dynamic>>.from(events));
     } catch (e) {
       debugPrint("Week schedule error: $e");
     }
@@ -281,7 +286,8 @@ class _DashboardPageState extends State<DashboardPage>
           .order('created_at', ascending: false)
           .limit(3);
       if (mounted)
-        setState(() => activeEmergencies = List<Map<String, dynamic>>.from(d));
+        setState(
+                () => activeEmergencies = List<Map<String, dynamic>>.from(d));
     } catch (e) {
       debugPrint("Emergency error: $e");
     }
@@ -887,8 +893,9 @@ class _DashboardPageState extends State<DashboardPage>
           Container(
               padding:
               const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration:
-              BoxDecoration(color: chartRed, borderRadius: BorderRadius.circular(8)),
+              decoration: BoxDecoration(
+                  color: chartRed,
+                  borderRadius: BorderRadius.circular(8)),
               child: const Text("View",
                   style: TextStyle(
                       color: Colors.white,
@@ -920,6 +927,7 @@ class _DashboardPageState extends State<DashboardPage>
             chartBlue,
                 () => navigateTo("Users"),
             hasNotif: hasUserNotif,
+            subtitle: pendingTotal > 0 ? "$pendingTotal pending" : "Manage",
           ),
           _accessCard(
             "Events",
@@ -927,6 +935,7 @@ class _DashboardPageState extends State<DashboardPage>
             chartTeal,
                 () => navigateTo("Event"),
             hasNotif: hasEventNotif,
+            subtitle: "Bookings",
           ),
           _accessCard(
             "Facility",
@@ -934,6 +943,7 @@ class _DashboardPageState extends State<DashboardPage>
             primary,
                 () => navigateTo("Facilities"),
             hasNotif: hasFacilityNotif,
+            subtitle: "Requests",
           ),
           _accessCard(
             "Visitor",
@@ -941,6 +951,7 @@ class _DashboardPageState extends State<DashboardPage>
             chartRose,
                 () => navigateTo("Visitor"),
             hasNotif: hasVisitorNotif,
+            subtitle: "Passes",
           ),
           _accessCard(
             "Emergency",
@@ -952,6 +963,9 @@ class _DashboardPageState extends State<DashboardPage>
                     builder: (_) => const EmergencyListPage()))
                 .then((_) => refreshAllData()),
             hasNotif: hasEmergencyNotif,
+            subtitle: activeEmergencies.isNotEmpty
+                ? "${activeEmergencies.length} active"
+                : "Alerts",
           ),
           _accessCard(
             "Manage",
@@ -962,6 +976,7 @@ class _DashboardPageState extends State<DashboardPage>
                 MaterialPageRoute(
                     builder: (_) => const ManageFacilityPage()))
                 .then((_) => refreshAllData()),
+            subtitle: "Facilities",
           ),
         ],
       ),
@@ -1028,7 +1043,7 @@ class _DashboardPageState extends State<DashboardPage>
         ),
       );
 
-  // ── 4. Facility Overview ───────────────────────────────────────────────────
+  // ── 4. Facility Overview ── UPDATED ───────────────────────────────────────
   Widget _facilityOverview() => Padding(
     padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
     child:
@@ -1079,38 +1094,29 @@ class _DashboardPageState extends State<DashboardPage>
     ]),
   );
 
+  // ── UPDATED: uses is_active boolean from facilities table ─────────────────
   Widget _facilityTile(Map<String, dynamic> f) {
     final String name = f['name'] ?? 'Facility';
     final int used = f['used'] ?? 0;
     final int cap = (f['capacity'] as num?)?.toInt() ?? 1;
-    final String status = (f['status'] ?? 'active').toString().toLowerCase();
-    final bool isClosed = status == 'closed' || status == 'maintenance';
+    final bool isActive = f['is_active'] ?? true;
+
+    final bool isClosed = !isActive;
     final double pct = cap > 0 ? (used / cap).clamp(0.0, 1.0) : 0;
-    final bool isFull = used >= cap;
+    final bool isFull = !isClosed && used >= cap;
 
     final Color barColor = isClosed
         ? textLight
-        : isFull
-        ? chartRed
-        : pct > 0.6
-        ? chartAmber
-        : chartGreen;
+        : isFull ? chartRed : pct > 0.6 ? chartAmber : chartGreen;
 
     final Color chipBg = isClosed
         ? border
-        : isFull
-        ? chartRed.withOpacity(0.1)
-        : chartGreen.withOpacity(0.1);
+        : isFull ? chartRed.withOpacity(0.1) : chartGreen.withOpacity(0.1);
     final Color chipText = isClosed
         ? textMid
-        : isFull
-        ? chartRed
-        : chartGreen;
-    final String chipLabel = isClosed
-        ? status[0].toUpperCase() + status.substring(1)
-        : isFull
-        ? "Full"
-        : "Open";
+        : isFull ? chartRed : chartGreen;
+
+    final String chipLabel = isClosed ? "Inactive" : isFull ? "Full" : "Open";
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -1118,38 +1124,25 @@ class _DashboardPageState extends State<DashboardPage>
           color: surface,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: border),
-          boxShadow: [
-            BoxShadow(
-                color: cardShadow,
-                blurRadius: 6,
-                offset: const Offset(0, 2))
-          ]),
+          boxShadow: [BoxShadow(color: cardShadow, blurRadius: 6, offset: const Offset(0, 2))]),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
           Expanded(
               child: Text(name,
-                  style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: textDark),
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: textDark),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis)),
           Container(
-              padding:
-              const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-              decoration: BoxDecoration(
-                  color: chipBg, borderRadius: BorderRadius.circular(6)),
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              decoration: BoxDecoration(color: chipBg, borderRadius: BorderRadius.circular(6)),
               child: Text(chipLabel,
-                  style: TextStyle(
-                      fontSize: 9,
-                      fontWeight: FontWeight.w700,
-                      color: chipText))),
+                  style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: chipText))),
         ]),
         const Spacer(),
         ClipRRect(
             borderRadius: BorderRadius.circular(4),
             child: LinearProgressIndicator(
-                value: pct,
+                value: isClosed ? 0 : pct,
                 backgroundColor: barColor.withOpacity(0.1),
                 valueColor: AlwaysStoppedAnimation(barColor),
                 minHeight: 5)),
@@ -1180,46 +1173,44 @@ class _DashboardPageState extends State<DashboardPage>
                   TextStyle(color: textLight, fontSize: 13)),
             ]))
             : Column(
-            children: weekSchedule.asMap().entries.map((e) {
+            children:
+            weekSchedule.asMap().entries.map((e) {
               final i = e.key;
               final item = e.value;
-              final type = item['type'] ?? '';
-              final eventDate = item['event_date'] != null
-                  ? DateTime.tryParse(item['event_date'].toString())
+
+              final isPrivate = item['is_private'] == true;
+              final dateStr = item['event_date']?.toString() ?? '';
+              final timeStr = item['start_time']?.toString() ?? '';
+              final eventDate = dateStr.isNotEmpty
+                  ? DateTime.tryParse(dateStr)
                   : null;
 
-              Color dotColor;
-              String typeLabel;
-              switch (type) {
-                case 'booking':
-                  dotColor = primary;
-                  typeLabel = 'Booking';
-                  break;
-                case 'facility':
-                  dotColor = chartBlue;
-                  typeLabel = 'Facility';
-                  break;
-                case 'complaint':
-                  dotColor = chartAmber;
-                  typeLabel = 'Event';
-                  break;
-                default:
-                  dotColor = chartTeal;
-                  typeLabel = type.isNotEmpty
-                      ? type[0].toUpperCase() + type.substring(1)
-                      : 'Other';
-              }
+              final Color dotColor =
+              isPrivate ? primary : chartTeal;
+              final String typeLabel =
+              isPrivate ? 'Private' : 'Public';
+              final IconData typeIcon = isPrivate
+                  ? Icons.lock_outline
+                  : Icons.public_outlined;
 
-              final dayNames = [
+              const dayNames = [
                 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'
               ];
-              final timeStr = eventDate != null
-                  ? "${eventDate.hour.toString().padLeft(2, '0')}:${eventDate.minute.toString().padLeft(2, '0')}"
-                  : "All day";
               final dayStr = eventDate != null
                   ? dayNames[
               (eventDate.weekday - 1).clamp(0, 6)]
-                  : "";
+                  : '';
+
+              final displayTime = timeStr.length >= 5
+                  ? timeStr.substring(0, 5)
+                  : 'All day';
+
+              final maxCap =
+              (item['max_capacity'] as num?)?.toInt();
+              final joined =
+                  (item['participants'] as num?)?.toInt() ?? 0;
+              final isFull =
+                  maxCap != null && joined >= maxCap;
 
               return Column(children: [
                 Padding(
@@ -1228,9 +1219,10 @@ class _DashboardPageState extends State<DashboardPage>
                   child: Row(children: [
                     SizedBox(
                         width: 44,
-                        child: Text(timeStr,
+                        child: Text(displayTime,
                             style: const TextStyle(
-                                fontSize: 11, color: textLight))),
+                                fontSize: 11,
+                                color: textLight))),
                     const SizedBox(width: 8),
                     Container(
                         width: 8,
@@ -1251,18 +1243,74 @@ class _DashboardPageState extends State<DashboardPage>
                                       color: textDark),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis),
-                              const SizedBox(height: 2),
-                              Text("$dayStr · $typeLabel",
-                                  style: const TextStyle(
-                                      fontSize: 11,
-                                      color: textLight)),
+                              const SizedBox(height: 3),
+                              Row(children: [
+                                if (dayStr.isNotEmpty) ...[
+                                  Text(dayStr,
+                                      style: const TextStyle(
+                                          fontSize: 10,
+                                          color: textLight)),
+                                  const Text(' · ',
+                                      style: TextStyle(
+                                          fontSize: 10,
+                                          color: textLight)),
+                                ],
+                                Icon(typeIcon,
+                                    size: 11, color: dotColor),
+                                const SizedBox(width: 3),
+                                Text(typeLabel,
+                                    style: TextStyle(
+                                        fontSize: 10,
+                                        color: dotColor,
+                                        fontWeight:
+                                        FontWeight.w500)),
+                                if (maxCap != null) ...[
+                                  const SizedBox(width: 6),
+                                  Container(
+                                      padding:
+                                      const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 2),
+                                      decoration: BoxDecoration(
+                                          color: isFull
+                                              ? chartRed
+                                              .withOpacity(0.1)
+                                              : chartGreen
+                                              .withOpacity(0.1),
+                                          borderRadius:
+                                          BorderRadius.circular(
+                                              4)),
+                                      child: Text(
+                                          isFull
+                                              ? 'Full'
+                                              : '$joined/$maxCap',
+                                          style: TextStyle(
+                                              fontSize: 9,
+                                              fontWeight:
+                                              FontWeight.w600,
+                                              color: isFull
+                                                  ? chartRed
+                                                  : chartGreen))),
+                                ],
+                                if (item['location'] != null &&
+                                    (item['location'] as String)
+                                        .isNotEmpty) ...[
+                                  const SizedBox(width: 6),
+                                  const Icon(Icons.place_outlined,
+                                      size: 10, color: textLight),
+                                  const SizedBox(width: 2),
+                                  Flexible(
+                                      child: Text(
+                                          item['location'],
+                                          style: const TextStyle(
+                                              fontSize: 10,
+                                              color: textLight),
+                                          maxLines: 1,
+                                          overflow:
+                                          TextOverflow.ellipsis)),
+                                ],
+                              ]),
                             ])),
-                    Container(
-                        width: 6,
-                        height: 6,
-                        decoration: BoxDecoration(
-                            color: dotColor.withOpacity(0.3),
-                            shape: BoxShape.circle)),
                   ]),
                 ),
                 if (i < weekSchedule.length - 1)
@@ -1387,9 +1435,6 @@ class _DashboardPageState extends State<DashboardPage>
       Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
         _sectionHeader("Announcements"),
         Row(children: [
-          _iconBtn(Icons.add, "New",
-                  () => showCreateAnnouncementSheet(context)),
-          const SizedBox(width: 8),
           GestureDetector(
             onTap: () => Navigator.push(
                 context,
@@ -1445,10 +1490,10 @@ class _DashboardPageState extends State<DashboardPage>
               child: Row(children: [
                 ClipRRect(
                     borderRadius: const BorderRadius.horizontal(
-                        left: Radius.circular(15)),
+                        left: Radius.circular(10)),
                     child: SizedBox(
                         width: 72,
-                        height: 80,
+                        height: 96,
                         child: hasImage
                             ? Image.network(item['image_url'],
                             fit: BoxFit.cover,
@@ -1458,17 +1503,19 @@ class _DashboardPageState extends State<DashboardPage>
                 Expanded(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 12),
+                          horizontal: 14, vertical: 10),
                       child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             if (urgent)
                               Container(
-                                  margin: const EdgeInsets.only(bottom: 4),
+                                  margin:
+                                  const EdgeInsets.only(bottom: 4),
                                   padding: const EdgeInsets.symmetric(
                                       horizontal: 7, vertical: 2),
                                   decoration: BoxDecoration(
-                                      color: chartRed.withOpacity(0.1),
+                                      color:
+                                      chartRed.withOpacity(0.1),
                                       borderRadius:
                                       BorderRadius.circular(5)),
                                   child: Text("URGENT",
@@ -1531,7 +1578,7 @@ class _DashboardPageState extends State<DashboardPage>
               blurRadius: 10,
               offset: const Offset(0, 3))
         ]),
-    padding: const EdgeInsets.all(18),
+    padding: const EdgeInsets.all(8),
     child: child,
   );
 
