@@ -11,11 +11,9 @@ import '../admin/emergency/location.dart';
 import 'VisitorPassListScreen.dart';
 import 'announcement_detail_page.dart';
 import 'announcement_list_page.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:intl/intl.dart';
 import 'resident_booking_history_page.dart';
 import 'package:assignment/resident/resident_login_page.dart';
-import 'package:assignment/resident/resident_profile_page.dart';
+import 'package:assignment/resident/resident_personal_information_page.dart';
 
 class ResidentHomePage extends StatefulWidget {
   const ResidentHomePage({super.key});
@@ -49,12 +47,17 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
   List<CommunityEvent> _upcomingEvents = [];
   bool _eventsLoading = true;
 
+  // ── Resident account summary state ─────────────
+  bool _accountLoading = true;
+  String? _accountError;
+  Map<String, dynamic>? _residentSummary;
+
   @override
   void initState() {
     super.initState();
-    _checkUnreadAnnouncements();
     _fetchLatestAnnouncements(); // 页面初始化时获取最新的公告
     _loadUpcomingEvents();
+    _loadResidentSummary();
   }
 
   void dispose() {
@@ -115,43 +118,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     }
   }
 
-  // 记录是否有未读公告
-  bool _hasUnreadAnnouncements = false;
-
-  // 去数据库检查是否有新公告
-  Future<void> _checkUnreadAnnouncements() async {
-    try {
-      // 1. 从 Supabase 获取最新的一条公告时间
-      final response = await Supabase.instance.client
-          .from('announcements')
-          .select('created_at')
-          .order('created_at', ascending: false)
-          .limit(1)
-          .maybeSingle();
-
-      if (response != null && response['created_at'] != null) {
-        DateTime latestDbDate = DateTime.parse(response['created_at']);
-
-        final prefs = await SharedPreferences.getInstance();
-        String? lastReadStr = prefs.getString('last_read_announcements');
-
-        if (lastReadStr == null) {
-          if (mounted) setState(() => _hasUnreadAnnouncements = true);
-        } else {
-          DateTime lastReadDate = DateTime.parse(lastReadStr);
-
-          if (latestDbDate.isAfter(lastReadDate)) {
-            if (mounted) setState(() => _hasUnreadAnnouncements = true);
-          } else {
-            if (mounted) setState(() => _hasUnreadAnnouncements = false);
-          }
-        }
-      }
-    } catch (e) {
-      debugPrint("Error checking unread announcements: $e");
-    }
-  }
-
+  // 辅助函数：格式化日期为 "5 Jan, 2026"
   String _formatDate(String? dateStr) {
     if (dateStr == null) return '';
     try {
@@ -177,6 +144,284 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     );
   }
 
+  Future<void> _loadResidentSummary() async {
+    try {
+      final currentUser = Supabase.instance.client.auth.currentUser;
+      if (currentUser == null) {
+        throw Exception('No active user session found.');
+      }
+
+      if (mounted) {
+        setState(() {
+          _accountLoading = true;
+          _accountError = null;
+        });
+      }
+
+      final resident = await Supabase.instance.client
+          .from('resident')
+          .select()
+          .eq('id', currentUser.id)
+          .maybeSingle();
+
+      if (!mounted) return;
+
+      setState(() {
+        _residentSummary = resident == null
+            ? {
+          'full_name': currentUser.email?.split('@').first ?? 'Resident',
+          'email': currentUser.email,
+          'status': 'active',
+          'resident_type': 'resident',
+        }
+            : {
+          ...resident,
+          'email': resident['email'] ?? currentUser.email,
+        };
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _accountError = e.toString().replaceFirst('Exception: ', '');
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _accountLoading = false);
+      }
+    }
+  }
+
+  String _accountDisplayValue(dynamic value, {String fallback = '-'}) {
+    if (value == null) return fallback;
+    final text = value.toString().trim();
+    return text.isEmpty ? fallback : text;
+  }
+
+  String _accountInitials(String? fullName) {
+    if (fullName == null || fullName.trim().isEmpty) return 'R';
+
+    final parts = fullName
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((part) => part.isNotEmpty)
+        .toList();
+
+    if (parts.isEmpty) return 'R';
+    if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
+
+    return '${parts.first.substring(0, 1)}${parts.last.substring(0, 1)}'.toUpperCase();
+  }
+
+  Color _accountStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'active':
+        return const Color(0xFF6B8E6B);
+      case 'inactive':
+        return const Color(0xFFD49A6A);
+      case 'moved_out':
+        return const Color(0xFFC67B75);
+      default:
+        return Colors.grey;
+    }
+  }
+
+  Widget _buildAccountSectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 6, bottom: 10),
+      child: Text(
+        title,
+        style: TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.bold,
+          color: textDark,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAccountCard({required List<Widget> children}) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(children: children),
+    );
+  }
+
+  Widget _buildAccountListTile({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Color iconColor,
+    required VoidCallback onTap,
+    bool showDivider = true,
+  }) {
+    return Column(
+      children: [
+        ListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          leading: Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: iconColor.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(icon, color: iconColor),
+          ),
+          title: Text(
+            title,
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: textDark,
+            ),
+          ),
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              subtitle,
+              style: const TextStyle(fontSize: 12, color: Colors.black54),
+            ),
+          ),
+          trailing: Icon(Icons.arrow_forward_ios_rounded, size: 16, color: primaryColor),
+          onTap: onTap,
+        ),
+        if (showDivider)
+          const Divider(height: 1, indent: 72, endIndent: 16),
+      ],
+    );
+  }
+
+  Widget _buildAccountInfoPill({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.78),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withOpacity(0.8)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: _softInfoFill(label),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, size: 18, color: primaryColor),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(fontSize: 11, color: Colors.black54),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: textDark,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _softInfoFill(String label) {
+    switch (label.toLowerCase()) {
+      case 'block':
+        return softYellow.withOpacity(0.45);
+      case 'unit':
+        return accentColor.withOpacity(0.14);
+      default:
+        return const Color(0xFFF4E8E2);
+    }
+  }
+
+  Widget _buildAccountErrorCard() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF4F0),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFF3C7BA)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.info_outline_rounded, color: Color(0xFFC67B75)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              _accountError ?? 'Unable to load resident profile.',
+              style: const TextStyle(fontSize: 13),
+            ),
+          ),
+          TextButton(
+            onPressed: _loadResidentSummary,
+            child: Text(
+              'Retry',
+              style: TextStyle(color: primaryColor),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openPersonalDetails() async {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+
+    final userData = {
+      ...?_residentSummary,
+      'id': _residentSummary?['id'] ?? currentUser?.id,
+      'email': _residentSummary?['email'] ?? currentUser?.email,
+    };
+
+    if (userData['id'] == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to open personal details.')),
+      );
+      return;
+    }
+
+    final updated = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ResidentPersonalInformationPage(user: userData),
+      ),
+    );
+
+    if (updated == true) {
+      await _loadResidentSummary();
+    }
+  }
+
+  // 重置紧急状态
   void resetState() {
     _timer?.cancel();
     setState(() {
@@ -186,6 +431,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     });
   }
 
+  // 带倒计时的紧急求救
   void handleEmergency() {
     if (isEmergency) {
       resetState();
@@ -221,6 +467,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
             Navigator.of(context, rootNavigator: true).pop();
           }
 
+          // ── Shared widgets ────────────────────────────
           final userId = Supabase.instance.client.auth.currentUser?.id;
 
           if (userId != null) {
@@ -384,17 +631,17 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     );
   }
 
+  // 🔥 动态横向滑动公告卡片 (支持点击查看详情)
   Widget buildAnnouncementSlider() {
     if (isLoadingAnnouncement) {
       return Container(
         width: double.infinity,
-        height: 140,
+        height: 140, // 固定高度防止页面跳动
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(22),
         ),
-        child: Center(
-            child: CircularProgressIndicator(color: Colors.brown.shade400)),
+        child: const Center(child: CircularProgressIndicator(color: Color(0xFF9A4B3C))),
       );
     }
 
@@ -406,17 +653,17 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
           color: Colors.white,
           borderRadius: BorderRadius.circular(22),
         ),
-        child: Center(
+        child: const Center(
           child: Text(
             "No announcements at the moment.",
-            style: TextStyle(color: Colors.brown.shade400),
+            style: TextStyle(color: Colors.black54),
           ),
         ),
       );
     }
 
     return SizedBox(
-      height: 220,
+      height: 145,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: latestAnnouncements.length,
@@ -427,18 +674,10 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
           final content = announcement['content'] ?? '';
           final category = announcement['category'] ?? 'General';
           final isUrgent = announcement['is_urgent'] ?? false;
-
-
-          final String imageUrl = announcement['image_url']?.toString() ?? '';
-          final bool hasImage = imageUrl.isNotEmpty && imageUrl.startsWith('http');
-
-
           final dateStr = _formatDate(announcement['created_at']);
 
           return Container(
-
-            width: MediaQuery.of(context).size.width * 0.75,
-            margin: const EdgeInsets.symmetric(vertical: 4),
+            width: MediaQuery.of(context).size.width * 0.75, // 显示75%的宽度，让右侧露出下一张
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(22),
@@ -458,98 +697,97 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => AnnouncementDetailPage(
-                        announcement: announcement,
-                      ),
+                      builder: (context) => AnnouncementDetailPage(announcement: announcement),
                     ),
-                  ).then((_) {
-                    _checkUnreadAnnouncements();
-                  });
+                  );
                 },
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    hasImage
-                        ? SizedBox(
-                      height: 100,
-                      child: ClipRRect(
-                        // 裁剪顶部圆角
-                        borderRadius: const BorderRadius.only(
-                          topLeft: Radius.circular(22),
-                          topRight: Radius.circular(22),
-                        ),
-                        child: Image.network(
-                          imageUrl,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) =>
-                              _buildColorBlockFallback(isUrgent),
-                        ),
-                      ),
-                    )
-                        : _buildColorBlockFallback(isUrgent),
-
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                if (isUrgent) ...[
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 8, vertical: 4),
-                                    margin: const EdgeInsets.only(right: 8),
-                                    decoration: BoxDecoration(
-                                      color: Colors.red.shade50,
-                                      borderRadius: BorderRadius.circular(6),
-                                      border: Border.all(color: Colors.red.shade200),
-                                    ),
-                                    child: const Text(
-                                      "URGENT",
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.redAccent,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                                Expanded(
-                                  child: Text(
-                                    title,
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.brown.shade900,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-
-                            Expanded(
-                              child: Text(
-                                content,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          if (isUrgent) ...[
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              margin: const EdgeInsets.only(right: 8),
+                              decoration: BoxDecoration(
+                                color: Colors.red.shade50,
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: Colors.red.shade200),
+                              ),
+                              child: const Text(
+                                "URGENT",
                                 style: TextStyle(
-                                  fontSize: 13,
-                                  color: Colors.brown.shade800,
-                                  height: 1.4,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.redAccent,
                                 ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            const SizedBox(height: 12),
                           ],
+                          Expanded(
+                            child: Text(
+                              title,
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: textDark,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Expanded(
+                        child: Text(
+                          content,
+                          style: const TextStyle(fontSize: 13, color: Colors.black54, height: 1.4),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 12,
+                            backgroundColor: isUrgent ? Colors.red.shade50 : const Color(0xFFEADFD6),
+                            child: Icon(
+                                isUrgent ? Icons.warning_amber_rounded : Icons.campaign_rounded,
+                                size: 12,
+                                color: isUrgent ? Colors.redAccent : const Color(0xFF9A4B3C)
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              category.toUpperCase(),
+                              style: const TextStyle(
+                                fontSize: 10,
+                                color: Colors.black54,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.5,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          Text(
+                            dateStr,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: primaryColor,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -559,26 +797,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     );
   }
 
-  Widget _buildColorBlockFallback(bool isUrgent) {
-    return Container(
-      height: 100, // 同一张大图的高度一致
-      decoration: BoxDecoration(
-        // 如果没有图片，显示默认底色和图标 (比如照片里的橘色/紧急时是红色系)
-        color: isUrgent ? const Color(0xFFFFC1AC) : Colors.amber.shade400,
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(22),
-          topRight: Radius.circular(22),
-        ),
-      ),
-      child: Center(
-        child: Icon(
-          isUrgent ? Icons.warning_amber_rounded : Icons.campaign_rounded,
-          size: 50,
-          color: Colors.white.withOpacity(0.6),
-        ),
-      ),
-    );
-  }
+  // ── Upcoming events section ───────────────────
 
   Widget buildUpcomingEventsSection() {
     if (_eventsLoading) {
@@ -628,6 +847,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
   }
 
   Widget _buildEventCard(CommunityEvent event) {
+    // Format date as "Mon, 22 Apr"
     const months = [
       'Jan','Feb','Mar','Apr','May','Jun',
       'Jul','Aug','Sep','Oct','Nov','Dec'
@@ -659,6 +879,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Image / gradient banner
             ClipRRect(
               borderRadius:
               const BorderRadius.vertical(top: Radius.circular(22)),
@@ -688,6 +909,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Date pill
                   Container(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 8, vertical: 3),
@@ -748,97 +970,42 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     );
   }
 
+  // ── Tabs ──────────────────────────────────────
+
   Widget buildHomeTab() {
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 100),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(18),
-                  boxShadow: [
-                    BoxShadow(
-                        color: Colors.black.withOpacity(0.04),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4)),
-                  ],
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.location_on_outlined, color: primaryColor, size: 18),
-                    const SizedBox(width: 6),
-                    Text("BLOCK A",
-                        style: TextStyle(
-                            fontWeight: FontWeight.w700,
-                            color: primaryColor,
-                            letterSpacing: 0.5)),
-                    const SizedBox(width: 4),
-                    const Icon(Icons.keyboard_arrow_down_rounded),
-                  ],
-                ),
-              ),
-
-              GestureDetector(
-                onTap: () async {
-                  setState(() => _hasUnreadAnnouncements = false);
-
-                  final prefs = await SharedPreferences.getInstance();
-                  await prefs.setString('last_read_announcements', DateTime.now().toIso8601String());
-
-                  if (mounted) {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const AnnouncementListPage(),
-                      ),
-                    ).then((_) {
-                      _checkUnreadAnnouncements();
-                    });
-                  }
-                },
-                child: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                          color: Colors.black.withOpacity(0.04),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4)),
-                    ],
-                  ),
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      Icon(Icons.notifications_none_rounded, color: primaryColor, size: 24),
-                      if (_hasUnreadAnnouncements)
-                        Positioned(
-                          top: 0,
-                          right: 2,
-                          child: Container(
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: Colors.red.shade500,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
+          // Location chip
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.black.withOpacity(0.04),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4)),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.location_on_outlined, color: primaryColor, size: 18),
+                const SizedBox(width: 6),
+                Text("BLOCK A",
+                    style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: primaryColor,
+                        letterSpacing: 0.5)),
+                const SizedBox(width: 4),
+                const Icon(Icons.keyboard_arrow_down_rounded),
+              ],
+            ),
           ),
-
           const SizedBox(height: 20),
           Text("Welcome back",
               style: TextStyle(
@@ -850,6 +1017,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
           ),
           const SizedBox(height: 22),
 
+          // Banner
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(18),
@@ -942,7 +1110,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
               );
             },
           ),
-          buildAnnouncementSlider(),
+          buildAnnouncementSlider(), // 🔥 替换为滑动组件
 
           const SizedBox(height: 28),
           // "See all" navigates to the full calendar
@@ -966,71 +1134,236 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
   Widget buildChatsTab() => CommunityChatsListScreen();
 
   Widget buildAccountTab() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 24, 20, 100),
-      child: Column(
+    final resident = _residentSummary;
+    final currentUser = Supabase.instance.client.auth.currentUser;
+
+    final name = _accountDisplayValue(
+      resident?['full_name'],
+      fallback: 'Resident Account',
+    );
+    final email = _accountDisplayValue(
+      resident?['email'] ?? currentUser?.email,
+      fallback: 'No email address',
+    );
+    final residentType = _accountDisplayValue(
+      resident?['resident_type'],
+      fallback: 'resident',
+    ).toUpperCase();
+    final status = _accountDisplayValue(
+      resident?['status'],
+      fallback: 'active',
+    ).toUpperCase();
+    final statusColor = _accountStatusColor(status);
+
+    if (_accountLoading && resident == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    return RefreshIndicator(
+      color: primaryColor,
+      onRefresh: _loadResidentSummary,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(20, 24, 20, 100),
         children: [
-          CircleAvatar(
-            radius: 42,
-            backgroundColor: const Color(0xFFEADFD6),
-            child: Icon(Icons.person, size: 42, color: primaryColor),
-          ),
-          const SizedBox(height: 14),
-          Text("Resident Account",
-              style: TextStyle(
-                  fontSize: 22, fontWeight: FontWeight.bold, color: textDark)),
-          const SizedBox(height: 6),
-          const Text("Manage your profile and account settings",
-              style: TextStyle(color: Colors.black54)),
-          const SizedBox(height: 24),
+          if (_accountError != null && resident == null) _buildAccountErrorCard(),
           Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(18),
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
             decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(22),
+              borderRadius: BorderRadius.circular(28),
+              gradient: const LinearGradient(
+                colors: [Color(0xFFFFFFFF), Color(0xFFFFF7F1)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
               boxShadow: [
                 BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4)),
+                  color: Colors.black.withOpacity(0.06),
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
+                ),
               ],
             ),
             child: Column(
               children: [
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.person_outline, color: primaryColor),
-                  title: const Text("My Profile"),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ResidentProfilePage())),
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 4),
+                    boxShadow: [
+                      BoxShadow(
+                        color: primaryColor.withOpacity(0.12),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: CircleAvatar(
+                    radius: 44,
+                    backgroundColor: const Color(0xFFEADFD6),
+                    child: Text(
+                      _accountInitials(resident?['full_name']?.toString()),
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: primaryColor,
+                      ),
+                    ),
+                  ),
                 ),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.history, color: primaryColor),
-                  title: const Text("Booking History"),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => Navigator.push(context,
-                      MaterialPageRoute(builder: (_) => const ResidentBookingHistoryPage())),
+                const SizedBox(height: 16),
+                Text(
+                  name,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                    color: textDark,
+                  ),
                 ),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.badge_outlined, color: primaryColor),
-                  title: const Text("Visitor Pass"),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => const VisitorPassListScreen())),
+                const SizedBox(height: 6),
+                Text(
+                  email,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: Colors.black54,
+                  ),
                 ),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.logout, color: primaryColor),
-                  title: const Text("Logout"),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: logout,
+                const SizedBox(height: 14),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: primaryColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        residentType,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: primaryColor,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: statusColor.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        status,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: statusColor,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildAccountInfoPill(
+                        icon: Icons.apartment_rounded,
+                        label: 'Block',
+                        value: _accountDisplayValue(resident?['block']),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildAccountInfoPill(
+                        icon: Icons.home_rounded,
+                        label: 'Unit',
+                        value: _accountDisplayValue(resident?['unit_number']),
+                      ),
+                    ),
+                  ],
                 ),
               ],
+            ),
+          ),
+          const SizedBox(height: 26),
+          _buildAccountSectionTitle('Account Settings'),
+          _buildAccountCard(
+            children: [
+              _buildAccountListTile(
+                icon: Icons.badge_outlined,
+                title: 'Personal Details',
+                subtitle: 'Manage your personal details and password',
+                iconColor: primaryColor,
+                onTap: _openPersonalDetails,
+                showDivider: false,
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          _buildAccountSectionTitle('Activity'),
+          _buildAccountCard(
+            children: [
+              _buildAccountListTile(
+                icon: Icons.history_rounded,
+                title: 'Booking History',
+                subtitle: 'View pending, approved, and past facility bookings',
+                iconColor: const Color(0xFFD49A6A),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const ResidentBookingHistoryPage(),
+                  ),
+                ),
+                showDivider: false,
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          _buildAccountSectionTitle('Services'),
+          _buildAccountCard(
+            children: [
+              _buildAccountListTile(
+                icon: Icons.badge_outlined,
+                title: 'Visitor Pass',
+                subtitle: 'Create and manage visitor QR passes for your guests',
+                iconColor: const Color(0xFF6B8E6B),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const VisitorPassListScreen()),
+                ),
+                showDivider: false,
+              ),
+            ],
+          ),
+          const SizedBox(height: 28),
+          SizedBox(
+            width: double.infinity,
+            height: 56,
+            child: ElevatedButton.icon(
+              onPressed: logout,
+              icon: const Icon(Icons.logout_rounded, color: Color(0xFFC67B75)),
+              label: const Text(
+                'Log Out',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFFC67B75),
+                ),
+              ),
+              style: ElevatedButton.styleFrom(
+                elevation: 0,
+                backgroundColor: const Color(0xFFFFF1EE),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18),
+                ),
+              ),
             ),
           ),
         ],

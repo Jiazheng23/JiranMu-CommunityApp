@@ -242,32 +242,21 @@ class _ResidentLoginPageState extends State<ResidentLoginPage> {
                     onPressed: () => Navigator.pop(context),
                     icon: const Icon(Icons.arrow_back_ios_new_rounded),
                   ),
-                const SizedBox(height: 20),
 
                 Center(
-                  child: Container(
-                    width: 88,
-                    height: 88,
-                    decoration: BoxDecoration(
-                      color: softBrown,
-                      borderRadius: BorderRadius.circular(24),
-                    ),
-                    child: const Icon(
-                      Icons.groups_rounded,
-                      size: 46,
-                      color: primaryBrown,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 20),
-
-                const Center(
-                  child: Text(
-                    "JiranMu",
-                    style: TextStyle(
-                      fontSize: 30,
-                      fontWeight: FontWeight.bold,
-                      color: textDark,
+                  child: SizedBox(
+                    width: 250,
+                    height: 95,
+                    child: ClipRect(
+                      child: Align(
+                        alignment: Alignment.topCenter,
+                        heightFactor: 0.72,
+                        child: Image.asset(
+                          'assets/images/jiranmu_logo.png',
+                          width: 250,
+                          fit: BoxFit.fitWidth,
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -275,27 +264,28 @@ class _ResidentLoginPageState extends State<ResidentLoginPage> {
 
                 const Center(
                   child: Text(
-                    "Building a supportive and caring community.",
-                    textAlign: TextAlign.center,
+                    'JiranMu',
                     style: TextStyle(
-                      fontSize: 14.5,
-                      color: Colors.black54,
-                      height: 1.5,
+                      fontSize: 25,
+                      fontWeight: FontWeight.w700,
+                      color: primaryBrown,
                     ),
                   ),
                 ),
-                const SizedBox(height: 34),
+                const SizedBox(height: 4),
 
                 const Center(
                   child: Text(
-                    "Resident sign in to continue",
+                    'Resident sign in to continue',
+                    textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 14,
                       color: Colors.black45,
+                      height: 1.35,
                     ),
                   ),
                 ),
-                const SizedBox(height: 28),
+                const SizedBox(height: 24),
 
                 _buildTextFormField(
                   controller: emailController,

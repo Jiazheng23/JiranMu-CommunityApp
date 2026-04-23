@@ -38,6 +38,8 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
   late final TextEditingController _maxDurationController;
 
   String _bookingMode = 'instant';
+  String _usageType = 'facility';
+
   bool _isActive = true;
   bool _purposeRequired = false;
   bool _isShared = false;
@@ -69,6 +71,7 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
     );
 
     _bookingMode = facility?.bookingMode ?? 'instant';
+    _usageType = facility?.usageType ?? 'facility';
     _isActive = facility?.isActive ?? true;
     _purposeRequired = facility?.purposeRequired ?? false;
     _isShared = facility?.isShared ?? false;
@@ -264,6 +267,7 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
 
     setState(() {
       _bookingMode = 'instant';
+      _usageType = 'facility';
       _isActive = true;
       _purposeRequired = false;
       _isShared = false;
@@ -336,6 +340,7 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
           openTime: _formatToDbTime(_openTime!),
           closeTime: _formatToDbTime(_closeTime!),
           bookingMode: _bookingMode,
+          usageType: _usageType,
           isActive: _isActive,
           slotDurationMinutes: slotDuration,
           maxDurationMinutes: maxDuration,
@@ -355,6 +360,7 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
           openTime: _formatToDbTime(_openTime!),
           closeTime: _formatToDbTime(_closeTime!),
           bookingMode: _bookingMode,
+          usageType: _usageType,
           isActive: _isActive,
           slotDurationMinutes: slotDuration,
           maxDurationMinutes: maxDuration,
@@ -589,6 +595,7 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
               },
             ),
             const SizedBox(height: 12),
+
             Row(
               children: [
                 Expanded(
@@ -606,6 +613,35 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
                   ),
                 ),
                 const SizedBox(width: 12),
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    value: _usageType,
+                    decoration: _inputDecoration('Type'),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'facility',
+                        child: Text('Facility'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'event',
+                        child: Text('Event'),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() {
+                        _usageType = value;
+                      });
+                    },
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            Row(
+              children: [
                 Expanded(
                   child: DropdownButtonFormField<String>(
                     value: _bookingMode,
@@ -628,9 +664,26 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
                     },
                   ),
                 ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextFormField(
+                    controller: _slotDurationController,
+                    keyboardType: TextInputType.number,
+                    decoration: _inputDecoration('Slot Duration (minutes)'),
+                    validator: (value) {
+                      final number = int.tryParse(value ?? '');
+                      if (number == null || number <= 0) {
+                        return 'Invalid';
+                      }
+                      return null;
+                    },
+                  ),
+                ),
               ],
             ),
+
             const SizedBox(height: 12),
+
             Row(
               children: [
                 Expanded(
@@ -650,42 +703,25 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
                 ),
               ],
             ),
+
             const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    controller: _slotDurationController,
-                    keyboardType: TextInputType.number,
-                    decoration: _inputDecoration('Slot Duration (minutes)'),
-                    validator: (value) {
-                      final number = int.tryParse(value ?? '');
-                      if (number == null || number <= 0) {
-                        return 'Invalid';
-                      }
-                      return null;
-                    },
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextFormField(
-                    controller: _maxDurationController,
-                    keyboardType: TextInputType.number,
-                    decoration: _inputDecoration('Max Duration (optional)'),
-                    validator: (value) {
-                      if (value == null || value.trim().isEmpty) return null;
-                      final number = int.tryParse(value);
-                      if (number == null || number <= 0) {
-                        return 'Invalid';
-                      }
-                      return null;
-                    },
-                  ),
-                ),
-              ],
+
+            TextFormField(
+              controller: _maxDurationController,
+              keyboardType: TextInputType.number,
+              decoration: _inputDecoration('Max Duration (optional)'),
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) return null;
+                final number = int.tryParse(value);
+                if (number == null || number <= 0) {
+                  return 'Invalid';
+                }
+                return null;
+              },
             ),
+
             const SizedBox(height: 12),
+
             Container(
               decoration: BoxDecoration(
                 color: cardColor,
@@ -753,7 +789,9 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
                 ],
               ),
             ),
+
             const SizedBox(height: 20),
+
             SizedBox(
               height: 52,
               child: ElevatedButton(

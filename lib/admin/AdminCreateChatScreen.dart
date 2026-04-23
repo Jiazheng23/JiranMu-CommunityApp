@@ -12,8 +12,16 @@ class AdminCreateChatScreen extends StatefulWidget {
 }
 
 class _AdminCreateChatScreenState extends State<AdminCreateChatScreen> {
-  static const Color _primary = Color(0xFF9A4B3C);
+  // ── Palette ────────────────────────────────────────────────────────────────
+  static const Color _primary   = Color(0xFF9A4B3C);
+  static const Color _bg        = Color(0xFFF5F1ED);
+  static const Color _surface   = Color(0xFFFFFFFF);
+  static const Color _textDark  = Color(0xFF1A1614);
+  static const Color _textMid   = Color(0xFF6B6460);
+  static const Color _textLight = Color(0xFFADA8A5);
+  static const Color _border    = Color(0xFFEDE9E5);
 
+  // ── State ──────────────────────────────────────────────────────────────────
   List<String> _blocks = [];
   String? _selectedBlock;
   List<Map<String, dynamic>> _residents = [];
@@ -33,6 +41,7 @@ class _AdminCreateChatScreenState extends State<AdminCreateChatScreen> {
     super.dispose();
   }
 
+  // ── Data ───────────────────────────────────────────────────────────────────
   Future<void> _loadBlocks() async {
     try {
       final data = await supabase.from('resident').select('block').neq('block', '');
@@ -152,7 +161,6 @@ class _AdminCreateChatScreenState extends State<AdminCreateChatScreen> {
             'invited_by': adminId,
             'status': 'pending',
           });
-          // Collect name for welcome message
           final resident = _residents.firstWhere(
                 (r) => r['id'] == userId,
             orElse: () => {},
@@ -162,7 +170,6 @@ class _AdminCreateChatScreenState extends State<AdminCreateChatScreen> {
         }
       }
 
-      // Auto-send welcome messages for newly added members
       for (final name in newlyAdded) {
         final firstName = name.trim().split(' ').first;
         await supabase.from('messages').insert({
@@ -202,284 +209,269 @@ class _AdminCreateChatScreenState extends State<AdminCreateChatScreen> {
     }
   }
 
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  Color _avatarColor(String name) {
+    final hue = (name.codeUnits.fold(0, (a, b) => a + b) % 360).toDouble();
+    return HSLColor.fromAHSL(1, hue, 0.45, 0.48).toColor();
+  }
+
+  String _initials(String name) {
+    final parts = name.trim().split(RegExp(r'\s+'));
+    if (parts.length == 1) return parts[0][0].toUpperCase();
+    return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+  }
+
+  // ── Build ──────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F1ED),
+      backgroundColor: _bg,
       appBar: AppBar(
-        title: const Text('Create New Chat'),
-        backgroundColor: _primary,
-        foregroundColor: Colors.white,
+        backgroundColor: _surface,
+        foregroundColor: _textDark,
         elevation: 0,
+        surfaceTintColor: Colors.transparent,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text(
+          'Add Community Members',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            color: _textDark,
+          ),
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(height: 1, color: _border),
+        ),
       ),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Block selector ──
-          Container(
-            color: Colors.white,
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'SELECT BLOCK',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: _primary,
-                    letterSpacing: 1.2,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                if (_blocks.isEmpty)
-                  const Text(
-                    'No blocks found.',
-                    style: TextStyle(color: Colors.grey, fontSize: 13),
-                  )
-                else
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: _blocks.map((block) {
-                        final selected = _selectedBlock == block;
-                        return Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: GestureDetector(
-                            onTap: () {
-                              setState(() => _selectedBlock = block);
-                              _loadResidents(block);
-                            },
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 180),
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                              decoration: BoxDecoration(
-                                color: selected ? _primary : const Color(0xFFF5F1ED),
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(
-                                  color: selected ? _primary : Colors.black12,
-                                  width: 1.5,
-                                ),
-                              ),
-                              child: Text(
-                                'Block $block',
-                                style: TextStyle(
-                                  color: selected ? Colors.white : Colors.black87,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
 
-          // ── Residents list ──
-          if (_selectedBlock != null) ...[
+          // ── Selected members strip ─────────────────────────────────────────
+          if (_selectedIds.isNotEmpty) _selectedStrip(),
+
+          // ── Block selector ─────────────────────────────────────────────────
+          _blockSelector(),
+
+          const SizedBox(height: 4),
+
+          // ── Members header ─────────────────────────────────────────────────
+          if (_selectedBlock != null)
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
+              padding: const EdgeInsets.fromLTRB(20, 10, 16, 6),
               child: Row(
                 children: [
                   const Text(
-                    'ADD MEMBERS',
+                    'All Contacts',
                     style: TextStyle(
-                      fontSize: 11,
+                      fontSize: 13,
                       fontWeight: FontWeight.w700,
-                      color: _primary,
-                      letterSpacing: 1.2,
+                      color: _textDark,
+                      letterSpacing: 0.1,
                     ),
                   ),
                   const Spacer(),
                   if (_residents.isNotEmpty)
-                    TextButton(
-                      onPressed: () => setState(() {
+                    GestureDetector(
+                      onTap: () => setState(() {
                         _selectedIds = _selectedIds.length == _residents.length
                             ? {}
                             : _residents.map((r) => r['id'] as String).toSet();
                       }),
-                      child: Text(
-                        _selectedIds.length == _residents.length
-                            ? 'Deselect all'
-                            : 'Select all',
-                        style: const TextStyle(color: _primary, fontSize: 12),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: _primary.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          _selectedIds.length == _residents.length
+                              ? 'Deselect all'
+                              : 'Select all',
+                          style: const TextStyle(
+                            color: _primary,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                       ),
                     ),
                 ],
               ),
             ),
-            Expanded(
-              child: _loading
-                  ? const Center(child: CircularProgressIndicator(color: _primary))
-                  : _residents.isEmpty
-                  ? Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.person_off_outlined,
-                        size: 48, color: Colors.black12),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'All residents are already in this group.',
-                      style: TextStyle(color: Colors.grey, fontSize: 13),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
-              )
-                  : ListView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: _residents.length,
-                itemBuilder: (context, i) {
-                  final r = _residents[i];
-                  final id = r['id'] as String;
-                  final name = r['full_name'] as String? ?? 'Unknown';
-                  final unit = r['unit_number'] as String? ?? '';
-                  final checked = _selectedIds.contains(id);
 
-                  return GestureDetector(
-                    onTap: () => setState(() {
-                      checked ? _selectedIds.remove(id) : _selectedIds.add(id);
-                    }),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 150),
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 12),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: checked ? _primary : Colors.transparent,
-                          width: 1.5,
+          // ── Residents list ─────────────────────────────────────────────────
+          Expanded(child: _residentList()),
+
+          // ── Create button ──────────────────────────────────────────────────
+          if (_selectedIds.isNotEmpty) _createButton(),
+        ],
+      ),
+    );
+  }
+
+  // ── Selected strip ─────────────────────────────────────────────────────────
+  Widget _selectedStrip() {
+    final selectedResidents = _residents
+        .where((r) => _selectedIds.contains(r['id'] as String))
+        .toList();
+
+    return Container(
+      color: _surface,
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Chosen Contacts',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: _textMid,
+                  letterSpacing: 0.3,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: _primary,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '${_selectedIds.length}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 56,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: selectedResidents.length,
+              itemBuilder: (context, i) {
+                final r = selectedResidents[i];
+                final name = r['full_name'] as String? ?? '?';
+                return Padding(
+                  padding: const EdgeInsets.only(right: 10),
+                  child: GestureDetector(
+                    onTap: () => setState(() => _selectedIds.remove(r['id'])),
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        CircleAvatar(
+                          radius: 26,
+                          backgroundColor: _avatarColor(name),
+                          child: Text(
+                            _initials(name),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
                         ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.04),
-                            blurRadius: 6,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        children: [
-                          CircleAvatar(
-                            radius: 22,
-                            backgroundColor: _avatarColor(name),
-                            child: Text(
-                              _initials(name),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  name,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                                Text(
-                                  'Unit $unit',
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.black45,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          AnimatedContainer(
-                            duration: const Duration(milliseconds: 150),
-                            width: 24,
-                            height: 24,
+                        Positioned(
+                          top: -2,
+                          right: -2,
+                          child: Container(
+                            width: 18,
+                            height: 18,
                             decoration: BoxDecoration(
-                              color: checked ? _primary : Colors.transparent,
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(
-                                color: checked ? _primary : Colors.black26,
-                                width: 1.5,
-                              ),
+                              color: _primary,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: _surface, width: 1.5),
                             ),
-                            child: checked
-                                ? const Icon(Icons.check,
-                                color: Colors.white, size: 15)
-                                : null,
+                            child: const Icon(Icons.close, color: Colors.white, size: 10),
                           ),
-                        ],
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Block selector ─────────────────────────────────────────────────────────
+  Widget _blockSelector() {
+    return Container(
+      color: _surface,
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Select Block',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: _textMid,
+              letterSpacing: 0.3,
+            ),
+          ),
+          const SizedBox(height: 10),
+          if (_blocks.isEmpty)
+            const Text(
+              'No blocks found.',
+              style: TextStyle(color: _textLight, fontSize: 13),
+            )
+          else
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: _blocks.map((block) {
+                  final selected = _selectedBlock == block;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: GestureDetector(
+                      onTap: () {
+                        setState(() => _selectedBlock = block);
+                        _loadResidents(block);
+                      },
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
+                        decoration: BoxDecoration(
+                          color: selected ? _primary : _bg,
+                          borderRadius: BorderRadius.circular(22),
+                          border: Border.all(
+                            color: selected ? _primary : _border,
+                            width: 1.5,
+                          ),
+                          boxShadow: selected
+                              ? [BoxShadow(color: _primary.withOpacity(0.25), blurRadius: 8, offset: const Offset(0, 3))]
+                              : [],
+                        ),
+                        child: Text(
+                          'Block $block',
+                          style: TextStyle(
+                            color: selected ? Colors.white : _textDark,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
+                        ),
                       ),
                     ),
                   );
-                },
-              ),
-            ),
-          ] else
-            Expanded(
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.apartment_outlined,
-                        size: 56, color: Colors.black12),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'Select a block to add members',
-                      style: TextStyle(color: Colors.black38, fontSize: 14),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-          // ── Create button ──
-          if (_selectedIds.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: ElevatedButton(
-                onPressed: _loading ? null : _createChat,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _primary,
-                  minimumSize: const Size.fromHeight(52),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
-                  elevation: 0,
-                ),
-                child: _loading
-                    ? const SizedBox(
-                  height: 20,
-                  width: 20,
-                  child: CircularProgressIndicator(
-                      color: Colors.white, strokeWidth: 2),
-                )
-                    : Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.group_add_outlined,
-                        size: 18, color: Colors.white),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Create Chat with ${_selectedIds.length} member${_selectedIds.length == 1 ? '' : 's'}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 15,
-                      ),
-                    ),
-                  ],
-                ),
+                }).toList(),
               ),
             ),
         ],
@@ -487,14 +479,205 @@ class _AdminCreateChatScreenState extends State<AdminCreateChatScreen> {
     );
   }
 
-  Color _avatarColor(String name) {
-    final hue = (name.codeUnits.fold(0, (a, b) => a + b) % 360).toDouble();
-    return HSLColor.fromAHSL(1, hue, 0.5, 0.5).toColor();
+  // ── Resident list ──────────────────────────────────────────────────────────
+  Widget _residentList() {
+    if (_selectedBlock == null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                color: _border,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.apartment_outlined, size: 34, color: _textLight),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Select a block to see members',
+              style: TextStyle(color: _textMid, fontSize: 14, fontWeight: FontWeight.w500),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Choose up to 1000 contacts',
+              style: TextStyle(color: _textLight, fontSize: 12),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator(color: _primary));
+    }
+
+    if (_residents.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(color: _border, shape: BoxShape.circle),
+              child: const Icon(Icons.person_off_outlined, size: 34, color: _textLight),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'All residents are already\nin this group.',
+              style: TextStyle(color: _textMid, fontSize: 14, fontWeight: FontWeight.w500),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+      itemCount: _residents.length,
+      itemBuilder: (context, i) {
+        final r = _residents[i];
+        final id = r['id'] as String;
+        final name = r['full_name'] as String? ?? 'Unknown';
+        final unit = r['unit_number'] as String? ?? '';
+        final checked = _selectedIds.contains(id);
+
+        return GestureDetector(
+          onTap: () => setState(() {
+            checked ? _selectedIds.remove(id) : _selectedIds.add(id);
+          }),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+            decoration: BoxDecoration(
+              color: _surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: checked ? _primary : Colors.transparent,
+                width: 1.5,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                // Avatar
+                Stack(
+                  children: [
+                    CircleAvatar(
+                      radius: 24,
+                      backgroundColor: _avatarColor(name),
+                      child: Text(
+                        _initials(name),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    if (checked)
+                      Positioned.fill(
+                        child: CircleAvatar(
+                          backgroundColor: _primary.withOpacity(0.85),
+                          child: const Icon(Icons.check, color: Colors.white, size: 18),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(width: 12),
+                // Name + unit
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                          color: checked ? _primary : _textDark,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        unit.isNotEmpty ? 'Unit $unit' : 'No unit',
+                        style: const TextStyle(fontSize: 12, color: _textLight),
+                      ),
+                    ],
+                  ),
+                ),
+                // Status dot / indicator
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: checked ? _primary : _border,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
-  String _initials(String name) {
-    final parts = name.trim().split(RegExp(r'\s+'));
-    if (parts.length == 1) return parts[0][0].toUpperCase();
-    return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+  // ── Create button ──────────────────────────────────────────────────────────
+  Widget _createButton() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
+      decoration: BoxDecoration(
+        color: _surface,
+        border: Border(top: BorderSide(color: _border)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: ElevatedButton(
+              onPressed: _loading ? null : _createChat,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _primary,
+                minimumSize: const Size.fromHeight(52),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                elevation: 0,
+              ),
+              child: _loading
+                  ? const SizedBox(
+                height: 20,
+                width: 20,
+                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+              )
+                  : Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.group_add_outlined, size: 18, color: Colors.white),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Create Chat · ${_selectedIds.length} member${_selectedIds.length == 1 ? '' : 's'}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

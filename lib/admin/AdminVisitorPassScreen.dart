@@ -40,36 +40,57 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
   Future<void> _loadPasses() async {
     setState(() => _loading = true);
     try {
-      final res = await _client
-          .from('visitor_passes')
-          .select('*, events(title)')
-          .order('created_at', ascending: false);
+      // Try joining events first; if it fails fall back to plain select
+      List<Map<String, dynamic>> all = [];
+      try {
+        final res = await _client
+            .from('visitor_passes')
+            .select('*, events(title)')
+            .order('created_at', ascending: false);
+        all = List<Map<String, dynamic>>.from(res);
+      } catch (_) {
+        // Foreign key to events doesn't exist — fetch without join
+        final res = await _client
+            .from('visitor_passes')
+            .select('*')
+            .order('created_at', ascending: false);
+        all = List<Map<String, dynamic>>.from(res);
+      }
 
-      final all = List<Map<String, dynamic>>.from(res);
-      setState(() {
-        _pending  = all.where((p) => p['status'] == 'pending').toList();
-        _approved = all.where((p) => p['status'] == 'approved').toList();
-        _rejected = all.where((p) => p['status'] == 'rejected').toList();
-        _loading  = false;
-      });
+      if (mounted) {
+        setState(() {
+          _pending  = all.where((p) => p['status'] == 'pending').toList();
+          _approved = all.where((p) => p['status'] == 'approved').toList();
+          _rejected = all.where((p) => p['status'] == 'rejected').toList();
+          _loading  = false;
+        });
+      }
     } catch (e) {
-      setState(() => _loading = false);
-      _showSnack('Error loading passes: $e');
+      if (mounted) {
+        setState(() => _loading = false);
+        _showSnack('Error loading passes: $e');
+      }
     }
   }
 
   Future<void> _approvePass(Map<String, dynamic> pass) async {
     try {
+      // Generate a unique QR token when approving
+      final qrToken = '${pass['id']}_${DateTime.now().millisecondsSinceEpoch}';
+
       await _client
           .from('visitor_passes')
-          .update({'status': 'approved'})
+          .update({
+        'status': 'approved',
+        'qr_token': qrToken,
+      })
           .eq('id', pass['id']);
 
       _showSnack('Pass approved — QR code generated.');
       await _loadPasses();
 
       if (mounted) {
-        _showQRDialog({...pass, 'status': 'approved'});
+        _showQRDialog({...pass, 'status': 'approved', 'qr_token': qrToken});
       }
     } catch (e) {
       _showSnack('Error approving pass: $e');
@@ -111,15 +132,15 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
 
   void _showQRDialog(Map<String, dynamic> pass) {
     final qrToken = pass['qr_token']?.toString() ?? '';
+    final eventTitle = pass['events']?['title'] as String?;
+
     showDialog(
       context: context,
       builder: (_) => Dialog(
-        shape:
-        RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         child: Padding(
           padding: const EdgeInsets.all(28),
-          child:
-          Column(mainAxisSize: MainAxisSize.min, children: [
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
             Text('Visitor Pass QR',
                 style: TextStyle(
                     fontSize: 18,
@@ -127,8 +148,7 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
                     color: primary)),
             const SizedBox(height: 4),
             Text(pass['visitor_name'] ?? '',
-                style:
-                const TextStyle(color: Colors.black54, fontSize: 14)),
+                style: const TextStyle(color: Colors.black54, fontSize: 14)),
             const SizedBox(height: 20),
             Container(
               padding: const EdgeInsets.all(16),
@@ -154,16 +174,14 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
               ),
             ),
             const SizedBox(height: 16),
-            _dialogInfoRow(
-                Icons.person_outline, pass['visitor_name'] ?? '-'),
+            _dialogInfoRow(Icons.person_outline, pass['visitor_name'] ?? '-'),
             if (pass['visitor_ic'] != null && pass['visitor_ic'] != '')
               _dialogInfoRow(Icons.badge_outlined, pass['visitor_ic']),
-            if (pass['events'] != null)
-              _dialogInfoRow(
-                  Icons.event_outlined, pass['events']['title'] ?? ''),
+            if (eventTitle != null && eventTitle.isNotEmpty)
+              _dialogInfoRow(Icons.event_outlined, eventTitle),
             if (pass['purpose'] != null)
-              _dialogInfoRow(Icons.category_outlined,
-                  'Purpose: ${pass['purpose']}'),
+              _dialogInfoRow(
+                  Icons.category_outlined, 'Purpose: ${pass['purpose']}'),
             if (pass['reason'] != null && pass['reason'] != '')
               _dialogInfoRow(
                   Icons.note_outlined, 'Reason: ${pass['reason']}'),
@@ -246,7 +264,6 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
     );
   }
 
-  // ── TAB badge pill ───────────────────────────────────────────────
   Widget _tabBadge(String label, int count, Color badgeColor) {
     return Tab(
       child: Row(
@@ -256,11 +273,10 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
           if (count > 0) ...[
             const SizedBox(width: 6),
             Container(
-              padding:
-              const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
               decoration: BoxDecoration(
                   color: badgeColor,
-                  borderRadius: BorderRadius.circular(20)),
+                  borderRadius: BorderRadius.circular(10)),
               child: Text('$count',
                   style: const TextStyle(
                       fontSize: 11, fontWeight: FontWeight.bold)),
@@ -298,10 +314,9 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
         ),
       ),
       body: _loading
-          ? Center(
+          ? const Center(
           child: CircularProgressIndicator(
-              valueColor:
-              const AlwaysStoppedAnimation<Color>(_brown)))
+              valueColor: AlwaysStoppedAnimation<Color>(_brown)))
           : TabBarView(
         controller: _tabController,
         children: [
@@ -313,7 +328,7 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
     );
   }
 
-  // ── PENDING list ─────────────────────────────────────────────────
+  // ── PENDING list ──────────────────────────────────────────────────────────
   Widget _buildPendingList() {
     if (_pending.isEmpty) {
       return _buildEmpty(Icons.inbox_outlined, 'No pending requests');
@@ -329,11 +344,10 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
     );
   }
 
-  // ── APPROVED list ────────────────────────────────────────────────
+  // ── APPROVED list ─────────────────────────────────────────────────────────
   Widget _buildApprovedList() {
     if (_approved.isEmpty) {
-      return _buildEmpty(
-          Icons.check_circle_outline, 'No approved passes yet');
+      return _buildEmpty(Icons.check_circle_outline, 'No approved passes yet');
     }
     return RefreshIndicator(
       onRefresh: _loadPasses,
@@ -346,7 +360,7 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
     );
   }
 
-  // ── REJECTED list ────────────────────────────────────────────────
+  // ── REJECTED list ─────────────────────────────────────────────────────────
   Widget _buildRejectedList() {
     if (_rejected.isEmpty) {
       return _buildEmpty(Icons.cancel_outlined, 'No rejected passes');
@@ -362,12 +376,12 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
     );
   }
 
-  // ── PENDING card ─────────────────────────────────────────────────
+  // ── PENDING card ──────────────────────────────────────────────────────────
   Widget _buildPendingCard(Map<String, dynamic> pass) {
     final validDate = pass['valid_date'] != null
         ? DateTime.parse(pass['valid_date'])
         : DateTime.now();
-    final eventTitle = pass['events']?['title'];
+    final eventTitle = pass['events']?['title'] as String?;
 
     return Container(
       decoration: BoxDecoration(
@@ -383,8 +397,7 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
       child: Column(children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
-          child:
-          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             _avatar(pass['visitor_name'] ?? '?',
                 const Color(0xFFE96B9E), const Color(0xFFEADFD6), primary),
             const SizedBox(width: 12),
@@ -396,8 +409,7 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
                       Expanded(
                         child: Text(pass['visitor_name'] ?? '-',
                             style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 15)),
+                                fontWeight: FontWeight.w700, fontSize: 15)),
                       ),
                       _statusBadge('pending'),
                     ]),
@@ -412,7 +424,7 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
                     Text(DateFormat('d MMM, yyyy').format(validDate),
                         style: const TextStyle(
                             fontSize: 12, color: Colors.black38)),
-                    if (eventTitle != null) ...[
+                    if (eventTitle != null && eventTitle.isNotEmpty) ...[
                       const SizedBox(height: 2),
                       Row(children: [
                         const Icon(Icons.event_outlined,
@@ -431,8 +443,7 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
                           style: const TextStyle(
                               fontSize: 12, color: Colors.black45)),
                     ],
-                    if (pass['reason'] != null &&
-                        pass['reason'] != '') ...[
+                    if (pass['reason'] != null && pass['reason'] != '') ...[
                       const SizedBox(height: 2),
                       Text('Reason: ${pass['reason']}',
                           style: const TextStyle(
@@ -487,11 +498,12 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
     );
   }
 
-  // ── APPROVED card ────────────────────────────────────────────────
+  // ── APPROVED card ─────────────────────────────────────────────────────────
   Widget _buildApprovedCard(Map<String, dynamic> pass) {
     final validDate = pass['valid_date'] != null
         ? DateTime.parse(pass['valid_date'])
         : DateTime.now();
+    final eventTitle = pass['events']?['title'] as String?;
 
     return Container(
       decoration: BoxDecoration(
@@ -507,10 +519,12 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
       child: Column(children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
-          child:
-          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            _avatar(pass['visitor_name'] ?? '?',
-                const Color(0xFF6B8E6B), const Color(0xFFDFEADF), const Color(0xFF6B8E6B)),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _avatar(
+                pass['visitor_name'] ?? '?',
+                const Color(0xFF6B8E6B),
+                const Color(0xFFDFEADF),
+                const Color(0xFF6B8E6B)),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -520,8 +534,7 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
                       Expanded(
                         child: Text(pass['visitor_name'] ?? '-',
                             style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 15)),
+                                fontWeight: FontWeight.w700, fontSize: 15)),
                       ),
                       _statusBadge('approved'),
                     ]),
@@ -542,21 +555,20 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
                           style: const TextStyle(
                               fontSize: 12, color: Colors.black45)),
                     ],
-                    if (pass['reason'] != null &&
-                        pass['reason'] != '') ...[
+                    if (pass['reason'] != null && pass['reason'] != '') ...[
                       const SizedBox(height: 2),
                       Text('Reason: ${pass['reason']}',
                           style: const TextStyle(
                               fontSize: 12, color: Colors.black45)),
                     ],
-                    if (pass['events'] != null) ...[
+                    if (eventTitle != null && eventTitle.isNotEmpty) ...[
                       const SizedBox(height: 2),
                       Row(children: [
                         const Icon(Icons.event_outlined,
                             size: 12, color: Colors.black38),
                         const SizedBox(width: 4),
                         Expanded(
-                          child: Text(pass['events']['title'] ?? '',
+                          child: Text(eventTitle,
                               style: const TextStyle(
                                   fontSize: 12, color: Colors.black45)),
                         ),
@@ -591,11 +603,12 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
     );
   }
 
-  // ── REJECTED card ────────────────────────────────────────────────
+  // ── REJECTED card ─────────────────────────────────────────────────────────
   Widget _buildRejectedCard(Map<String, dynamic> pass) {
     final validDate = pass['valid_date'] != null
         ? DateTime.parse(pass['valid_date'])
         : DateTime.now();
+    final eventTitle = pass['events']?['title'] as String?;
 
     return Container(
       decoration: BoxDecoration(
@@ -611,8 +624,10 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          _avatar(pass['visitor_name'] ?? '?',
-              const Color(0xFFC67B75), const Color(0xFFF5E0DE),
+          _avatar(
+              pass['visitor_name'] ?? '?',
+              const Color(0xFFC67B75),
+              const Color(0xFFF5E0DE),
               const Color(0xFFC67B75)),
           const SizedBox(width: 12),
           Expanded(
@@ -644,21 +659,20 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
                         style: const TextStyle(
                             fontSize: 12, color: Colors.black45)),
                   ],
-                  if (pass['reason'] != null &&
-                      pass['reason'] != '') ...[
+                  if (pass['reason'] != null && pass['reason'] != '') ...[
                     const SizedBox(height: 2),
                     Text('Reason: ${pass['reason']}',
                         style: const TextStyle(
                             fontSize: 12, color: Colors.black45)),
                   ],
-                  if (pass['events'] != null) ...[
+                  if (eventTitle != null && eventTitle.isNotEmpty) ...[
                     const SizedBox(height: 2),
                     Row(children: [
                       const Icon(Icons.event_outlined,
                           size: 12, color: Colors.black38),
                       const SizedBox(width: 4),
                       Expanded(
-                        child: Text(pass['events']['title'] ?? '',
+                        child: Text(eventTitle,
                             style: const TextStyle(
                                 fontSize: 12, color: Colors.black45)),
                       ),
@@ -671,7 +685,7 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
     );
   }
 
-  // ── shared avatar widget ─────────────────────────────────────────
+  // ── Shared avatar widget ──────────────────────────────────────────────────
   Widget _avatar(String name, Color ringColor, Color bgColor,
       Color textColor) =>
       Container(
@@ -689,7 +703,7 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
         ),
       );
 
-  // ── empty state ──────────────────────────────────────────────────
+  // ── Empty state ───────────────────────────────────────────────────────────
   Widget _buildEmpty(IconData icon, String msg) => Center(
     child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
