@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../AdminVisitorPassScreen.dart';
 
 class RequestDetailPage extends StatefulWidget {
   final Map data;
@@ -18,7 +19,11 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
     try {
       final user = supabase.auth.currentUser;
       if (user == null) return "Unknown Admin";
-      final adminData = await supabase.from('admin_new').select('full_name').eq('email', user.email!).maybeSingle();
+      final adminData = await supabase
+          .from('admin_new')
+          .select('full_name')
+          .eq('email', user.email!)
+          .maybeSingle();
       return adminData?['full_name'] ?? user.email ?? "Unknown Admin";
     } catch (e) {
       return supabase.auth.currentUser?.email ?? "Unknown Admin";
@@ -32,7 +37,6 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
     return null;
   }
 
-  // --- ACTIONS (APPROVE/REJECT) ---
   Future<void> approve() async {
     try {
       final String requestId = widget.data['request_id'].toString();
@@ -75,17 +79,42 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
             'participants': 0,
           });
         }
+      } else if (type == 'visitor') {
+        final subData = extractSubData(widget.data['visitor_requests']);
+        if (subData != null) {
+          await supabase.from('visitor_passes').insert({
+            'visitor_name': subData['visitor_name'],
+            'visitor_ic':   subData['ic'],
+            'valid_date':   subData['visit_date'],
+            'status':       'approved',
+          });
+        }
       }
 
+      // Always update the parent request status
       await supabase.from('requests').update({
         'status': 'approved',
         'respond_time': DateTime.now().toIso8601String(),
         'processed_by': adminName,
       }).eq('request_id', requestId);
 
-      if (mounted) Navigator.pop(context);
+      if (mounted) {
+        if (type == 'visitor') {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const AdminVisitorPassScreen(),
+            ),
+          );
+        } else {
+          Navigator.pop(context);
+        }
+      }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text("Error approving: $e")));
+      }
     }
   }
 
@@ -100,16 +129,17 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
       }).eq('request_id', widget.data['request_id']);
       if (mounted) Navigator.pop(context);
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text("Error rejecting: $e")));
+      }
     }
   }
 
-  // --- THE "ANTI-RAW" UI TILE HELPER ---
   Widget _buildDetailTile(String key, dynamic value, {String? endTime}) {
     String k = key.toLowerCase();
     String displayValue = value?.toString() ?? "-";
 
-    // 1. FORMAT IMAGE
     if (k.contains('image_url') && displayValue.startsWith('http')) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -123,14 +153,17 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
               height: 180,
               width: double.infinity,
               fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => Container(height: 100, color: Colors.grey[200], child: const Icon(Icons.broken_image)),
+              errorBuilder: (_, __, ___) => Container(
+                height: 100,
+                color: Colors.grey[200],
+                child: const Icon(Icons.broken_image),
+              ),
             ),
           ),
         ],
       );
     }
 
-    // 2. COMBINED TIME (Start Time -> End Time)
     if (k.contains('start_time') && endTime != null) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -141,12 +174,14 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
             padding: const EdgeInsets.only(left: 24),
             child: Row(
               children: [
-                Text(displayValue, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                Text(displayValue,
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                 const Padding(
                   padding: EdgeInsets.symmetric(horizontal: 10),
                   child: Icon(Icons.arrow_forward_rounded, size: 14, color: Colors.grey),
                 ),
-                Text(endTime, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                Text(endTime,
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               ],
             ),
           ),
@@ -154,7 +189,6 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
       );
     }
 
-    // 3. FORMAT PRIVACY
     if (k.contains('is_private')) {
       bool isPrivate = displayValue == 'true';
       return Column(
@@ -172,9 +206,14 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(isPrivate ? Icons.lock : Icons.public, size: 12, color: isPrivate ? Colors.red : Colors.green),
+                Icon(isPrivate ? Icons.lock : Icons.public,
+                    size: 12, color: isPrivate ? Colors.red : Colors.green),
                 const SizedBox(width: 4),
-                Text(isPrivate ? "PRIVATE" : "PUBLIC", style: TextStyle(color: isPrivate ? Colors.red : Colors.green, fontWeight: FontWeight.bold, fontSize: 11)),
+                Text(isPrivate ? "PRIVATE" : "PUBLIC",
+                    style: TextStyle(
+                        color: isPrivate ? Colors.red : Colors.green,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11)),
               ],
             ),
           ),
@@ -182,7 +221,6 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
       );
     }
 
-    // 4. DEFAULT TEXT (Clean Label + Value)
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -190,7 +228,11 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
         const SizedBox(height: 6),
         Padding(
           padding: const EdgeInsets.only(left: 24),
-          child: Text(displayValue, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Color(0xFF263238))),
+          child: Text(displayValue,
+              style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF263238))),
         ),
       ],
     );
@@ -201,7 +243,12 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
       children: [
         Icon(icon, size: 16, color: const Color(0xFF6D4C41)),
         const SizedBox(width: 8),
-        Text(label, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.grey.shade500, letterSpacing: 0.8)),
+        Text(label,
+            style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                color: Colors.grey.shade500,
+                letterSpacing: 0.8)),
       ],
     );
   }
@@ -223,54 +270,77 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
     final status = data['status'] ?? 'pending';
 
     Map? details;
-    if (type == 'admin') details = extractSubData(data['admin_requests']);
+    if (type == 'admin')    details = extractSubData(data['admin_requests']);
     else if (type == 'resident') details = extractSubData(data['resident_requests']);
-    else if (type == 'visitor') details = extractSubData(data['visitor_requests']);
-    else if (type == 'booking') details = extractSubData(data['event_requests']);
+    else if (type == 'visitor')  details = extractSubData(data['visitor_requests']);
+    else if (type == 'booking')  details = extractSubData(data['event_requests']);
     else if (type == 'facility') details = extractSubData(data['facility_requests']);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7F9),
-      appBar: AppBar(title: const Text("Review Request", style: TextStyle(fontWeight: FontWeight.bold)), centerTitle: true, backgroundColor: Colors.white, foregroundColor: Colors.black, elevation: 0),
+      appBar: AppBar(
+        title: const Text("Review Request",
+            style: TextStyle(fontWeight: FontWeight.bold)),
+        centerTitle: true,
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black,
+        elevation: 0,
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
             _buildHeader(data, type),
             const SizedBox(height: 30),
-
             if (details != null) ...[
               const Row(children: [
                 Icon(Icons.assignment_outlined, size: 18, color: Colors.blueGrey),
                 SizedBox(width: 8),
-                Text("SPECIFIC DETAILS", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12, color: Colors.blueGrey, letterSpacing: 1.2)),
+                Text("SPECIFIC DETAILS",
+                    style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 12,
+                        color: Colors.blueGrey,
+                        letterSpacing: 1.2)),
               ]),
               const Divider(height: 24),
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.grey.shade200)),
+                decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.grey.shade200)),
                 child: Wrap(
                   spacing: 20,
                   runSpacing: 25,
                   children: details.entries
-                      .where((e) => e.key != 'request_id' && e.key != 'id' && e.key != 'end_time') // We skip end_time here because we merge it with start_time
+                      .where((e) =>
+                  e.key != 'request_id' &&
+                      e.key != 'id' &&
+                      e.key != 'end_time')
                       .map((e) {
-                    bool isFullWidth = e.key.toLowerCase().contains('image') || e.key.toLowerCase().contains('description') || e.key.toLowerCase().contains('start_time');
+                    bool isFullWidth =
+                        e.key.toLowerCase().contains('image') ||
+                            e.key.toLowerCase().contains('description') ||
+                            e.key.toLowerCase().contains('start_time');
 
                     return SizedBox(
-                      width: isFullWidth ? double.infinity : (MediaQuery.of(context).size.width - 100) / 2,
+                      width: isFullWidth
+                          ? double.infinity
+                          : (MediaQuery.of(context).size.width - 100) / 2,
                       child: _buildDetailTile(
                         e.key,
                         e.value,
-                        endTime: e.key == 'start_time' ? details!['end_time']?.toString() : null,
+                        endTime: e.key == 'start_time'
+                            ? details!['end_time']?.toString()
+                            : null,
                       ),
                     );
                   }).toList(),
                 ),
               ),
             ],
-
             const SizedBox(height: 30),
             _buildActionSection(status),
           ],
@@ -281,14 +351,31 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
 
   Widget _buildHeader(Map data, String type) {
     return Container(
-      width: double.infinity, padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 20)]),
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withOpacity(0.04), blurRadius: 20)
+          ]),
       child: Column(children: [
-        Chip(label: Text(type.toUpperCase(), style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF6D4C41))), backgroundColor: const Color(0xFF6D4C41).withOpacity(0.1)),
+        Chip(
+          label: Text(type.toUpperCase(),
+              style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF6D4C41))),
+          backgroundColor: const Color(0xFF6D4C41).withOpacity(0.1),
+        ),
         const SizedBox(height: 12),
-        Text(data['title'] ?? "No Title", style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+        Text(data['title'] ?? "No Title",
+            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
         const SizedBox(height: 8),
-        Text(data['description'] ?? "No description", style: TextStyle(color: Colors.grey.shade600, height: 1.4), textAlign: TextAlign.center),
+        Text(data['description'] ?? "No description",
+            style: TextStyle(color: Colors.grey.shade600, height: 1.4),
+            textAlign: TextAlign.center),
       ]),
     );
   }
@@ -296,33 +383,71 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
   Widget _buildActionSection(String status) {
     if (status != 'pending') {
       return Container(
-        padding: const EdgeInsets.all(20), width: double.infinity,
-        decoration: BoxDecoration(color: status == 'approved' ? Colors.green.shade50 : Colors.red.shade50, borderRadius: BorderRadius.circular(16)),
+        padding: const EdgeInsets.all(20),
+        width: double.infinity,
+        decoration: BoxDecoration(
+            color: status == 'approved' ? Colors.green.shade50 : Colors.red.shade50,
+            borderRadius: BorderRadius.circular(16)),
         child: Column(children: [
-          Icon(status == 'approved' ? Icons.check_circle : Icons.cancel, color: status == 'approved' ? Colors.green : Colors.red, size: 30),
+          Icon(
+              status == 'approved' ? Icons.check_circle : Icons.cancel,
+              color: status == 'approved' ? Colors.green : Colors.red,
+              size: 30),
           const SizedBox(height: 8),
-          Text("REQUEST ${status.toUpperCase()}", style: TextStyle(fontWeight: FontWeight.w900, color: status == 'approved' ? Colors.green : Colors.red)),
-          if (widget.data['processed_by'] != null) Text("By: ${widget.data['processed_by']}", style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic)),
+          Text("REQUEST ${status.toUpperCase()}",
+              style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  color: status == 'approved' ? Colors.green : Colors.red)),
+          if (widget.data['processed_by'] != null)
+            Text("By: ${widget.data['processed_by']}",
+                style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic)),
         ]),
       );
     }
+
     return Column(children: [
       TextField(
-          controller: reasonController,
-          maxLines: 2,
-          decoration: InputDecoration(
-            hintText: "Reason for rejection (optional)",
-            filled: true,
-            fillColor: Colors.white,
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade200)),
-            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade200)),
-          )
+        controller: reasonController,
+        maxLines: 2,
+        decoration: InputDecoration(
+          hintText: "Reason for rejection (optional)",
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: Colors.grey.shade200)),
+          enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: Colors.grey.shade200)),
+        ),
       ),
       const SizedBox(height: 20),
       Row(children: [
-        Expanded(child: ElevatedButton(onPressed: approve, style: ElevatedButton.styleFrom(backgroundColor: Colors.green, padding: const EdgeInsets.all(16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))), child: const Text("APPROVE", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)))),
+        Expanded(
+          child: ElevatedButton(
+            onPressed: approve,
+            style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green,
+                padding: const EdgeInsets.all(16),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12))),
+            child: const Text("APPROVE",
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ),
         const SizedBox(width: 10),
-        Expanded(child: ElevatedButton(onPressed: reject, style: ElevatedButton.styleFrom(backgroundColor: Colors.red, padding: const EdgeInsets.all(16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))), child: const Text("REJECT", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)))),
+        Expanded(
+          child: ElevatedButton(
+            onPressed: reject,
+            style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                padding: const EdgeInsets.all(16),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12))),
+            child: const Text("REJECT",
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ),
       ]),
     ]);
   }

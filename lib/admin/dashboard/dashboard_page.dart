@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:assignment/admin/emergency/emergency_list_page.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../AdminVisitorPassScreen.dart';
 import '../request/request_list_page.dart';
 import 'package:image_picker/image_picker.dart';
 import 'admin_notifications_page.dart';
@@ -80,33 +81,50 @@ class _DashboardPageState extends State<DashboardPage> {
     }
   }
 
+  void navigateTo(String type) {
+    if (type == 'Visitor') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const AdminVisitorPassScreen()),
+      ).then((_) => refreshAllData());
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => RequestListPage(type: type)),
+    ).then((_) => refreshAllData());
+  }
+
   Future<void> fetchNotificationStatus() async {
     try {
-      final requests = await supabase.from('requests').select('type').eq(
-          'status', 'pending');
-      final emergencies = await supabase.from('emergency').select(
-          'emergency_id').neq('status', 'solved');
+      final requests = await supabase
+          .from('requests')
+          .select('type')
+          .eq('status', 'pending');
+
+      final emergencies = await supabase
+          .from('emergency')
+          .select('emergency_id')
+          .neq('status', 'solved');
+
+      final visitorPasses = await supabase
+          .from('visitor_passes')
+          .select('id')
+          .eq('status', 'pending');
+
       if (mounted) {
         setState(() {
-          hasUserNotif = requests.any((r) =>
-          r['type'] == 'admin' ||
-              r['type'] == 'resident');
-          hasEventNotif = requests.any((r) => r['type'] == 'complaint');
-          hasFacilityNotif = requests.any((r) => r['type'] == 'booking');
-          hasVisitorNotif = requests.any((r) => r['type'] == 'visitor');
+          hasUserNotif     = requests.any((r) =>
+          r['type'] == 'admin' || r['type'] == 'resident');
+          hasEventNotif    = requests.any((r) => r['type'] == 'booking');
+          hasFacilityNotif = requests.any((r) => r['type'] == 'facility');
+          hasVisitorNotif  = visitorPasses.isNotEmpty;  // ✅ correct source
           hasEmergencyNotif = emergencies.isNotEmpty;
         });
       }
     } catch (e) {
       debugPrint("Fetch Notifications Error: $e");
     }
-  }
-
-  void navigateTo(String type) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => RequestListPage(type: type)),
-    ).then((_) => refreshAllData());
   }
 
   Widget buildSectionTitle(String title) {

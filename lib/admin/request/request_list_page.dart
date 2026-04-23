@@ -20,6 +20,11 @@ class _RequestListPageState extends State<RequestListPage> {
   String searchText = "";
   final TextEditingController searchController = TextEditingController();
 
+  // ── colours matching EmergencyListPage ──
+  static const Color _bg = Color(0xFFF5EBE6);
+  static const Color _brown = Color(0xFF8B5E4A);
+  static const Color _darkText = Color(0xFF2B2B2B);
+
   @override
   void initState() {
     super.initState();
@@ -32,7 +37,6 @@ class _RequestListPageState extends State<RequestListPage> {
     try {
       setState(() => isLoading = true);
 
-      // 1. Get the current admin's full name for filtering
       String adminIdentifier = "";
       if (currentAdminEmail != null) {
         final adminData = await supabase
@@ -40,11 +44,9 @@ class _RequestListPageState extends State<RequestListPage> {
             .select('full_name')
             .eq('email', currentAdminEmail!)
             .maybeSingle();
-
         adminIdentifier = adminData?['full_name'] ?? currentAdminEmail!;
       }
 
-      // 2. Build Query with all sub-tables
       var query = supabase.from('requests').select('''
         *, 
         admin_requests(*), 
@@ -54,7 +56,6 @@ class _RequestListPageState extends State<RequestListPage> {
         facility_requests(*) 
       ''');
 
-      // 3. Map UI Types to Database Types
       String uiType = widget.type.toLowerCase().trim();
       if (uiType == 'users' || uiType == 'user') {
         query = query.inFilter('type', ['admin', 'resident']);
@@ -68,21 +69,15 @@ class _RequestListPageState extends State<RequestListPage> {
         query = query.eq('type', uiType);
       }
 
-      // 4. Status and Admin Filtering Logic
-      // - Pending: Everyone sees everything
-      // - Approved/Rejected: Admins only see what THEY processed
       if (statusFilter == "pending") {
         query = query.eq('status', 'pending');
       } else if (statusFilter == "approved" || statusFilter == "rejected") {
         query = query.eq('status', statusFilter).eq('processed_by', adminIdentifier);
-      } else {
-        // "All" Tab: Show all pending + my handled history
-        query = query.or('status.eq.pending,and(status.in.(approved,rejected),processed_by.eq."$adminIdentifier")');
       }
+      // "all" → no extra filter
 
       final data = await query.order('created_at', ascending: false);
 
-      // 5. Local Search Filtering
       List filteredData = data;
       if (searchText.isNotEmpty) {
         filteredData = data.where((r) {
@@ -126,168 +121,362 @@ class _RequestListPageState extends State<RequestListPage> {
     return data['title'] ?? "Request Detail";
   }
 
-  Widget buildRequestCard(Map data) {
-    String status = (data['status'] ?? "pending").toString().toLowerCase();
-    String displayName = extractNameForRequest(data);
+  String extractSubtitleForRequest(Map data) {
     String type = data['type'] ?? '';
+    if (type == 'admin') {
+      return extractSubData(data['admin_requests'])?['email'] ?? "Admin";
+    } else if (type == 'resident') {
+      final sub = extractSubData(data['resident_requests']);
+      final block = sub?['block'] ?? '-';
+      final unit = sub?['unit_number'] ?? '-';
+      return "Block $block - $unit";
+    } else if (type == 'visitor') {
+      final sub = extractSubData(data['visitor_requests']);
+      return sub?['purpose'] ?? "Visitor";
+    } else if (type == 'booking') {
+      final sub = extractSubData(data['event_requests']);
+      return sub?['location'] ?? "Event";
+    } else if (type == 'facility') {
+      final sub = extractSubData(data['facility_requests']);
+      return sub?['booking_date'] ?? "Facility";
+    }
+    return "";
+  }
 
-    // Label logic
-    String displayLabel = type.toUpperCase();
-    if (type == 'booking') displayLabel = "EVENT REQUEST";
+  // Per-type colour accent — matches dashboard icon colours
+  Color _typeColor(String type) {
+    switch (type) {
+      case 'admin':
+      case 'resident':
+        return const Color(0xFF758BFD);
+      case 'booking':
+        return const Color(0xFF4BC0B8);
+      case 'facility':
+        return const Color(0xFF9A4B3C);
+      case 'visitor':
+        return const Color(0xFFE96B9E);
+      default:
+        return _brown;
+    }
+  }
 
-    // Privacy Badge logic
-    final eventData = extractSubData(data['event_requests']);
-    bool isPrivate = eventData?['is_private'] ?? false;
+  IconData _typeIcon(String type) {
+    switch (type) {
+      case 'admin':
+        return Icons.admin_panel_settings_outlined;
+      case 'resident':
+        return Icons.person_outline;
+      case 'booking':
+        return Icons.event_note_outlined;
+      case 'facility':
+        return Icons.home_work_outlined;
+      case 'visitor':
+        return Icons.badge_outlined;
+      default:
+        return Icons.info_outline;
+    }
+  }
 
-    Color statusColor = status == 'approved'
-        ? Colors.green
-        : (status == 'rejected' ? Colors.red : Colors.orange);
+  String _typeLabel(String type) {
+    if (type == 'booking') return 'EVENT';
+    return type.toUpperCase();
+  }
 
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      elevation: 0,
-      shape: RoundedRectangleBorder(
+  // ── Status colour (mirrors emergency card logic) ──
+  Color _statusColor(String status) {
+    switch (status) {
+      case 'approved':
+        return const Color(0xFF6B8E6B);
+      case 'rejected':
+        return const Color(0xFFC67B75);
+      default:
+        return const Color(0xFFD4A847);
+    }
+  }
+
+  // ── CARD (matches _buildEmergencyCard exactly) ──
+  Widget buildRequestCard(Map data) {
+    final String status = (data['status'] ?? "pending").toString().toLowerCase();
+    final String displayName = extractNameForRequest(data);
+    final String subtitle = extractSubtitleForRequest(data);
+    final String type = data['type'] ?? '';
+    final Color typeColor = _typeColor(type);
+    final Color statusColor = _statusColor(status);
+
+    // Try to get an image from the sub-request
+    String? imageUrl;
+    final sub = extractSubData(data['${type == 'booking' ? 'event' : type}_requests']);
+    imageUrl = sub?['image_url'];
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: Colors.grey.shade200),
+        boxShadow: [
+          BoxShadow(
+            color: _brown.withOpacity(0.06),
+            blurRadius: 15,
+            spreadRadius: 0,
+            offset: const Offset(0, 5),
+          ),
+        ],
       ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => RequestDetailPage(data: data)),
-          ).then((_) => fetchRequests());
-        },
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => RequestDetailPage(data: data)),
+            ).then((_) => fetchRequests());
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                // Avatar / icon — mirrors emergency card
+                Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: typeColor.withOpacity(0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: CircleAvatar(
+                    radius: 24,
+                    backgroundColor: const Color(0xFFF0F0F5),
+                    backgroundImage: (imageUrl != null && imageUrl.isNotEmpty)
+                        ? NetworkImage(imageUrl)
+                        : null,
+                    child: (imageUrl == null || imageUrl.isEmpty)
+                        ? Icon(_typeIcon(type), color: typeColor, size: 24)
+                        : null,
+                  ),
+                ),
+                const SizedBox(width: 16),
+
+                // Name + subtitle
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        displayName,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                            color: _darkText),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        subtitle,
+                        style: TextStyle(
+                            color: Colors.grey.shade600, fontSize: 13),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Status badge + type label
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Text(displayName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Text(displayLabel,
-                            style: TextStyle(color: Colors.blue.shade700, fontSize: 11, fontWeight: FontWeight.bold)),
-                        if (isPrivate && type == 'booking') ...[
-                          const SizedBox(width: 8),
-                          const Icon(Icons.lock, size: 10, color: Colors.grey),
-                          const Text(" PRIVATE", style: TextStyle(fontSize: 9, color: Colors.grey)),
-                        ],
-                      ],
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: statusColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        status.toUpperCase(),
+                        style: TextStyle(
+                            color: statusColor,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 10),
+                      ),
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      data['processed_by'] != null
-                          ? "Handled by: ${data['processed_by']}"
-                          : data['created_at'].toString().substring(0, 10),
-                      style: TextStyle(color: Colors.grey.shade500, fontSize: 11),
+                      _typeLabel(type),
+                      style: TextStyle(
+                          color: Colors.grey.shade400,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold),
                     ),
                   ],
                 ),
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: statusColor.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(status.toUpperCase(),
-                        style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 10)),
-                  ),
-                  const SizedBox(height: 12),
-                  const Icon(Icons.chevron_right, color: Colors.grey, size: 20),
-                ],
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
+  // ── SEARCH BAR ──
   Widget buildSearchBar() {
-    return TextField(
-      controller: searchController,
-      decoration: InputDecoration(
-        hintText: "Search $statusFilter requests...",
-        prefixIcon: const Icon(Icons.search),
-        filled: true,
-        fillColor: Colors.white,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+              color: _brown.withOpacity(0.06),
+              blurRadius: 10,
+              offset: const Offset(0, 3)),
+        ],
       ),
-      onChanged: (value) {
-        setState(() => searchText = value);
-        fetchRequests(); // Re-fetch to apply search
-      },
+      child: TextField(
+        controller: searchController,
+        decoration: InputDecoration(
+          hintText: "Search requests...",
+          hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
+          prefixIcon: Icon(Icons.search, color: Colors.grey.shade400),
+          border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide.none),
+          filled: true,
+          fillColor: Colors.transparent,
+          contentPadding:
+          const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        ),
+        onChanged: (value) {
+          setState(() => searchText = value);
+          fetchRequests();
+        },
+      ),
     );
   }
 
-  Widget buildStatusFilter() {
-    final statuses = ["all", "pending", "approved", "rejected"];
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceAround,
-      children: statuses.map((status) {
-        final isSelected = statusFilter == status;
-        String label = status.toUpperCase();
-        if (status == "approved") label = "MY APPROVED";
-        if (status == "rejected") label = "MY REJECTED";
-
-        return GestureDetector(
-          onTap: () {
-            setState(() => statusFilter = status);
-            fetchRequests();
-          },
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-            decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: isSelected ? Colors.blue : Colors.transparent, width: 2)),
-            ),
-            child: Text(label,
-                style: TextStyle(fontSize: 10, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal, color: isSelected ? Colors.blue : Colors.grey)),
+  // ── FILTER PILLS (matches filterButton in EmergencyListPage exactly) ──
+  Widget _filterPill(String value, String label) {
+    final isSelected = statusFilter == value;
+    return Expanded(
+      child: InkWell(
+        onTap: () {
+          setState(() => statusFilter = value);
+          fetchRequests();
+        },
+        borderRadius: BorderRadius.circular(20),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: isSelected ? _brown : Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: isSelected
+                ? [
+              BoxShadow(
+                  color: _brown.withOpacity(0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3))
+            ]
+                : [
+              BoxShadow(
+                  color: Colors.grey.withOpacity(0.1),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2))
+            ],
           ),
-        );
-      }).toList(),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: TextStyle(
+              color: isSelected ? Colors.white : _brown,
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
+            ),
+          ),
+        ),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F6FA),
+      backgroundColor: _bg,
       appBar: AppBar(
-        title: Text("${widget.type} Requests", style: const TextStyle(fontWeight: FontWeight.bold)),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
+        title: Text(
+          "${widget.type} Requests",
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        backgroundColor: _bg,
+        foregroundColor: _darkText,
         elevation: 0,
         centerTitle: true,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            buildSearchBar(),
-            const SizedBox(height: 10),
-            buildStatusFilter(),
-            const SizedBox(height: 10),
-            Expanded(
-              child: isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : requests.isEmpty
-                  ? Center(child: Text("No $statusFilter requests found"))
-                  : ListView.builder(
-                itemCount: requests.length,
-                itemBuilder: (context, index) => buildRequestCard(requests[index]),
+      body: Column(
+        children: [
+          const SizedBox(height: 10),
+
+          // Filter pills
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                _filterPill("all", "All"),
+                const SizedBox(width: 10),
+                _filterPill("pending", "Pending"),
+                const SizedBox(width: 10),
+                _filterPill("approved", "My Approved"),
+                const SizedBox(width: 10),
+                _filterPill("rejected", "My Rejected"),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 14),
+
+          // Search bar
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: buildSearchBar(),
+          ),
+
+          const SizedBox(height: 14),
+
+          // List
+          Expanded(
+            child: isLoading
+                ? Center(
+              child: CircularProgressIndicator(
+                valueColor:
+                const AlwaysStoppedAnimation<Color>(_brown),
               ),
             )
-          ],
-        ),
+                : requests.isEmpty
+                ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.inbox_outlined,
+                      size: 60, color: Colors.grey.shade400),
+                  const SizedBox(height: 10),
+                  Text(
+                    "No $statusFilter requests found",
+                    style: TextStyle(
+                        color: Colors.grey.shade500,
+                        fontSize: 16),
+                  ),
+                ],
+              ),
+            )
+                : ListView.builder(
+              padding: const EdgeInsets.only(
+                  left: 16, right: 16, bottom: 40),
+              itemCount: requests.length,
+              itemBuilder: (context, index) =>
+                  buildRequestCard(requests[index]),
+            ),
+          ),
+        ],
       ),
     );
   }
