@@ -6,8 +6,7 @@ import 'event_details_screen.dart';
 
 // ─────────────────────────────────────────────
 // MyJoinedEventsScreen
-// Shows events the resident has JOINED (not created).
-// Includes private/public indicator on each card.
+// Updated with New Theme Colors
 // ─────────────────────────────────────────────
 
 class MyJoinedEventsScreen extends StatefulWidget {
@@ -25,9 +24,10 @@ class MyJoinedEventsScreen extends StatefulWidget {
 }
 
 class _MyJoinedEventsScreenState extends State<MyJoinedEventsScreen> {
-  static const Color cork = Color(0xFFAD8762);
-  static const Color apricot = Color(0xFFFFB38A);
-  static const Color creamBg = Color(0xFFFFF8F0);
+  // ── NEW THEME COLORS ──────────────────────────────
+  final Color primaryRed = const Color(0xFF9A4B3C); // Deep Red/Brown
+  final Color accentPeach = const Color(0xFFFC9D7E); // Apricot/Peach
+  final Color bgColor = const Color(0xFFF5F1ED);    // Beige Background
 
   final EventService _eventService = EventService();
 
@@ -37,14 +37,13 @@ class _MyJoinedEventsScreenState extends State<MyJoinedEventsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: creamBg,
+      backgroundColor: bgColor, // Updated background
       appBar: AppBar(
         title: const Text(
           "My Joined Events",
-          style:
-          TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
-        backgroundColor: cork,
+        backgroundColor: primaryRed, // Updated AppBar
         iconTheme: const IconThemeData(color: Colors.white),
         centerTitle: true,
         elevation: 0,
@@ -53,8 +52,8 @@ class _MyJoinedEventsScreenState extends State<MyJoinedEventsScreen> {
         future: _eventService.fetchJoinedEvents(widget.currentUserId),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-                child: CircularProgressIndicator(color: apricot));
+            return Center(
+                child: CircularProgressIndicator(color: accentPeach));
           }
 
           if (snapshot.hasError) {
@@ -76,7 +75,6 @@ class _MyJoinedEventsScreenState extends State<MyJoinedEventsScreen> {
             return _buildEmptyState();
           }
 
-          // Filter events
           final now = DateTime.now();
           final filtered = allEvents.where((e) {
             if (_filter == 'upcoming') return e.eventDate.isAfter(now);
@@ -84,7 +82,6 @@ class _MyJoinedEventsScreenState extends State<MyJoinedEventsScreen> {
             return true;
           }).toList();
 
-          // Sort: upcoming first
           filtered.sort((a, b) => a.eventDate.compareTo(b.eventDate));
 
           return Column(
@@ -139,10 +136,10 @@ class _MyJoinedEventsScreenState extends State<MyJoinedEventsScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
         decoration: BoxDecoration(
-          color: isSelected ? cork : Colors.grey.shade100,
+          color: isSelected ? primaryRed : Colors.grey.shade100,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isSelected ? cork : Colors.grey.shade200,
+            color: isSelected ? primaryRed : Colors.grey.shade200,
           ),
         ),
         child: Row(
@@ -217,13 +214,13 @@ class _MyJoinedEventsScreenState extends State<MyJoinedEventsScreen> {
         ),
         child: Row(
           children: [
-            // Date strip (left accent)
+            // Date strip
             Container(
               width: 64,
               decoration: BoxDecoration(
                 color: isPast
                     ? Colors.grey.withOpacity(0.08)
-                    : cork.withOpacity(0.09),
+                    : primaryRed.withOpacity(0.09),
                 borderRadius: const BorderRadius.only(
                   topLeft: Radius.circular(16),
                   bottomLeft: Radius.circular(16),
@@ -238,7 +235,7 @@ class _MyJoinedEventsScreenState extends State<MyJoinedEventsScreen> {
                     style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.w800,
-                      color: isPast ? Colors.grey : cork,
+                      color: isPast ? Colors.grey : primaryRed,
                     ),
                   ),
                   Text(
@@ -249,7 +246,7 @@ class _MyJoinedEventsScreenState extends State<MyJoinedEventsScreen> {
                       fontWeight: FontWeight.w700,
                       color: isPast
                           ? Colors.grey.withOpacity(0.7)
-                          : cork.withOpacity(0.7),
+                          : primaryRed.withOpacity(0.7),
                       letterSpacing: 0.5,
                     ),
                   ),
@@ -257,14 +254,12 @@ class _MyJoinedEventsScreenState extends State<MyJoinedEventsScreen> {
               ),
             ),
 
-            // Event info
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Title row + privacy + status badges
                     Row(
                       children: [
                         Expanded(
@@ -282,7 +277,6 @@ class _MyJoinedEventsScreenState extends State<MyJoinedEventsScreen> {
                           ),
                         ),
                         const SizedBox(width: 6),
-                        // Private / Public badge
                         Container(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 6, vertical: 3),
@@ -306,12 +300,11 @@ class _MyJoinedEventsScreenState extends State<MyJoinedEventsScreen> {
                     ),
                     const SizedBox(height: 6),
 
-                    // Location
                     Row(
                       children: [
                         Icon(Icons.location_on_outlined,
                             size: 13,
-                            color: isPast ? Colors.grey : apricot),
+                            color: isPast ? Colors.grey : accentPeach),
                         const SizedBox(width: 4),
                         Expanded(
                           child: Text(
@@ -329,12 +322,11 @@ class _MyJoinedEventsScreenState extends State<MyJoinedEventsScreen> {
                     ),
                     const SizedBox(height: 4),
 
-                    // Time
                     Row(
                       children: [
                         Icon(Icons.access_time_outlined,
                             size: 13,
-                            color: isPast ? Colors.grey : apricot),
+                            color: isPast ? Colors.grey : accentPeach),
                         const SizedBox(width: 4),
                         Text(
                           '${event.startTime} – ${event.endTime}',
@@ -348,7 +340,6 @@ class _MyJoinedEventsScreenState extends State<MyJoinedEventsScreen> {
                       ],
                     ),
 
-                    // "Today" or "Past" tag
                     if (isToday || isPast) ...[
                       const SizedBox(height: 8),
                       Container(
@@ -376,7 +367,6 @@ class _MyJoinedEventsScreenState extends State<MyJoinedEventsScreen> {
               ),
             ),
 
-            // Leave + Arrow
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -397,7 +387,7 @@ class _MyJoinedEventsScreenState extends State<MyJoinedEventsScreen> {
                   padding: const EdgeInsets.only(right: 12),
                   child: Icon(Icons.arrow_forward_ios_rounded,
                       size: 14,
-                      color: isPast ? Colors.black26 : cork.withOpacity(0.5)),
+                      color: isPast ? Colors.black26 : primaryRed.withOpacity(0.5)),
                 ),
               ],
             ),
@@ -408,15 +398,13 @@ class _MyJoinedEventsScreenState extends State<MyJoinedEventsScreen> {
   }
 
 
-  // ── Leave event ───────────────────────────────
-
   void _confirmLeave(CommunityEvent event) {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Leave Event'),
-        content: Text('Are you sure you want to leave "\${event.title}"?'),
+        content: Text('Are you sure you want to leave "${event.title}"?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -459,24 +447,24 @@ class _MyJoinedEventsScreenState extends State<MyJoinedEventsScreen> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(Icons.confirmation_number_outlined,
-              size: 80, color: cork.withOpacity(0.2)),
+              size: 80, color: primaryRed.withOpacity(0.2)),
           const SizedBox(height: 16),
           Text(
             "You haven't joined any events yet!",
             style: TextStyle(
-                color: cork, fontWeight: FontWeight.bold, fontSize: 16),
+                color: primaryRed, fontWeight: FontWeight.bold, fontSize: 16),
           ),
           const SizedBox(height: 8),
           Text(
             "Browse community events and join one.",
-            style: TextStyle(color: cork.withOpacity(0.6), fontSize: 14),
+            style: TextStyle(color: primaryRed.withOpacity(0.6), fontSize: 14),
           ),
           const SizedBox(height: 20),
           TextButton.icon(
             onPressed: () => Navigator.pop(context),
-            icon: Icon(Icons.explore_outlined, color: apricot),
+            icon: Icon(Icons.explore_outlined, color: accentPeach),
             label:
-            Text("Explore Calendar", style: TextStyle(color: apricot)),
+            Text("Explore Calendar", style: TextStyle(color: accentPeach)),
           ),
         ],
       ),
@@ -489,14 +477,14 @@ class _MyJoinedEventsScreenState extends State<MyJoinedEventsScreen> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(Icons.filter_list_off,
-              size: 56, color: cork.withOpacity(0.2)),
+              size: 56, color: primaryRed.withOpacity(0.2)),
           const SizedBox(height: 12),
           Text(
             _filter == 'upcoming'
                 ? 'No upcoming events'
                 : 'No past events',
             style: TextStyle(
-                color: cork, fontWeight: FontWeight.w500, fontSize: 15),
+                color: primaryRed, fontWeight: FontWeight.w500, fontSize: 15),
           ),
         ],
       ),

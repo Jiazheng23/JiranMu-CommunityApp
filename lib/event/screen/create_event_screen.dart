@@ -93,6 +93,18 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       _availableSuggestions = [];
     });
 
+    // 1. Check Operating Hours FIRST
+    if (_isOutsideOperatingHours()) {
+      setState(() {
+        _isAvailable = false;
+        _isCheckingAvailability = false;
+        // You can manually add a suggestion or message here
+        _availableSuggestions = ["Note: Venue is closed during this time."];
+      });
+      return; // Stop here, don't check database for overlaps
+    }
+
+    // 2. If hours are okay, check Database for overlaps
     try {
       final formattedDate = DateFormat('yyyy-MM-dd').format(_selectedDate);
       final dbStartTime = _formatTimeForDb(_startTime);
@@ -576,20 +588,25 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
         if (_isOutsideOperatingHours())
           Container(
             margin: const EdgeInsets.only(top: 10),
-            padding: const EdgeInsets.all(10),
+            padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.orange.shade50,
+              // Using your theme's Red but very light
+              color: const Color(0xFF9A4B3C).withOpacity(0.08),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.orange.shade200),
+              border: Border.all(color: const Color(0xFF9A4B3C).withOpacity(0.2)),
             ),
             child: Row(
               children: [
-                Icon(Icons.warning_amber_rounded, color: Colors.orange.shade800, size: 18),
+                const Icon(Icons.history_toggle_off_rounded, color: Color(0xFF9A4B3C), size: 20),
                 const SizedBox(width: 10),
-                const Expanded(
+                Expanded(
                   child: Text(
-                    "Special Request: Selected time is outside standard hours. Approval is subject to Admin discretion.",
-                    style: TextStyle(fontSize: 11, color: Color(0xFF855D00), fontWeight: FontWeight.bold),
+                    "Venue is CLOSED at this time. Please select a time between ${_selectedFacility!['open_time']} and ${_selectedFacility!['close_time']}.",
+                    style: const TextStyle(
+                        color: Color(0xFF9A4B3C),
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold
+                    ),
                   ),
                 ),
               ],

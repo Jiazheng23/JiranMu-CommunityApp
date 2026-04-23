@@ -6,9 +6,7 @@ import 'package:assignment/event/service/event_service.dart';
 
 // ─────────────────────────────────────────────
 // Resident Calendar Screen
-// Shows calendar with dot indicators for days that
-// have approved events created by the current resident.
-// Tapping a date shows events for that day below the calendar.
+// Updated with New Theme Colors
 // ─────────────────────────────────────────────
 
 class ResidentCalendarScreen extends StatefulWidget {
@@ -30,20 +28,19 @@ class _ResidentCalendarScreenState extends State<ResidentCalendarScreen> {
   final EventService _eventService = EventService();
   final supabase = Supabase.instance.client;
 
-  // Theme
-  static const Color cork = Color(0xFFAD8762);
-  static const Color apricot = Color(0xFFFFB38A);
-  static const Color creamBg = Color(0xFFFFF8F0);
+  // ── NEW THEME COLORS ──────────────────────────────
+  final Color primaryColor = const Color(0xFF9A4B3C); // Deep Red/Brown
+  final Color accentColor = const Color(0xFFFC9D7E);  // Apricot/Peach
+  final Color bgColor = const Color(0xFFF5F1ED);      // Off-white/Beige
+  final Color softYellow = const Color(0xFFF0E6B8);   // Today highlight
+  final Color textDark = const Color(0xFF2B2B2B);
 
   DateTime _focusedMonth = DateTime.now();
   DateTime? _selectedDay;
 
-  // All approved events created by this resident
   List<CommunityEvent> _myApprovedEvents = [];
-
-  // All approved public events (for joined ones too) — optional, extend later
-  // Events on the selected day
   List<CommunityEvent> _selectedDayEvents = [];
+  Set<String> _joinedEventIds = {};
 
   bool _loading = true;
 
@@ -57,45 +54,61 @@ class _ResidentCalendarScreenState extends State<ResidentCalendarScreen> {
   Future<void> _loadMyApprovedEvents() async {
     setState(() => _loading = true);
     try {
-      // Fetch events created by this resident that are approved
-      final data = await supabase
+      final response = await supabase
           .from('events')
-          .select(
-          'id, title, description, location, event_date, start_time, end_time, image_url, user_id, created_by_name, is_private, created_at, max_capacity, participants, processed_by')
-          .eq('user_id', widget.currentUserId)
+          .select('*')
           .eq('status', 'approved')
+          .or('is_private.eq.false,user_id.eq.${widget.currentUserId}')
           .order('event_date', ascending: true);
 
-      final events = (data as List)
+      final joinedData = await supabase
+          .from('event_participants')
+          .select('event_id')
+          .eq('user_id', widget.currentUserId);
+
+      final Set<String> joinedIds = (joinedData as List)
+          .map((item) => item['event_id'].toString())
+          .toSet();
+
+      final events = (response as List)
           .map((e) => CommunityEvent.fromMap(e as Map<String, dynamic>))
           .toList();
 
       setState(() {
         _myApprovedEvents = events;
+        _joinedEventIds = joinedIds;
         _loading = false;
         if (_selectedDay != null) {
           _updateSelectedDayEvents(_selectedDay!);
         }
       });
     } catch (e) {
-      debugPrint('Error loading approved events: $e');
+      debugPrint('Error: $e');
       setState(() => _loading = false);
     }
   }
 
   void _updateSelectedDayEvents(DateTime day) {
-    final events = _myApprovedEvents.where((event) {
+    final eventsOnDay = _myApprovedEvents.where((event) {
       return event.eventDate.year == day.year &&
           event.eventDate.month == day.month &&
           event.eventDate.day == day.day;
     }).toList();
+
+    eventsOnDay.sort((a, b) {
+      bool aMine = a.userId == widget.currentUserId;
+      bool bMine = b.userId == widget.currentUserId;
+      if (aMine && !bMine) return -1;
+      if (!aMine && bMine) return 1;
+      return a.startTime.compareTo(b.startTime);
+    });
+
     setState(() {
       _selectedDay = day;
-      _selectedDayEvents = events;
+      _selectedDayEvents = eventsOnDay;
     });
   }
 
-  // Check if a given day has events
   bool _hasEvents(DateTime day) {
     return _myApprovedEvents.any((event) =>
     event.eventDate.year == day.year &&
@@ -139,14 +152,13 @@ class _ResidentCalendarScreenState extends State<ResidentCalendarScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: creamBg,
+      backgroundColor: bgColor,
       appBar: AppBar(
         title: const Text(
           'My Event Calendar',
-          style:
-          TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
         ),
-        backgroundColor: cork,
+        backgroundColor: primaryColor,
         centerTitle: true,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
@@ -158,38 +170,31 @@ class _ResidentCalendarScreenState extends State<ResidentCalendarScreen> {
         ],
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator(color: apricot))
+          ? Center(child: CircularProgressIndicator(color: accentColor))
           : RefreshIndicator(
         onRefresh: _loadMyApprovedEvents,
-        color: apricot,
+        color: accentColor,
         child: CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
-            // Calendar card
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: _buildCalendarCard(),
               ),
             ),
-
-            // Legend
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                 child: _buildLegend(),
               ),
             ),
-
-            // Selected day header
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                 child: _buildSelectedDayHeader(),
               ),
             ),
-
-            // Events for selected day
             if (_selectedDayEvents.isEmpty)
               SliverToBoxAdapter(
                 child: _buildNoEventsForDay(),
@@ -201,8 +206,7 @@ class _ResidentCalendarScreenState extends State<ResidentCalendarScreen> {
                   delegate: SliverChildBuilderDelegate(
                         (context, index) => Padding(
                       padding: const EdgeInsets.only(bottom: 12),
-                      child: _buildEventCard(
-                          _selectedDayEvents[index]),
+                      child: _buildEventCard(_selectedDayEvents[index]),
                     ),
                     childCount: _selectedDayEvents.length,
                   ),
@@ -213,8 +217,6 @@ class _ResidentCalendarScreenState extends State<ResidentCalendarScreen> {
       ),
     );
   }
-
-  // ── Calendar card ─────────────────────────────
 
   Widget _buildCalendarCard() {
     return Container(
@@ -248,7 +250,7 @@ class _ResidentCalendarScreenState extends State<ResidentCalendarScreen> {
           IconButton(
             onPressed: _previousMonth,
             icon: const Icon(Icons.chevron_left_rounded),
-            color: cork,
+            color: primaryColor,
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),
           ),
@@ -256,10 +258,10 @@ class _ResidentCalendarScreenState extends State<ResidentCalendarScreen> {
             child: Text(
               DateFormat('MMMM yyyy').format(_focusedMonth),
               textAlign: TextAlign.center,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 17,
                 fontWeight: FontWeight.w700,
-                color: cork,
+                color: primaryColor,
                 letterSpacing: -0.3,
               ),
             ),
@@ -267,7 +269,7 @@ class _ResidentCalendarScreenState extends State<ResidentCalendarScreen> {
           IconButton(
             onPressed: _nextMonth,
             icon: const Icon(Icons.chevron_right_rounded),
-            color: cork,
+            color: primaryColor,
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),
           ),
@@ -290,7 +292,7 @@ class _ResidentCalendarScreenState extends State<ResidentCalendarScreen> {
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
-                  color: cork.withOpacity(0.6),
+                  color: primaryColor.withOpacity(0.6),
                   letterSpacing: 0.3,
                 ),
               ),
@@ -303,26 +305,17 @@ class _ResidentCalendarScreenState extends State<ResidentCalendarScreen> {
   }
 
   Widget _buildCalendarGrid() {
-    // First day of the month
-    final firstDay =
-    DateTime(_focusedMonth.year, _focusedMonth.month, 1);
-    // Day of week for the first day (0=Sun, 6=Sat)
+    final firstDay = DateTime(_focusedMonth.year, _focusedMonth.month, 1);
     final firstWeekday = firstDay.weekday % 7;
-    // Total days in month
-    final daysInMonth =
-        DateTime(_focusedMonth.year, _focusedMonth.month + 1, 0).day;
+    final daysInMonth = DateTime(_focusedMonth.year, _focusedMonth.month + 1, 0).day;
 
-    // Build grid cells
     final cells = <DateTime?>[];
-    // Leading empty cells
     for (int i = 0; i < firstWeekday; i++) {
       cells.add(null);
     }
-    // Day cells
     for (int d = 1; d <= daysInMonth; d++) {
       cells.add(DateTime(_focusedMonth.year, _focusedMonth.month, d));
     }
-    // Pad to complete last row
     while (cells.length % 7 != 0) {
       cells.add(null);
     }
@@ -345,9 +338,7 @@ class _ResidentCalendarScreenState extends State<ResidentCalendarScreen> {
   }
 
   Widget _buildDayCell(DateTime? day) {
-    if (day == null) {
-      return const SizedBox(height: 52);
-    }
+    if (day == null) return const SizedBox(height: 52);
 
     final isSelected = _isSelected(day);
     final isToday = _isToday(day);
@@ -361,9 +352,9 @@ class _ResidentCalendarScreenState extends State<ResidentCalendarScreen> {
         margin: const EdgeInsets.all(2),
         decoration: BoxDecoration(
           color: isSelected
-              ? cork
+              ? primaryColor
               : isToday
-              ? cork.withOpacity(0.12)
+              ? softYellow
               : Colors.transparent,
           borderRadius: BorderRadius.circular(10),
         ),
@@ -374,30 +365,25 @@ class _ResidentCalendarScreenState extends State<ResidentCalendarScreen> {
               '${day.day}',
               style: TextStyle(
                 fontSize: 14,
-                fontWeight: isSelected || isToday
-                    ? FontWeight.w700
-                    : FontWeight.w500,
+                fontWeight: isSelected || isToday ? FontWeight.w700 : FontWeight.w500,
                 color: isSelected
                     ? Colors.white
-                    : inMonth
-                    ? Colors.black87
-                    : Colors.black26,
+                    : inMonth ? textDark : textDark.withOpacity(0.3),
               ),
             ),
             const SizedBox(height: 3),
-            // Event indicator dot — always visible if there are events
             if (hasEvents)
               Container(
                 width: 6,
                 height: 6,
                 decoration: BoxDecoration(
-                  color: isSelected ? Colors.white : apricot,
+                  color: isSelected ? Colors.white : accentColor,
                   shape: BoxShape.circle,
                   boxShadow: isSelected
                       ? null
                       : [
                     BoxShadow(
-                      color: apricot.withOpacity(0.5),
+                      color: accentColor.withOpacity(0.5),
                       blurRadius: 3,
                       spreadRadius: 1,
                     ),
@@ -412,8 +398,6 @@ class _ResidentCalendarScreenState extends State<ResidentCalendarScreen> {
     );
   }
 
-  // ── Legend ────────────────────────────────────
-
   Widget _buildLegend() {
     return Row(
       children: [
@@ -421,11 +405,11 @@ class _ResidentCalendarScreenState extends State<ResidentCalendarScreen> {
           width: 10,
           height: 10,
           decoration: BoxDecoration(
-            color: apricot,
+            color: accentColor,
             shape: BoxShape.circle,
             boxShadow: [
               BoxShadow(
-                color: apricot.withOpacity(0.5),
+                color: accentColor.withOpacity(0.5),
                 blurRadius: 4,
                 spreadRadius: 1,
               ),
@@ -433,41 +417,35 @@ class _ResidentCalendarScreenState extends State<ResidentCalendarScreen> {
           ),
         ),
         const SizedBox(width: 6),
-        const Text(
-          'Your approved events',
+        Text(
+          'Approved events',
           style: TextStyle(
             fontSize: 12,
-            color: Colors.black54,
+            color: textDark.withOpacity(0.6),
             fontWeight: FontWeight.w500,
           ),
         ),
         const SizedBox(width: 16),
         Container(
-          width: 24,
-          height: 24,
+          width: 10,
+          height: 10,
           decoration: BoxDecoration(
-            color: cork.withOpacity(0.12),
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: const Center(
-            child: Text('1',
-                style: TextStyle(fontSize: 11, color: cork, fontWeight: FontWeight.w700)),
+            color: softYellow,
+            shape: BoxShape.circle,
           ),
         ),
         const SizedBox(width: 6),
-        const Text(
+        Text(
           'Today',
           style: TextStyle(
             fontSize: 12,
-            color: Colors.black54,
+            color: textDark.withOpacity(0.6),
             fontWeight: FontWeight.w500,
           ),
         ),
       ],
     );
   }
-
-  // ── Selected day header ───────────────────────
 
   Widget _buildSelectedDayHeader() {
     final day = _selectedDay ?? DateTime.now();
@@ -476,10 +454,9 @@ class _ResidentCalendarScreenState extends State<ResidentCalendarScreen> {
     return Row(
       children: [
         Container(
-          padding:
-          const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           decoration: BoxDecoration(
-            color: cork,
+            color: primaryColor,
             borderRadius: BorderRadius.circular(12),
           ),
           child: Text(
@@ -494,18 +471,17 @@ class _ResidentCalendarScreenState extends State<ResidentCalendarScreen> {
         const SizedBox(width: 10),
         if (hasEvents)
           Container(
-            padding:
-            const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              color: apricot.withOpacity(0.15),
+              color: accentColor.withOpacity(0.15),
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: apricot.withOpacity(0.4)),
+              border: Border.all(color: accentColor.withOpacity(0.4)),
             ),
             child: Text(
               '${_selectedDayEvents.length} event${_selectedDayEvents.length == 1 ? '' : 's'}',
               style: TextStyle(
                 fontSize: 12,
-                color: cork,
+                color: primaryColor,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -513,8 +489,6 @@ class _ResidentCalendarScreenState extends State<ResidentCalendarScreen> {
       ],
     );
   }
-
-  // ── No events placeholder ─────────────────────
 
   Widget _buildNoEventsForDay() {
     return Padding(
@@ -525,27 +499,18 @@ class _ResidentCalendarScreenState extends State<ResidentCalendarScreen> {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: cork.withOpacity(0.12)),
+          border: Border.all(color: primaryColor.withOpacity(0.12)),
         ),
         child: Column(
           children: [
-            Icon(Icons.event_available_outlined,
-                size: 48, color: cork.withOpacity(0.25)),
+            Icon(Icons.event_available_outlined, size: 48, color: primaryColor.withOpacity(0.25)),
             const SizedBox(height: 10),
             Text(
               'No events on this day',
               style: TextStyle(
-                color: cork.withOpacity(0.6),
+                color: textDark.withOpacity(0.6),
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Approved events you create will appear here',
-              style: TextStyle(
-                color: cork.withOpacity(0.4),
-                fontSize: 12,
               ),
             ),
           ],
@@ -554,9 +519,21 @@ class _ResidentCalendarScreenState extends State<ResidentCalendarScreen> {
     );
   }
 
-  // ── Event card for selected day ───────────────
-
   Widget _buildEventCard(CommunityEvent event) {
+    final bool isOwner = event.userId == widget.currentUserId;
+    final bool isJoined = _joinedEventIds.contains(event.id.toString());
+
+    String badgeText = "AVAILABLE";
+    Color badgeColor = Colors.blue;
+
+    if (isOwner) {
+      badgeText = "MY EVENT";
+      badgeColor = primaryColor;
+    } else if (isJoined) {
+      badgeText = "JOINED";
+      badgeColor = Colors.green;
+    }
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -571,11 +548,10 @@ class _ResidentCalendarScreenState extends State<ResidentCalendarScreen> {
       ),
       child: Row(
         children: [
-          // Color accent strip + time
           Container(
             width: 68,
             decoration: BoxDecoration(
-              color: cork.withOpacity(0.08),
+              color: primaryColor.withOpacity(0.08),
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(16),
                 bottomLeft: Radius.circular(16),
@@ -586,39 +562,22 @@ class _ResidentCalendarScreenState extends State<ResidentCalendarScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
-                  event.startTime.length >= 5
-                      ? event.startTime.substring(0, 5)
-                      : event.startTime,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: cork,
-                  ),
+                  event.startTime.length >= 5 ? event.startTime.substring(0, 5) : event.startTime,
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: primaryColor),
                 ),
                 const SizedBox(height: 2),
-                Container(
-                    width: 1,
-                    height: 16,
-                    color: cork.withOpacity(0.3)),
+                Container(width: 1, height: 16, color: primaryColor.withOpacity(0.3)),
                 const SizedBox(height: 2),
                 Text(
-                  event.endTime.length >= 5
-                      ? event.endTime.substring(0, 5)
-                      : event.endTime,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                    color: cork.withOpacity(0.6),
-                  ),
+                  event.endTime.length >= 5 ? event.endTime.substring(0, 5) : event.endTime,
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: primaryColor.withOpacity(0.6)),
                 ),
               ],
             ),
           ),
-
-          // Event info
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+              padding: const EdgeInsets.all(14),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -627,30 +586,19 @@ class _ResidentCalendarScreenState extends State<ResidentCalendarScreen> {
                       Expanded(
                         child: Text(
                           event.title,
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.black87,
-                          ),
+                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: textDark),
                         ),
                       ),
-                      // Privacy indicator
                       Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 7, vertical: 3),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: event.isPrivate
-                              ? Colors.purple.withOpacity(0.1)
-                              : Colors.blue.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
+                          color: badgeColor.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: badgeColor.withOpacity(0.3)),
                         ),
-                        child: Icon(
-                          event.isPrivate
-                              ? Icons.lock_outline
-                              : Icons.public,
-                          size: 12,
-                          color:
-                          event.isPrivate ? Colors.purple : Colors.blue,
+                        child: Text(
+                          badgeText,
+                          style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: badgeColor),
                         ),
                       ),
                     ],
@@ -658,17 +606,16 @@ class _ResidentCalendarScreenState extends State<ResidentCalendarScreen> {
                   const SizedBox(height: 6),
                   Row(
                     children: [
-                      Icon(Icons.location_on_outlined,
-                          size: 13,
-                          color: apricot),
+                      Icon(
+                        event.isPrivate ? Icons.lock_outline : Icons.public,
+                        size: 13,
+                        color: event.isPrivate ? Colors.purple : Colors.blue,
+                      ),
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
                           event.location,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.black54,
-                          ),
+                          style: TextStyle(fontSize: 12, color: textDark.withOpacity(0.7)),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
@@ -677,33 +624,15 @@ class _ResidentCalendarScreenState extends State<ResidentCalendarScreen> {
                   const SizedBox(height: 4),
                   Row(
                     children: [
-                      Icon(Icons.people_outline,
-                          size: 13,
-                          color: apricot),
+                      Icon(Icons.people_outline, size: 13, color: accentColor),
                       const SizedBox(width: 4),
                       Text(
                         'Max ${event.maxCapacity} · ${event.participants ?? 0} joined',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Colors.black54,
-                        ),
+                        style: TextStyle(fontSize: 12, color: textDark.withOpacity(0.7)),
                       ),
                     ],
                   ),
                 ],
-              ),
-            ),
-          ),
-
-          // Approved badge
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: Container(
-              width: 8,
-              height: 8,
-              decoration: const BoxDecoration(
-                color: Colors.green,
-                shape: BoxShape.circle,
               ),
             ),
           ),
