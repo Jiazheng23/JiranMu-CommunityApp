@@ -145,8 +145,8 @@ class _DashboardPageState extends State<DashboardPage>
         setState(() {
           hasUserNotif =
               req.any((r) => r['type'] == 'admin' || r['type'] == 'resident');
-          hasEventNotif = req.any((r) => r['type'] == 'complaint');
-          hasFacilityNotif = req.any((r) => r['type'] == 'booking');
+          hasEventNotif = req.any((r) => r['type'] == 'booking');
+          hasFacilityNotif = req.any((r) => r['type'] == 'facility');
           hasVisitorNotif = req.any((r) => r['type'] == 'visitor');
           hasEmergencyNotif = emg.isNotEmpty;
         });
