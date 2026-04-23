@@ -927,7 +927,7 @@ class _DashboardPageState extends State<DashboardPage>
             chartBlue,
                 () => navigateTo("Users"),
             hasNotif: hasUserNotif,
-            subtitle: pendingTotal > 0 ? "$pendingTotal pending" : "Manage",
+            subtitle: "Manage",
           ),
           _accessCard(
             "Events",

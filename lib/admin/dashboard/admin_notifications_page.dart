@@ -241,10 +241,10 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
                       targetPageType = "Users";
                       break;
                     case 'event':
+                    case 'booking':
                       targetPageType = "Event";
                       break;
                     case 'facility':
-                    case 'booking':
                       targetPageType = "Facilities";
                       break;
                     case 'visitor':
