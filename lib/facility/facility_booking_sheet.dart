@@ -784,39 +784,6 @@ class _FacilityBookingSheetState extends State<FacilityBookingSheet> {
                         const SizedBox(height: 14),
                         _buildBookedRangesSection(),
                       ],
-                      if (widget.facility.isShared) ...[
-                        const SizedBox(height: 16),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFFF7EC),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: const Color(0xFFF2D7A6)),
-                          ),
-                          child: const Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Icon(
-                                Icons.info_outline,
-                                size: 18,
-                                color: Color(0xFF9A4B3C),
-                              ),
-                              SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  'Shared facility booking will be counted as 1 resident automatically.',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    color: Color(0xFF7C4A3B),
-                                    height: 1.4,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
                       if (widget.facility.requiresApproval &&
                           !widget.facility.isShared) ...[
                         const SizedBox(height: 20),

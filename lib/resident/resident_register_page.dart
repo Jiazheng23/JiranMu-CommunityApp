@@ -334,43 +334,35 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
                 const SizedBox(height: 10),
 
                 Center(
-                  child: Container(
-                    width: 110,
-                    height: 110,
-                    clipBehavior: Clip.antiAlias,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.75),
-                      borderRadius: BorderRadius.circular(26),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.04),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
+                  child: SizedBox(
+                    width: 250,
+                    height: 95,
+                    child: ClipRect(
+                      child: Align(
+                        alignment: Alignment.topCenter,
+                        heightFactor: 0.72,
+                        child: Image.asset(
+                          'assets/images/jiranmu_logo.png',
+                          width: 250,
+                          fit: BoxFit.fitWidth,
                         ),
-                      ],
-                    ),
-                    child: Transform.scale(
-                      scale: 1.3,
-                      child: Image.asset(
-                        'assets/images/jiranmu_logo.png',
-                        fit: BoxFit.contain,
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 8),
 
                 const Center(
                   child: Text(
                     'JiranMu',
                     style: TextStyle(
-                      fontSize: 26,
+                      fontSize: 25,
                       fontWeight: FontWeight.w700,
                       color: primaryBrown,
                     ),
                   ),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 4),
 
                 const Center(
                   child: Text(
@@ -379,11 +371,11 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
                     style: TextStyle(
                       fontSize: 14,
                       color: Colors.black45,
-                      height: 1.4,
+                      height: 1.35,
                     ),
                   ),
                 ),
-                const SizedBox(height: 26),
+                const SizedBox(height: 24),
 
                 _buildTextFormField(
                   controller: fullNameController,
