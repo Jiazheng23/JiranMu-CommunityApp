@@ -20,9 +20,8 @@ class _RequestListPageState extends State<RequestListPage> {
   String searchText = "";
   final TextEditingController searchController = TextEditingController();
 
-  // ── colours matching EmergencyListPage ──
-  static const Color _bg = Color(0xFFF5EBE6);
-  static const Color _brown = Color(0xFF8B5E4A);
+  static const Color _bg       = Color(0xFFF5EBE6);
+  static const Color _brown    = Color(0xFF8B5E4A);
   static const Color _darkText = Color(0xFF2B2B2B);
 
   @override
@@ -37,65 +36,79 @@ class _RequestListPageState extends State<RequestListPage> {
     try {
       setState(() => isLoading = true);
 
-      String adminIdentifier = "";
-      if (currentAdminEmail != null) {
-        final adminData = await supabase
-            .from('admin_new')
-            .select('full_name')
-            .eq('email', currentAdminEmail!)
-            .maybeSingle();
-        adminIdentifier = adminData?['full_name'] ?? currentAdminEmail!;
-      }
+      final String uiType = widget.type.toLowerCase().trim();
 
-      var query = supabase.from('requests').select('''
-        *, 
-        admin_requests(*), 
-        resident_requests(*), 
-        visitor_requests(*),
-        event_requests(*),
-        facility_requests(*) 
-      ''');
+      // ── Build query — only join the sub-table relevant to this page ──────
+      dynamic query;
 
-      String uiType = widget.type.toLowerCase().trim();
       if (uiType == 'users' || uiType == 'user') {
-        query = query.inFilter('type', ['admin', 'resident']);
+        query = supabase
+            .from('requests')
+            .select('*, admin_requests(*), resident_requests(*)')
+            .inFilter('type', ['admin', 'resident']);
       } else if (uiType == 'event' || uiType == 'events' || uiType == 'booking') {
-        query = query.eq('type', 'booking');
+        query = supabase
+            .from('requests')
+            .select('*, event_requests(*)')
+            .eq('type', 'booking');
       } else if (uiType == 'facilities' || uiType == 'facility') {
-        query = query.eq('type', 'facility');
+        query = supabase
+            .from('requests')
+            .select('*, facility_requests(*)')
+            .eq('type', 'facility');
       } else if (uiType == 'visitor' || uiType == 'visitors') {
-        query = query.eq('type', 'visitor');
+        query = supabase
+            .from('requests')
+            .select('*, visitor_requests(*)')
+            .eq('type', 'visitor');
       } else {
-        query = query.eq('type', uiType);
+        query = supabase
+            .from('requests')
+            .select('*')
+            .eq('type', uiType);
       }
 
-      if (statusFilter == "pending") {
+      // ── Status filter ─────────────────────────────────────────────────────
+      if (statusFilter == 'pending') {
         query = query.eq('status', 'pending');
-      } else if (statusFilter == "approved" || statusFilter == "rejected") {
-        query = query.eq('status', statusFilter).eq('processed_by', adminIdentifier);
+      } else if (statusFilter == 'approved') {
+        query = query.eq('status', 'approved');
+      } else if (statusFilter == 'rejected') {
+        query = query.eq('status', 'rejected');
       }
-      // "all" → no extra filter
 
       final data = await query.order('created_at', ascending: false);
 
+      // ── Local search filter ───────────────────────────────────────────────
       List filteredData = data;
       if (searchText.isNotEmpty) {
-        filteredData = data.where((r) {
-          String name = extractNameForRequest(r).toLowerCase();
+        filteredData = (data as List).where((r) {
+          final String name = extractNameForRequest(r).toLowerCase();
           return name.contains(searchText.toLowerCase());
         }).toList();
       }
 
-      setState(() {
-        requests = filteredData;
-        isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          requests  = filteredData;
+          isLoading = false;
+        });
+      }
     } catch (e) {
-      debugPrint("ERROR: $e");
-      setState(() => isLoading = false);
+      debugPrint('fetchRequests ERROR: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to load requests: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        setState(() => isLoading = false);
+      }
     }
   }
 
+  // ── Helpers ───────────────────────────────────────────────────────────────
   Map? extractSubData(dynamic raw) {
     if (raw == null) return null;
     if (raw is List && raw.isNotEmpty) return raw[0];
@@ -104,76 +117,66 @@ class _RequestListPageState extends State<RequestListPage> {
   }
 
   String extractNameForRequest(Map data) {
-    String type = data['type'] ?? '';
-    if (type == 'admin') {
-      return extractSubData(data['admin_requests'])?['full_name'] ?? "Admin Request";
-    } else if (type == 'resident') {
-      return extractSubData(data['resident_requests'])?['full_name'] ?? "Resident Request";
-    } else if (type == 'visitor') {
-      return extractSubData(data['visitor_requests'])?['visitor_name'] ?? "Visitor Request";
-    } else if (type == 'booking') {
-      final eventData = extractSubData(data['event_requests']);
-      return eventData?['event_title'] ?? "Event: ${data['title'] ?? 'Untitled'}";
-    } else if (type == 'facility') {
-      final facilityData = extractSubData(data['facility_requests']);
-      return facilityData?['facility_name'] ?? "Facility Booking";
+    final String type = data['type'] ?? '';
+    switch (type) {
+      case 'admin':
+        return extractSubData(data['admin_requests'])?['full_name'] ?? 'Admin Request';
+      case 'resident':
+        return extractSubData(data['resident_requests'])?['full_name'] ?? 'Resident Request';
+      case 'visitor':
+        return extractSubData(data['visitor_requests'])?['visitor_name'] ?? 'Visitor Request';
+      case 'booking':
+        final eventData = extractSubData(data['event_requests']);
+        return eventData?['event_title'] ?? "Event: ${data['title'] ?? 'Untitled'}";
+      case 'facility':
+        final facilityData = extractSubData(data['facility_requests']);
+        return facilityData?['facility_name'] ?? 'Facility Booking';
+      default:
+        return data['title'] ?? 'Request Detail';
     }
-    return data['title'] ?? "Request Detail";
   }
 
   String extractSubtitleForRequest(Map data) {
-    String type = data['type'] ?? '';
-    if (type == 'admin') {
-      return extractSubData(data['admin_requests'])?['email'] ?? "Admin";
-    } else if (type == 'resident') {
-      final sub = extractSubData(data['resident_requests']);
-      final block = sub?['block'] ?? '-';
-      final unit = sub?['unit_number'] ?? '-';
-      return "Block $block - $unit";
-    } else if (type == 'visitor') {
-      final sub = extractSubData(data['visitor_requests']);
-      return sub?['purpose'] ?? "Visitor";
-    } else if (type == 'booking') {
-      final sub = extractSubData(data['event_requests']);
-      return sub?['location'] ?? "Event";
-    } else if (type == 'facility') {
-      final sub = extractSubData(data['facility_requests']);
-      return sub?['booking_date'] ?? "Facility";
+    final String type = data['type'] ?? '';
+    switch (type) {
+      case 'admin':
+        return extractSubData(data['admin_requests'])?['email'] ?? 'Admin';
+      case 'resident':
+        final sub   = extractSubData(data['resident_requests']);
+        final block = sub?['block'] ?? '-';
+        final unit  = sub?['unit_number'] ?? '-';
+        return 'Block $block - $unit';
+      case 'visitor':
+        return extractSubData(data['visitor_requests'])?['purpose'] ?? 'Visitor';
+      case 'booking':
+        return extractSubData(data['event_requests'])?['location'] ?? 'Event';
+      case 'facility':
+        return extractSubData(data['facility_requests'])?['booking_date'] ?? 'Facility';
+      default:
+        return '';
     }
-    return "";
   }
 
-  // Per-type colour accent — matches dashboard icon colours
+  // ── Per-type accent colours ───────────────────────────────────────────────
   Color _typeColor(String type) {
     switch (type) {
       case 'admin':
-      case 'resident':
-        return const Color(0xFF758BFD);
-      case 'booking':
-        return const Color(0xFF4BC0B8);
-      case 'facility':
-        return const Color(0xFF9A4B3C);
-      case 'visitor':
-        return const Color(0xFFE96B9E);
-      default:
-        return _brown;
+      case 'resident':  return const Color(0xFF758BFD);
+      case 'booking':   return const Color(0xFF4BC0B8);
+      case 'facility':  return const Color(0xFF9A4B3C);
+      case 'visitor':   return const Color(0xFFE96B9E);
+      default:          return _brown;
     }
   }
 
   IconData _typeIcon(String type) {
     switch (type) {
-      case 'admin':
-        return Icons.admin_panel_settings_outlined;
-      case 'resident':
-        return Icons.person_outline;
-      case 'booking':
-        return Icons.event_note_outlined;
-      case 'facility':
-        return Icons.home_work_outlined;
-      case 'visitor':
-        return Icons.badge_outlined;
-      default:
-        return Icons.info_outline;
+      case 'admin':    return Icons.admin_panel_settings_outlined;
+      case 'resident': return Icons.person_outline;
+      case 'booking':  return Icons.event_note_outlined;
+      case 'facility': return Icons.home_work_outlined;
+      case 'visitor':  return Icons.badge_outlined;
+      default:         return Icons.info_outline;
     }
   }
 
@@ -182,31 +185,38 @@ class _RequestListPageState extends State<RequestListPage> {
     return type.toUpperCase();
   }
 
-  // ── Status colour (mirrors emergency card logic) ──
   Color _statusColor(String status) {
     switch (status) {
-      case 'approved':
-        return const Color(0xFF6B8E6B);
-      case 'rejected':
-        return const Color(0xFFC67B75);
-      default:
-        return const Color(0xFFD4A847);
+      case 'approved': return const Color(0xFF6B8E6B);
+      case 'rejected': return const Color(0xFFC67B75);
+      default:         return const Color(0xFFD4A847);
     }
   }
 
-  // ── CARD (matches _buildEmergencyCard exactly) ──
+  // ── Request card ──────────────────────────────────────────────────────────
   Widget buildRequestCard(Map data) {
-    final String status = (data['status'] ?? "pending").toString().toLowerCase();
+    final String status      = (data['status'] ?? 'pending').toString().toLowerCase();
     final String displayName = extractNameForRequest(data);
-    final String subtitle = extractSubtitleForRequest(data);
-    final String type = data['type'] ?? '';
-    final Color typeColor = _typeColor(type);
-    final Color statusColor = _statusColor(status);
+    final String subtitle    = extractSubtitleForRequest(data);
+    final String type        = data['type'] ?? '';
+    final Color  typeColor   = _typeColor(type);
+    final Color  statusColor = _statusColor(status);
 
-    // Try to get an image from the sub-request
-    String? imageUrl;
-    final sub = extractSubData(data['${type == 'booking' ? 'event' : type}_requests']);
-    imageUrl = sub?['image_url'];
+    // Image from sub-request (events only)
+    final sub      = extractSubData(data['${type == 'booking' ? 'event' : type}_requests']);
+    final imageUrl = sub?['image_url'] as String?;
+
+    // Privacy badge — events only
+    final eventData = extractSubData(data['event_requests']);
+    final bool isPrivate =
+        (eventData?['is_private'] ?? false) == true && type == 'booking';
+
+    // Footer text
+    final String footerText = data['processed_by'] != null
+        ? 'Handled by: ${data['processed_by']}'
+        : (data['created_at']?.toString().length ?? 0) >= 10
+        ? data['created_at'].toString().substring(0, 10)
+        : '';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -217,7 +227,6 @@ class _RequestListPageState extends State<RequestListPage> {
           BoxShadow(
             color: _brown.withOpacity(0.06),
             blurRadius: 15,
-            spreadRadius: 0,
             offset: const Offset(0, 5),
           ),
         ],
@@ -229,14 +238,15 @@ class _RequestListPageState extends State<RequestListPage> {
           onTap: () {
             Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => RequestDetailPage(data: data)),
+              MaterialPageRoute(
+                  builder: (_) => RequestDetailPage(data: data)),
             ).then((_) => fetchRequests());
           },
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
-                // Avatar / icon — mirrors emergency card
+                // Avatar
                 Container(
                   padding: const EdgeInsets.all(2),
                   decoration: BoxDecoration(
@@ -256,7 +266,7 @@ class _RequestListPageState extends State<RequestListPage> {
                 ),
                 const SizedBox(width: 16),
 
-                // Name + subtitle
+                // Text column
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -270,7 +280,7 @@ class _RequestListPageState extends State<RequestListPage> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 3),
                       Text(
                         subtitle,
                         style: TextStyle(
@@ -278,11 +288,38 @@ class _RequestListPageState extends State<RequestListPage> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Text(
+                            _typeLabel(type),
+                            style: TextStyle(
+                                color: typeColor,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold),
+                          ),
+                          if (isPrivate) ...[
+                            const SizedBox(width: 6),
+                            Icon(Icons.lock,
+                                size: 10, color: Colors.grey.shade400),
+                            Text(' PRIVATE',
+                                style: TextStyle(
+                                    fontSize: 9,
+                                    color: Colors.grey.shade400)),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        footerText,
+                        style: TextStyle(
+                            color: Colors.grey.shade400, fontSize: 11),
+                      ),
                     ],
                   ),
                 ),
 
-                // Status badge + type label
+                // Status badge
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
@@ -319,7 +356,7 @@ class _RequestListPageState extends State<RequestListPage> {
     );
   }
 
-  // ── SEARCH BAR ──
+  // ── Search bar ────────────────────────────────────────────────────────────
   Widget buildSearchBar() {
     return Container(
       decoration: BoxDecoration(
@@ -335,7 +372,7 @@ class _RequestListPageState extends State<RequestListPage> {
       child: TextField(
         controller: searchController,
         decoration: InputDecoration(
-          hintText: "Search requests...",
+          hintText: 'Search requests...',
           hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
           prefixIcon: Icon(Icons.search, color: Colors.grey.shade400),
           border: OutlineInputBorder(
@@ -354,7 +391,7 @@ class _RequestListPageState extends State<RequestListPage> {
     );
   }
 
-  // ── FILTER PILLS (matches filterButton in EmergencyListPage exactly) ──
+  // ── Filter pills ──────────────────────────────────────────────────────────
   Widget _filterPill(String value, String label) {
     final isSelected = statusFilter == value;
     return Expanded(
@@ -398,13 +435,14 @@ class _RequestListPageState extends State<RequestListPage> {
     );
   }
 
+  // ── Scaffold ──────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _bg,
       appBar: AppBar(
         title: Text(
-          "${widget.type} Requests",
+          '${widget.type} Requests',
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         backgroundColor: _bg,
@@ -421,13 +459,13 @@ class _RequestListPageState extends State<RequestListPage> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               children: [
-                _filterPill("all", "All"),
+                _filterPill('all', 'All'),
                 const SizedBox(width: 10),
-                _filterPill("pending", "Pending"),
+                _filterPill('pending', 'Pending'),
                 const SizedBox(width: 10),
-                _filterPill("approved", "My Approved"),
+                _filterPill('approved', 'Approved'),
                 const SizedBox(width: 10),
-                _filterPill("rejected", "My Rejected"),
+                _filterPill('rejected', 'Rejected'),
               ],
             ),
           ),
@@ -447,8 +485,7 @@ class _RequestListPageState extends State<RequestListPage> {
             child: isLoading
                 ? Center(
               child: CircularProgressIndicator(
-                valueColor:
-                const AlwaysStoppedAnimation<Color>(_brown),
+                valueColor: AlwaysStoppedAnimation<Color>(_brown),
               ),
             )
                 : requests.isEmpty
@@ -460,10 +497,9 @@ class _RequestListPageState extends State<RequestListPage> {
                       size: 60, color: Colors.grey.shade400),
                   const SizedBox(height: 10),
                   Text(
-                    "No $statusFilter requests found",
+                    'No $statusFilter requests found',
                     style: TextStyle(
-                        color: Colors.grey.shade500,
-                        fontSize: 16),
+                        color: Colors.grey.shade500, fontSize: 16),
                   ),
                 ],
               ),
