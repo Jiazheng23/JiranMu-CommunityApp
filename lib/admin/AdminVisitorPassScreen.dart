@@ -257,10 +257,10 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
             const SizedBox(width: 6),
             Container(
               padding:
-              const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+              const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
               decoration: BoxDecoration(
                   color: badgeColor,
-                  borderRadius: BorderRadius.circular(10)),
+                  borderRadius: BorderRadius.circular(20)),
               child: Text('$count',
                   style: const TextStyle(
                       fontSize: 11, fontWeight: FontWeight.bold)),
