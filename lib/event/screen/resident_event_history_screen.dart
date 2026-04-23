@@ -64,7 +64,23 @@ class _ResidentEventHistoryScreenState
               );
             }
 
+            // --- SORTING LOGIC START ---
             final requests = snapshot.data ?? [];
+
+            if (requests.isNotEmpty) {
+              requests.sort((a, b) {
+                // 1. Move 'pending' to the top
+                bool aIsPending = a.status.toLowerCase() == 'pending';
+                bool bIsPending = b.status.toLowerCase() == 'pending';
+
+                if (aIsPending && !bIsPending) return -1;
+                if (!aIsPending && bIsPending) return 1;
+
+                // 2. If both are same status, sort by event date descending (newest first)
+                return b.eventDate.compareTo(a.eventDate);
+              });
+            }
+            // --- SORTING LOGIC END ---
 
             if (requests.isEmpty) {
               return _buildEmptyState();
@@ -116,7 +132,6 @@ class _ResidentEventHistoryScreenState
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header: Title + Privacy badge + Status + Share
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -214,7 +229,6 @@ class _ResidentEventHistoryScreenState
             ),
             const Divider(height: 24, thickness: 1),
 
-            // Event Details
             _buildIconInfo(Icons.location_on_outlined, event.location),
             const SizedBox(height: 8),
             _buildIconInfo(
