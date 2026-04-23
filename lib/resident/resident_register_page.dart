@@ -331,60 +331,59 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
                   padding: EdgeInsets.zero,
                   alignment: Alignment.centerLeft,
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 10),
 
                 Center(
                   child: Container(
-                    width: 88,
-                    height: 88,
+                    width: 110,
+                    height: 110,
+                    clipBehavior: Clip.antiAlias,
                     decoration: BoxDecoration(
-                      color: softBrown,
-                      borderRadius: BorderRadius.circular(24),
+                      color: Colors.white.withOpacity(0.75),
+                      borderRadius: BorderRadius.circular(26),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.04),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
                     ),
-                    child: const Icon(
-                      Icons.groups_rounded,
-                      size: 46,
-                      color: primaryBrown,
+                    child: Transform.scale(
+                      scale: 1.3,
+                      child: Image.asset(
+                        'assets/images/jiranmu_logo.png',
+                        fit: BoxFit.contain,
+                      ),
                     ),
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 18),
 
                 const Center(
                   child: Text(
                     'JiranMu',
                     style: TextStyle(
-                      fontSize: 30,
-                      fontWeight: FontWeight.bold,
-                      color: textDark,
+                      fontSize: 26,
+                      fontWeight: FontWeight.w700,
+                      color: primaryBrown,
                     ),
                   ),
                 ),
-                const SizedBox(height: 8),
-
-                const Center(
-                  child: Text(
-                    'Building a supportive and caring community.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 14.5,
-                      color: Colors.black54,
-                      height: 1.5,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 34),
+                const SizedBox(height: 6),
 
                 const Center(
                   child: Text(
                     'Resident register to continue',
+                    textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 14,
                       color: Colors.black45,
+                      height: 1.4,
                     ),
                   ),
                 ),
-                const SizedBox(height: 28),
+                const SizedBox(height: 26),
 
                 _buildTextFormField(
                   controller: fullNameController,

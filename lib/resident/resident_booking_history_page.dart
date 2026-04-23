@@ -164,36 +164,39 @@ class _ResidentBookingHistoryPageState
     if (_statusFilter == 'all') return allItems;
 
     return allItems
-        .where((item) => item['status']?.toString().toLowerCase() == _statusFilter)
+        .where((item) =>
+    item['status']?.toString().toLowerCase() == _statusFilter)
         .toList();
   }
 
-  Widget _buildFilterChip(String label, String value) {
+  Widget _buildTopTab(String label, String value) {
     final isSelected = _statusFilter == value;
 
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          _statusFilter = value;
-        });
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF9A4B3C) : Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected
-                ? const Color(0xFF9A4B3C)
-                : Colors.grey.shade300,
+    return Expanded(
+      child: InkWell(
+        onTap: () {
+          setState(() {
+            _statusFilter = value;
+          });
+        },
+        child: Container(
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: isSelected ? Colors.white : Colors.transparent,
+                width: 3,
+              ),
+            ),
           ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isSelected ? Colors.white : Colors.black87,
-            fontWeight: FontWeight.w600,
-            fontSize: 12,
+          child: Text(
+            label,
+            style: TextStyle(
+              color: isSelected ? Colors.white : Colors.white70,
+              fontSize: 13,
+              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+            ),
           ),
         ),
       ),
@@ -281,54 +284,62 @@ class _ResidentBookingHistoryPageState
     return Scaffold(
       backgroundColor: const Color(0xFFF5F1ED),
       appBar: AppBar(
-        backgroundColor: const Color(0xFFF5F1ED),
+        backgroundColor: const Color(0xFF9A4B3C),
+        foregroundColor: Colors.white,
         elevation: 0,
         scrolledUnderElevation: 0,
-        foregroundColor: const Color(0xFF2B2B2B),
+        iconTheme: const IconThemeData(color: Colors.white),
         title: const Text(
-          'Facility History',
+          'Booking History',
           style: TextStyle(
+            color: Colors.white,
             fontWeight: FontWeight.w700,
-            color: Color(0xFF2B2B2B),
+          ),
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(48),
+          child: Container(
+            color: const Color(0xFF9A4B3C),
+            child: Row(
+              children: [
+                _buildTopTab('All', 'all'),
+                _buildTopTab('Pending', 'pending'),
+                _buildTopTab('Approved', 'approved'),
+                _buildTopTab('Rejected', 'rejected'),
+              ],
+            ),
           ),
         ),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : Column(
-        children: [
-          const SizedBox(height: 10),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                _buildFilterChip('All', 'all'),
-                const SizedBox(width: 8),
-                _buildFilterChip('Pending', 'pending'),
-                const SizedBox(width: 8),
-                _buildFilterChip('Approved', 'approved'),
-                const SizedBox(width: 8),
-                _buildFilterChip('Rejected', 'rejected'),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
-          Expanded(
-            child: historyItems.isEmpty
-                ? _buildEmptyState('No facility history found.')
-                : RefreshIndicator(
-              onRefresh: _loadHistory,
-              child: ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: historyItems.length,
-                itemBuilder: (context, index) {
-                  return _buildHistoryCard(historyItems[index]);
-                },
+          : RefreshIndicator(
+        onRefresh: _loadHistory,
+        child: historyItems.isEmpty
+            ? ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: const [
+            SizedBox(height: 180),
+            Center(
+              child: Text(
+                'No facility history found.',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.black54,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        )
+            : ListView.builder(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(16),
+          itemCount: historyItems.length,
+          itemBuilder: (context, index) {
+            return _buildHistoryCard(historyItems[index]);
+          },
+        ),
       ),
     );
   }
