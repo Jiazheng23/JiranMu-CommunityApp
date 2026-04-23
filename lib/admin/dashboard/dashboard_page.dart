@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:assignment/admin/emergency/emergency_list_page.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../AdminVisitorPassScreen.dart';
 import '../request/request_list_page.dart';
 import 'package:image_picker/image_picker.dart';
 import 'admin_notifications_page.dart';
@@ -81,33 +82,50 @@ class _DashboardPageState extends State<DashboardPage> {
     }
   }
 
+  void navigateTo(String type) {
+    if (type == 'Visitor') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const AdminVisitorPassScreen()),
+      ).then((_) => refreshAllData());
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => RequestListPage(type: type)),
+    ).then((_) => refreshAllData());
+  }
+
   Future<void> fetchNotificationStatus() async {
     try {
-      final requests = await supabase.from('requests').select('type').eq(
-          'status', 'pending');
-      final emergencies = await supabase.from('emergency').select(
-          'emergency_id').neq('status', 'solved');
+      final requests = await supabase
+          .from('requests')
+          .select('type')
+          .eq('status', 'pending');
+
+      final emergencies = await supabase
+          .from('emergency')
+          .select('emergency_id')
+          .neq('status', 'solved');
+
+      final visitorPasses = await supabase
+          .from('visitor_passes')
+          .select('id')
+          .eq('status', 'pending');
+
       if (mounted) {
         setState(() {
-          hasUserNotif = requests.any((r) =>
-          r['type'] == 'admin' ||
-              r['type'] == 'resident');
-          hasEventNotif = requests.any((r) => r['type'] == 'booking');
+          hasUserNotif     = requests.any((r) =>
+          r['type'] == 'admin' || r['type'] == 'resident');
+          hasEventNotif    = requests.any((r) => r['type'] == 'booking');
           hasFacilityNotif = requests.any((r) => r['type'] == 'facility');
-          hasVisitorNotif = requests.any((r) => r['type'] == 'visitor');
+          hasVisitorNotif  = visitorPasses.isNotEmpty;  // ✅ correct source
           hasEmergencyNotif = emergencies.isNotEmpty;
         });
       }
     } catch (e) {
       debugPrint("Fetch Notifications Error: $e");
     }
-  }
-
-  void navigateTo(String type) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => RequestListPage(type: type)),
-    ).then((_) => refreshAllData());
   }
 
   Widget buildSectionTitle(String title) {
@@ -517,7 +535,6 @@ class _DashboardPageState extends State<DashboardPage> {
       context: context,
       builder: (dialogContext) =>
           AlertDialog(
-            backgroundColor: const Color(0xFFFAF8F5), // 质感淡米棕色背景
             shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(24)), // 圆角调大一点更柔和
             contentPadding: EdgeInsets.zero,
@@ -602,7 +619,6 @@ class _DashboardPageState extends State<DashboardPage> {
             actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             actions: [
               Row(children: [
-                // Close 按钮
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed: () => Navigator.pop(dialogContext),
@@ -618,8 +634,6 @@ class _DashboardPageState extends State<DashboardPage> {
                   ),
                 ),
                 const SizedBox(width: 8),
-
-                // Edit 按钮
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed: () =>
@@ -637,8 +651,6 @@ class _DashboardPageState extends State<DashboardPage> {
                   ),
                 ),
                 const SizedBox(width: 8),
-
-                // Delete 按钮
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed: () =>
@@ -1062,14 +1074,14 @@ class _DashboardPageState extends State<DashboardPage> {
                       children: [
                         buildSectionTitle("Announcements"),
 
-                        // View All 按钮
+                        // 🔥 换成了 View All 按钮
                         TextButton(
                           onPressed: () {
                             // 跳转到全部公告列表页
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (context) => const AdminAnnouncementPage(),
+                                builder: (context) => const AnnouncementListPage(),
                               ),
                             );
                           },
@@ -1187,7 +1199,6 @@ class _DashboardPageState extends State<DashboardPage> {
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      // 标题
                                       Text(
                                         item['title'] ?? 'No Title',
                                         style: const TextStyle(

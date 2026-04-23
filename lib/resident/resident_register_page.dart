@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../admin/admin_login_page.dart';
+import 'resident_login_page.dart';
 
 class ResidentRegisterPage extends StatefulWidget {
   const ResidentRegisterPage({super.key});
@@ -9,19 +11,32 @@ class ResidentRegisterPage extends StatefulWidget {
 }
 
 class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
-  final fullNameController = TextEditingController();
-  final emailController = TextEditingController();
-  final phoneController = TextEditingController();
-  final blockController = TextEditingController();
-  final unitController = TextEditingController();
-  final passwordController = TextEditingController();
-  final confirmPasswordController = TextEditingController();
-  String selectedResidentType = 'Owner';
-  final List<String> residentTypes = ['Owner', 'Tenant', 'Family Member'];
+  final _formKey = GlobalKey<FormState>();
 
-  bool isLoading = false;
+  final TextEditingController fullNameController = TextEditingController();
+  final TextEditingController emailController = TextEditingController();
+  final TextEditingController phoneController = TextEditingController();
+  final TextEditingController blockController = TextEditingController();
+  final TextEditingController unitController = TextEditingController();
+  final TextEditingController passwordController = TextEditingController();
+  final TextEditingController confirmPasswordController = TextEditingController();
+
   bool obscurePassword = true;
   bool obscureConfirmPassword = true;
+  bool isLoading = false;
+
+  String selectedResidentType = 'owner';
+
+  final List<Map<String, String>> residentTypes = [
+    {'label': 'Owner', 'value': 'owner'},
+    {'label': 'Tenant', 'value': 'tenant'},
+    {'label': 'Family Member', 'value': 'family_member'},
+  ];
+
+  static const Color bgColor = Color(0xFFF8F3EE);
+  static const Color primaryBrown = Color(0xFF8B5E4A);
+  static const Color softBrown = Color(0xFFEADFD6);
+  static const Color textDark = Color(0xFF2B2B2B);
 
   @override
   void dispose() {
@@ -35,29 +50,69 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
     super.dispose();
   }
 
-  InputDecoration inputDecoration(String label, {Widget? suffixIcon}) {
-    return InputDecoration(
-      labelText: label,
-      filled: true,
-      fillColor: Colors.white,
-      suffixIcon: suffixIcon,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: Color(0xFFD8CCC2)),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: Color(0xFFD8CCC2)),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: Color(0xFF8B5E4A), width: 1.4),
-      ),
-    );
+  String? _validateRequired(String? value, String fieldName) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Please enter $fieldName';
+    }
+    return null;
   }
 
-  Future<void> registerResident() async {
+  String? _validateEmail(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Please enter email';
+    }
+
+    final emailRegex = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
+    if (!emailRegex.hasMatch(value.trim())) {
+      return 'Invalid email format';
+    }
+
+    return null;
+  }
+
+  String? _validatePhone(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Please enter phone number';
+    }
+
+    final phoneRegex = RegExp(r'^[0-9]{9,11}$');
+    if (!phoneRegex.hasMatch(value.trim())) {
+      return 'Invalid phone number';
+    }
+
+    return null;
+  }
+
+  String? _validatePassword(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Please enter password';
+    }
+
+    if (value.length < 6) {
+      return 'Password must be at least 6 characters';
+    }
+
+    return null;
+  }
+
+  String? _validateConfirmPassword(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Please confirm password';
+    }
+
+    if (value.trim() != passwordController.text.trim()) {
+      return 'Passwords do not match';
+    }
+
+    return null;
+  }
+
+  Future<void> _registerResident() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    FocusScope.of(context).unfocus();
+    setState(() => isLoading = true);
+
     final supabase = Supabase.instance.client;
 
     final fullName = fullNameController.text.trim();
@@ -66,35 +121,8 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
     final block = blockController.text.trim();
     final unit = unitController.text.trim();
     final password = passwordController.text.trim();
-    final confirmPassword = confirmPasswordController.text.trim();
-
-    if (fullName.isEmpty ||
-        email.isEmpty ||
-        phone.isEmpty ||
-        block.isEmpty ||
-        unit.isEmpty ||
-        password.isEmpty ||
-        confirmPassword.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please fill in all fields")),
-      );
-      return;
-    }
-
-    // 修复：去掉了重复的密码校验
-    if (password != confirmPassword) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Passwords do not match")),
-      );
-      return;
-    }
-
-    setState(() {
-      isLoading = true;
-    });
 
     try {
-      // ===== STEP 1: CREATE AUTH USER =====
       final AuthResponse response = await supabase.auth.signUp(
         email: email,
         password: password,
@@ -102,158 +130,335 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
 
       final user = response.user;
       if (user == null) {
-        throw Exception("User registration failed");
+        throw Exception('User registration failed');
       }
 
-      // ===== STEP 2: INSERT MAIN REQUEST =====
-      final requestData = await supabase.from('requests').insert({
+      final requestData = await supabase
+          .from('requests')
+          .insert({
         'user_id': user.id,
         'type': 'resident',
         'title': 'Resident Registration',
         'description': 'Block $block, Unit $unit',
-        'status': 'pending', // ✅ 修复: 将 status 放入 requests 主表中 (如果数据库有默认值这行不加也行，但加上更保险)
-      }).select('request_id').single();
+        'status': 'pending',
+      })
+          .select('request_id')
+          .single();
 
-      final String requestId = requestData['request_id'];
+      final String requestId = requestData['request_id'] as String;
 
-      // ===== STEP 3: INSERT SUB-REQUEST =====
       await supabase.from('resident_requests').insert({
         'request_id': requestId,
         'full_name': fullName,
         'email': email,
         'phone_number': phone,
+        'role': 'resident',
         'block': block,
         'unit_number': unit,
-        'role': 'resident', // ✅ 修复: 去掉了重复的 role 和报错的 status 字段
         'resident_type': selectedResidentType,
       });
+
+      await supabase.auth.signOut();
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text("Registration submitted. Waiting for Admin approval."),
+          content: Text('Registration submitted. Waiting for Admin approval.'),
           backgroundColor: Color(0xFF6B8E6B),
         ),
       );
-      Navigator.pop(context);
+
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const ResidentLoginPage()),
+            (route) => false,
+      );
     } on AuthException catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message), backgroundColor: Colors.redAccent),
+        SnackBar(
+          content: Text(e.message),
+          backgroundColor: Colors.redAccent,
+        ),
       );
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error: $e"), backgroundColor: Colors.redAccent),
+        SnackBar(
+          content: Text('Error: $e'),
+          backgroundColor: Colors.redAccent,
+        ),
       );
     } finally {
-      if (mounted) setState(() => isLoading = false);
+      if (mounted) {
+        setState(() => isLoading = false);
+      }
     }
+  }
+
+  Widget _buildTextFormField({
+    required TextEditingController controller,
+    required String hintText,
+    required IconData icon,
+    required String? Function(String?) validator,
+    bool obscureText = false,
+    Widget? suffixIcon,
+    TextInputType keyboardType = TextInputType.text,
+    ValueChanged<String>? onChanged,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: TextFormField(
+        controller: controller,
+        obscureText: obscureText,
+        keyboardType: keyboardType,
+        autovalidateMode: AutovalidateMode.onUserInteraction,
+        validator: validator,
+        onChanged: onChanged,
+        decoration: InputDecoration(
+          hintText: hintText,
+          hintStyle: const TextStyle(color: Colors.black38),
+          prefixIcon: Icon(icon, color: Colors.black38),
+          suffixIcon: suffixIcon,
+          filled: true,
+          fillColor: Colors.white,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 18,
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(18),
+            borderSide: BorderSide.none,
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(18),
+            borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(18),
+            borderSide: const BorderSide(
+              color: primaryBrown,
+              width: 1.2,
+            ),
+          ),
+          errorBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(18),
+            borderSide: const BorderSide(color: Colors.redAccent),
+          ),
+          focusedErrorBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(18),
+            borderSide: const BorderSide(
+              color: Colors.redAccent,
+              width: 1.2,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildResidentTypeDropdown() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: DropdownButtonFormField<String>(
+        value: selectedResidentType,
+        autovalidateMode: AutovalidateMode.onUserInteraction,
+        icon: const Icon(Icons.keyboard_arrow_down_rounded),
+        decoration: InputDecoration(
+          hintText: 'I am a...',
+          hintStyle: const TextStyle(color: Colors.black38),
+          prefixIcon: const Icon(Icons.people_outline, color: Colors.black38),
+          filled: true,
+          fillColor: Colors.white,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 18,
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(18),
+            borderSide: BorderSide.none,
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(18),
+            borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(18),
+            borderSide: const BorderSide(
+              color: primaryBrown,
+              width: 1.2,
+            ),
+          ),
+        ),
+        items: residentTypes.map((type) {
+          return DropdownMenuItem<String>(
+            value: type['value'],
+            child: Text(type['label']!),
+          );
+        }).toList(),
+        onChanged: (value) {
+          if (value == null) return;
+          setState(() {
+            selectedResidentType = value;
+          });
+        },
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F3EE),
-      appBar: AppBar(
-        title: const Text("Resident Register", style: TextStyle(color: Color(0xFF2B2B2B))),
-        backgroundColor: const Color(0xFFF8F3EE),
-        elevation: 0,
-        iconTheme: const IconThemeData(color: Color(0xFF2B2B2B)),
-      ),
+      backgroundColor: bgColor,
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 8),
-              const Text(
-                "Create Resident Account",
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF2B2B2B),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.arrow_back_ios_new_rounded),
+                  color: textDark,
+                  padding: EdgeInsets.zero,
+                  alignment: Alignment.centerLeft,
                 ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                "Fill in your community details to continue.",
-                style: TextStyle(fontSize: 15, color: Colors.black54),
-              ),
-              const SizedBox(height: 24),
+                const SizedBox(height: 20),
 
-              TextField(
-                controller: fullNameController,
-                decoration: inputDecoration("Full Name"),
-              ),
-              const SizedBox(height: 14),
-
-              TextField(
-                controller: emailController,
-                keyboardType: TextInputType.emailAddress,
-                decoration: inputDecoration("Email"),
-              ),
-              const SizedBox(height: 14),
-
-              TextField(
-                controller: phoneController,
-                keyboardType: TextInputType.phone,
-                decoration: inputDecoration("Phone Number"),
-              ),
-              const SizedBox(height: 14),
-
-              TextField(
-                controller: blockController,
-                decoration: inputDecoration("Block"),
-              ),
-              const SizedBox(height: 14),
-
-              TextField(
-                controller: unitController,
-                decoration: inputDecoration("Unit Number"),
-              ),
-              const SizedBox(height: 14),
-
-              DropdownButtonFormField<String>(
-                value: selectedResidentType,
-                decoration: inputDecoration("I am a..."),
-                items: residentTypes.map((String type) {
-                  return DropdownMenuItem(
-                    value: type,
-                    child: Text(type),
-                  );
-                }).toList(),
-                onChanged: (value) {
-                  setState(() {
-                    selectedResidentType = value!;
-                  });
-                },
-              ),
-
-              const SizedBox(height: 14),
-              TextField(
-                controller: passwordController,
-                obscureText: obscurePassword,
-                decoration: inputDecoration(
-                  "Password",
-                  suffixIcon: IconButton(
-                    onPressed: () {
-                      setState(() {
-                        obscurePassword = !obscurePassword;
-                      });
-                    },
-                    icon: Icon(
-                      obscurePassword ? Icons.visibility_off : Icons.visibility,
+                Center(
+                  child: Container(
+                    width: 88,
+                    height: 88,
+                    decoration: BoxDecoration(
+                      color: softBrown,
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                    child: const Icon(
+                      Icons.groups_rounded,
+                      size: 46,
+                      color: primaryBrown,
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 14),
+                const SizedBox(height: 20),
 
-              TextField(
-                controller: confirmPasswordController,
-                obscureText: obscureConfirmPassword,
-                decoration: inputDecoration(
-                  "Confirm Password",
+                const Center(
+                  child: Text(
+                    'JiranMu',
+                    style: TextStyle(
+                      fontSize: 30,
+                      fontWeight: FontWeight.bold,
+                      color: textDark,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+
+                const Center(
+                  child: Text(
+                    'Building a supportive and caring community.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 14.5,
+                      color: Colors.black54,
+                      height: 1.5,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 34),
+
+                const Center(
+                  child: Text(
+                    'Resident register to continue',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.black45,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 28),
+
+                _buildTextFormField(
+                  controller: fullNameController,
+                  hintText: 'Full Name',
+                  icon: Icons.badge_outlined,
+                  validator: (value) => _validateRequired(value, 'full name'),
+                ),
+                const SizedBox(height: 16),
+
+                _buildTextFormField(
+                  controller: emailController,
+                  hintText: 'Email',
+                  icon: Icons.person_outline,
+                  validator: _validateEmail,
+                  keyboardType: TextInputType.emailAddress,
+                ),
+                const SizedBox(height: 16),
+
+                _buildTextFormField(
+                  controller: phoneController,
+                  hintText: 'Phone Number',
+                  icon: Icons.phone_outlined,
+                  validator: _validatePhone,
+                  keyboardType: TextInputType.phone,
+                ),
+                const SizedBox(height: 16),
+
+                _buildTextFormField(
+                  controller: blockController,
+                  hintText: 'Block',
+                  icon: Icons.apartment_outlined,
+                  validator: (value) => _validateRequired(value, 'block'),
+                ),
+                const SizedBox(height: 16),
+
+                _buildTextFormField(
+                  controller: unitController,
+                  hintText: 'Unit Number',
+                  icon: Icons.home_outlined,
+                  validator: (value) => _validateRequired(value, 'unit number'),
+                ),
+                const SizedBox(height: 16),
+
+                _buildResidentTypeDropdown(),
+                const SizedBox(height: 16),
+
+                _buildTextFormField(
+                  controller: passwordController,
+                  hintText: 'Password',
+                  icon: Icons.lock_outline,
+                  obscureText: obscurePassword,
+                  validator: _validatePassword,
+                  onChanged: (_) => setState(() {}),
+                  suffixIcon: IconButton(
+                    onPressed: () {
+                      setState(() => obscurePassword = !obscurePassword);
+                    },
+                    icon: Icon(
+                      obscurePassword
+                          ? Icons.visibility_off_outlined
+                          : Icons.visibility_outlined,
+                      color: Colors.black45,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                _buildTextFormField(
+                  controller: confirmPasswordController,
+                  hintText: 'Confirm Password',
+                  icon: Icons.lock_outline,
+                  obscureText: obscureConfirmPassword,
+                  validator: _validateConfirmPassword,
+                  onChanged: (_) => setState(() {}),
                   suffixIcon: IconButton(
                     onPressed: () {
                       setState(() {
@@ -262,45 +467,103 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
                     },
                     icon: Icon(
                       obscureConfirmPassword
-                          ? Icons.visibility_off
-                          : Icons.visibility,
+                          ? Icons.visibility_off_outlined
+                          : Icons.visibility_outlined,
+                      color: Colors.black45,
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 24),
+                const SizedBox(height: 20),
 
-              SizedBox(
-                width: double.infinity,
-                height: 54,
-                child: ElevatedButton(
-                  onPressed: isLoading ? null : registerResident,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF8B5E4A),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
+                SizedBox(
+                  width: double.infinity,
+                  height: 56,
+                  child: ElevatedButton(
+                    onPressed: isLoading ? null : _registerResident,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primaryBrown,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(28),
+                      ),
                     ),
-                  ),
-                  child: isLoading
-                      ? const SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.5,
-                      color: Colors.white,
-                    ),
-                  )
-                      : const Text(
-                    "Register",
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
+                    child: isLoading
+                        ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                        : const Text(
+                      'Resident Register',
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 24),
+
+                Center(
+                  child: Wrap(
+                    alignment: WrapAlignment.center,
+                    children: [
+                      const Text(
+                        'Already have an account? ',
+                        style: TextStyle(
+                          fontSize: 14.5,
+                          color: Colors.black54,
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: () {
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const ResidentLoginPage(),
+                            ),
+                          );
+                        },
+                        child: const Text(
+                          'Resident Login',
+                          style: TextStyle(
+                            fontSize: 14.5,
+                            color: primaryBrown,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 6),
+
+                Center(
+                  child: TextButton(
+                    onPressed: () {
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const AdminLoginPage(),
+                        ),
+                      );
+                    },
+                    child: const Text(
+                      'Switch to Admin Login',
+                      style: TextStyle(
+                        fontSize: 14.5,
+                        color: primaryBrown,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

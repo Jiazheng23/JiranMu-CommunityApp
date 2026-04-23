@@ -1,5 +1,4 @@
 import 'dart:async'; // 🔥 新增 Timer 需要的包
-import 'package:assignment/chat/CommunityChatScreen.dart';
 import 'package:assignment/chat/CommunityChatsListScreen.dart';
 import 'package:assignment/facility/facility_booking_page.dart';
 import 'package:flutter/material.dart';
@@ -14,6 +13,9 @@ import 'announcement_detail_page.dart';
 import 'announcement_list_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
+import 'resident_booking_history_page.dart';
+import 'package:assignment/resident/resident_login_page.dart';
+import 'package:assignment/resident/resident_profile_page.dart';
 
 class ResidentHomePage extends StatefulWidget {
   const ResidentHomePage({super.key});
@@ -169,9 +171,10 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
 
     if (!mounted) return;
 
-    Navigator.popUntil(context, (route) => route.isFirst);
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text("Logged out successfully")));
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const ResidentLoginPage()),
+          (route) => false,
+    );
   }
 
   void resetState() {
@@ -942,6 +945,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
           buildAnnouncementSlider(),
 
           const SizedBox(height: 28),
+          // "See all" navigates to the full calendar
           buildSectionTitle(
             "Upcoming Events",
             onSeeAll: () => Navigator.push(
@@ -955,12 +959,8 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     );
   }
 
-  Widget buildCommunityTab() {
-    return Center(
-      child: Text("Community Page",
-          style: TextStyle(
-              fontSize: 20, fontWeight: FontWeight.bold, color: primaryColor)),
-    );
+  Widget buildMyFacilityTab() {
+    return const FacilityBookingPage(showBackButton: false);
   }
 
   Widget buildChatsTab() => CommunityChatsListScreen();
@@ -1003,14 +1003,15 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                   leading: Icon(Icons.person_outline, color: primaryColor),
                   title: const Text("My Profile"),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () {},
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ResidentProfilePage())),
                 ),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: Icon(Icons.history, color: primaryColor),
                   title: const Text("Booking History"),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () {},
+                  onTap: () => Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => const ResidentBookingHistoryPage())),
                 ),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
@@ -1039,11 +1040,11 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
 
   Widget getCurrentPage() {
     switch (currentIndex) {
-      case 0:  return buildHomeTab();
-      case 1:  return buildCommunityTab();
-      case 2:  return buildChatsTab();
-      case 3:  return buildAccountTab();
-      default: return buildHomeTab();
+      case 0:return buildHomeTab();
+      case 1:return buildMyFacilityTab();
+      case 2:return buildChatsTab();
+      case 3:return buildAccountTab();
+      default:return buildHomeTab();
     }
   }
 
@@ -1097,7 +1098,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
               BottomNavigationBarItem(
                   icon: Icon(Icons.home_rounded), label: "Home"),
               BottomNavigationBarItem(
-                  icon: Icon(Icons.groups_rounded), label: "Community"),
+                icon: Icon(Icons.fitness_center_rounded),label: "Facility",),
               BottomNavigationBarItem(
                   icon: Icon(Icons.chat_bubble_outline_rounded), label: "Chats"),
               BottomNavigationBarItem(
