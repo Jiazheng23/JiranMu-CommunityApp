@@ -5,8 +5,11 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../AdminVisitorPassScreen.dart';
 import '../request/request_list_page.dart';
 import 'package:image_picker/image_picker.dart';
+import 'admin_announcement_detail_page.dart';
+import 'admin_announcement_page.dart';
 import 'admin_notifications_page.dart';
-import 'package:assignment/resident/announcement_list_page.dart';
+import 'manage_facility_page.dart';
+
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -15,14 +18,32 @@ class DashboardPage extends StatefulWidget {
   State<DashboardPage> createState() => _DashboardPageState();
 }
 
-class _DashboardPageState extends State<DashboardPage> {
+class _DashboardPageState extends State<DashboardPage>
+    with TickerProviderStateMixin {
   final supabase = Supabase.instance.client;
   final ImagePicker _picker = ImagePicker();
 
-  static const Color bgColor = Color(0xFFF5F1ED);
-  static const Color primaryColor = Color(0xFF9A4B3C);
-  static const Color softYellow = Color(0xFFF0E6B8);
-  static const Color textDark = Color(0xFF2B2B2B);
+  // ── Palette ───────────────────────────────────────────────────────────────
+  static const Color bg = Color(0xFFF7F5F2);
+  static const Color primary = Color(0xFF8B3A2A);
+  static const Color surface = Color(0xFFFFFFFF);
+  static const Color textDark = Color(0xFF1A1614);
+  static const Color textMid = Color(0xFF6B6460);
+  static const Color textLight = Color(0xFFADA8A5);
+  static const Color border = Color(0xFFEDE9E5);
+  static const Color cardShadow = Color(0x0A000000);
+
+  static const Color chartBlue = Color(0xFF4B7CF3);
+  static const Color chartTeal = Color(0xFF2DBFAD);
+  static const Color chartRose = Color(0xFFD95B6B);
+  static const Color chartAmber = Color(0xFFE8961A);
+  static const Color chartGreen = Color(0xFF3DB87A);
+  static const Color chartRed = Color(0xFFE85040);
+
+  // ── State ─────────────────────────────────────────────────────────────────
+  bool _loading = true;
+  late AnimationController _fadeCtrl;
+  late Animation<double> _fadeAnim;
 
   bool hasUserNotif = false;
   bool hasEventNotif = false;
@@ -30,1177 +51,1603 @@ class _DashboardPageState extends State<DashboardPage> {
   bool hasVisitorNotif = false;
   bool hasEmergencyNotif = false;
 
+  int pendingTotal = 0;
+  int approvedToday = 0;
+  int totalResidents = 0;
+  int totalRequestsThisWeek = 0;
+
+  List<Map<String, dynamic>> recentActivity = [];
+  List<Map<String, dynamic>> activeEmergencies = [];
   List<dynamic> announcements = [];
+
+  // New state for facility overview and week schedule
+  List<Map<String, dynamic>> facilityOverview = [];
+  List<Map<String, dynamic>> weekSchedule = [];
+
   String adminName = 'Admin';
   String? adminAvatarUrl;
 
   @override
   void initState() {
     super.initState();
-    refreshAllData();
+    _fadeCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 600));
+    _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
     _fetchAdminProfile();
+    refreshAllData();
   }
+
+  @override
+  void dispose() {
+    _fadeCtrl.dispose();
+    super.dispose();
+  }
+
+  // ── FETCH ─────────────────────────────────────────────────────────────────
 
   Future<void> _fetchAdminProfile() async {
     try {
       final user = supabase.auth.currentUser;
       if (user == null) return;
-
       final data = await supabase
           .from('admin_new')
           .select('full_name, image_url')
           .eq('id', user.id)
           .single();
-
-      if (mounted) {
+      if (mounted)
         setState(() {
           adminName = data['full_name'] ?? 'Admin';
           adminAvatarUrl = data['image_url'];
         });
-      }
     } catch (e) {
-      debugPrint("Fetch admin error: $e");
+      debugPrint("Admin profile error: $e");
     }
   }
 
   Future<void> refreshAllData() async {
-    await fetchNotificationStatus();
-    await fetchAnnouncements();
+    setState(() => _loading = true);
+    _fadeCtrl.reset();
+    await Future.wait([
+      fetchNotificationStatus(),
+      fetchAnnouncements(),
+      _fetchSummaryStats(),
+      _fetchFacilityOverview(),
+      _fetchWeekSchedule(),
+      _fetchRecentActivity(),
+      _fetchActiveEmergencies(),
+    ]);
+    if (mounted) {
+      setState(() => _loading = false);
+      _fadeCtrl.forward();
+    }
   }
 
   Future<void> fetchAnnouncements() async {
     try {
-      final response = await supabase
+      final r = await supabase
           .from('announcements')
           .select()
           .order('created_at', ascending: false)
-          .limit(5);
-      if (mounted) setState(() => announcements = response);
+          .limit(3);
+      if (mounted) setState(() => announcements = r);
     } catch (e) {
-      debugPrint("Fetch Announcements Error: $e");
+      debugPrint("Announcements error: $e");
     }
-  }
-
-  void navigateTo(String type) {
-    if (type == 'Visitor') {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const AdminVisitorPassScreen()),
-      ).then((_) => refreshAllData());
-      return;
-    }
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => RequestListPage(type: type)),
-    ).then((_) => refreshAllData());
   }
 
   Future<void> fetchNotificationStatus() async {
     try {
-      final requests = await supabase
-          .from('requests')
-          .select('type')
-          .eq('status', 'pending');
-
-      final emergencies = await supabase
+      final req =
+      await supabase.from('requests').select('type').eq('status', 'pending');
+      final emg = await supabase
           .from('emergency')
           .select('emergency_id')
           .neq('status', 'solved');
-
-      final visitorPasses = await supabase
-          .from('visitor_passes')
-          .select('id')
-          .eq('status', 'pending');
-
-      if (mounted) {
+      if (mounted)
         setState(() {
-          hasUserNotif     = requests.any((r) =>
-          r['type'] == 'admin' || r['type'] == 'resident');
-          hasEventNotif    = requests.any((r) => r['type'] == 'booking');
-          hasFacilityNotif = requests.any((r) => r['type'] == 'facility');
-          hasVisitorNotif  = visitorPasses.isNotEmpty;  // ✅ correct source
-          hasEmergencyNotif = emergencies.isNotEmpty;
+          hasUserNotif =
+              req.any((r) => r['type'] == 'admin' || r['type'] == 'resident');
+          hasEventNotif = req.any((r) => r['type'] == 'complaint');
+          hasFacilityNotif = req.any((r) => r['type'] == 'booking');
+          hasVisitorNotif = req.any((r) => r['type'] == 'visitor');
+          hasEmergencyNotif = emg.isNotEmpty;
         });
-      }
     } catch (e) {
-      debugPrint("Fetch Notifications Error: $e");
+      debugPrint("Notification error: $e");
     }
   }
 
-  Widget buildSectionTitle(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Text(title,
-          style: const TextStyle(
-              fontSize: 18, fontWeight: FontWeight.bold, color: textDark)),
-    );
+  void navigateTo(String type) {
+    if (type.toLowerCase() == 'visitor') {
+      Navigator.push(
+          context,
+          MaterialPageRoute(
+              builder: (_) => const AdminVisitorPassScreen()))
+          .then((_) => refreshAllData());
+    } else {
+      Navigator.push(
+          context,
+          MaterialPageRoute(
+              builder: (_) => RequestListPage(type: type)))
+          .then((_) => refreshAllData());
+    }
   }
 
-  Widget buildTopButton(String title,
-      IconData icon,
-      VoidCallback onTap, {
-        Color iconColor = primaryColor,
-        bool hasNotification = false,
-      }) {
-    return Expanded(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: onTap,
-        child: Column(
-          children: [
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Container(
-                  width: 54,
-                  height: 54,
-                  decoration: BoxDecoration(
-                    color: iconColor.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  child: Icon(icon, color: iconColor, size: 26),
-                ),
-                if (hasNotification)
-                  Positioned(
-                    right: -2, top: -2,
-                    child: Container(
-                      width: 12, height: 12,
-                      decoration: BoxDecoration(
-                          color: Colors.red,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: bgColor, width: 2)),
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            FittedBox(
-              child: Text(title,
-                  style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: textDark)),
-            ),
-          ],
-        ),
+  Future<void> _fetchSummaryStats() async {
+    try {
+      final today = DateTime.now();
+      final todayStr =
+      DateTime(today.year, today.month, today.day).toIso8601String();
+      final weekAgo = today.subtract(const Duration(days: 7)).toIso8601String();
+      final allReq = await supabase.from('requests').select('status, created_at');
+      final res =
+      await supabase.from('resident').select('id').eq('status', 'active');
+      int pending = 0, approved = 0, weekCount = 0;
+      for (final r in allReq) {
+        if (r['status'] == 'pending') pending++;
+        final c = r['created_at']?.toString() ?? '';
+        if (c.compareTo(todayStr) >= 0 && r['status'] == 'approved') approved++;
+        if (c.compareTo(weekAgo) >= 0) weekCount++;
+      }
+      if (mounted)
+        setState(() {
+          pendingTotal = pending;
+          approvedToday = approved;
+          totalResidents = res.length;
+          totalRequestsThisWeek = weekCount;
+        });
+    } catch (e) {
+      debugPrint("Summary stats error: $e");
+    }
+  }
+
+  Future<void> _fetchFacilityOverview() async {
+    try {
+      final d = await supabase
+          .from('facilities')
+          .select('facility_id, name, capacity, status')
+          .order('name');
+
+      final today = DateTime.now().toIso8601String().substring(0, 10);
+      final bookings = await supabase
+          .from('requests')
+          .select('facility_id, status')
+          .eq('type', 'booking')
+          .gte('created_at', today)
+          .eq('status', 'approved');
+
+      final Map<String, int> countMap = {};
+      for (final b in bookings) {
+        final fid = b['facility_id']?.toString() ?? '';
+        if (fid.isNotEmpty) countMap[fid] = (countMap[fid] ?? 0) + 1;
+      }
+
+      if (mounted) {
+        setState(() {
+          facilityOverview =
+              List<Map<String, dynamic>>.from(d).map((f) {
+                final fid = f['facility_id']?.toString() ?? '';
+                final cap = (f['capacity'] as num?)?.toInt() ?? 1;
+                final used = countMap[fid] ?? 0;
+                return {...f, 'used': used, 'capacity': cap};
+              }).toList();
+        });
+      }
+    } catch (e) {
+      debugPrint("Facility overview error: $e");
+    }
+  }
+
+  Future<void> _fetchWeekSchedule() async {
+    try {
+      final now = DateTime.now();
+      final weekEnd =
+      now.add(const Duration(days: 7)).toIso8601String();
+      final d = await supabase
+          .from('requests')
+          .select('request_id, title, type, event_date, created_at, status')
+          .eq('status', 'approved')
+          .gte('event_date', now.toIso8601String())
+          .lte('event_date', weekEnd)
+          .order('event_date')
+          .limit(8);
+      if (mounted)
+        setState(() => weekSchedule = List<Map<String, dynamic>>.from(d));
+    } catch (e) {
+      debugPrint("Week schedule error: $e");
+    }
+  }
+
+  Future<void> _fetchRecentActivity() async {
+    try {
+      final d = await supabase
+          .from('requests')
+          .select('request_id, type, status, created_at, title')
+          .order('created_at', ascending: false)
+          .limit(6);
+      if (mounted)
+        setState(() => recentActivity = List<Map<String, dynamic>>.from(d));
+    } catch (e) {
+      debugPrint("Activity error: $e");
+    }
+  }
+
+  Future<void> _fetchActiveEmergencies() async {
+    try {
+      final d = await supabase
+          .from('emergency')
+          .select('emergency_id, title, description, status, created_at')
+          .neq('status', 'solved')
+          .order('created_at', ascending: false)
+          .limit(3);
+      if (mounted)
+        setState(() => activeEmergencies = List<Map<String, dynamic>>.from(d));
+    } catch (e) {
+      debugPrint("Emergency error: $e");
+    }
+  }
+
+  // ── Announcement CRUD ─────────────────────────────────────────────────────
+
+  Future<void> _deleteAnnouncement(BuildContext dCtx, String id) async {
+    Navigator.pop(dCtx);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape:
+        RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text("Delete Announcement",
+            style: TextStyle(fontWeight: FontWeight.w700, color: textDark)),
+        content: const Text("Are you sure? This cannot be undone.",
+            style: TextStyle(color: textMid)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child:
+              const Text("Cancel", style: TextStyle(color: textMid))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: chartRed,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10))),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text("Delete",
+                style: TextStyle(color: Colors.white)),
+          ),
+        ],
       ),
     );
-  }
-
-
-  // ─────────────────────────────────────────────
-  // DELETE announcement
-  // ─────────────────────────────────────────────
-  Future<void> _deleteAnnouncement(BuildContext dialogContext,
-      String id) async {
-    Navigator.pop(dialogContext);
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) =>
-          AlertDialog(
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(22)),
-            title: const Text("Delete Announcement"),
-            content: const Text(
-                "Are you sure you want to delete this announcement? This cannot be undone."),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(ctx, false),
-                  child: const Text(
-                      "Cancel", style: TextStyle(color: Colors.grey))),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12))),
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text(
-                    "Delete", style: TextStyle(color: Colors.white)),
-              ),
-            ],
-          ),
-    );
-
-    if (confirmed != true) return;
-
+    if (ok != true) return;
     try {
       await supabase.from('announcements').delete().eq('id', id);
       fetchAnnouncements();
       if (mounted)
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text("Announcement deleted."),
-            backgroundColor: Colors.red));
+            content: Text("Deleted."), backgroundColor: chartRed));
     } catch (e) {
-      debugPrint("Delete Error: $e");
       if (mounted)
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text("Failed to delete."), backgroundColor: Colors.red));
+            content: Text("Failed to delete."), backgroundColor: chartRed));
     }
   }
 
-  // ─────────────────────────────────────────────
-  // EDIT announcement
-  // ─────────────────────────────────────────────
-  void _showEditAnnouncementSheet(BuildContext dialogContext,
-      Map<String, dynamic> data) {
-    Navigator.pop(dialogContext);
-
-    final titleController = TextEditingController(text: data['title']);
-    final contentController = TextEditingController(text: data['content']);
-    DateTime? selectedDate = data['event_date'] != null
-        ? DateTime.parse(data['event_date']).toLocal() : null;
-    bool isUrgent = data['is_urgent'] ?? false;
-    String selectedCategory = data['category'] ?? 'General';
-    File? newImageFile;
-    String? existingImageUrl = data['image_url'];
-    bool isUploading = false;
+  void _showEditAnnouncementSheet(
+      BuildContext dCtx, Map<String, dynamic> data) {
+    Navigator.pop(dCtx);
+    final tCtrl = TextEditingController(text: data['title']);
+    final cCtrl = TextEditingController(text: data['content']);
+    DateTime? date = data['event_date'] != null
+        ? DateTime.parse(data['event_date']).toLocal()
+        : null;
+    bool urgent = data['is_urgent'] ?? false;
+    String cat = data['category'] ?? 'General';
+    File? newImg;
+    String? exUrl = data['image_url'];
+    bool uploading = false;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) =>
-          StatefulBuilder(
-            builder: (context, setModalState) =>
-                Container(
-                  padding: EdgeInsets.only(
-                      bottom: MediaQuery
-                          .of(context)
-                          .viewInsets
-                          .bottom,
-                      top: 25, left: 20, right: 20),
-                  decoration: const BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.vertical(
-                          top: Radius.circular(25))),
-                  child: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Center(
-                            child: Text("Edit Announcement",
-                                style: TextStyle(fontSize: 18,
-                                    fontWeight: FontWeight.bold))),
-                        const SizedBox(height: 20),
-
-                        GestureDetector(
-                          onTap: () async {
-                            final XFile? pickedFile = await _picker.pickImage(
-                                source: ImageSource.gallery, imageQuality: 70);
-                            if (pickedFile != null)
-                              setModalState(() =>
-                              newImageFile = File(pickedFile.path));
-                          },
-                          child: Stack(
-                            children: [
-                              Container(
-                                height: 140, width: double.infinity,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF9F9F9),
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(
-                                      color: const Color(0xFFE0E0E0)),
-                                ),
-                                child: newImageFile != null
-                                    ? ClipRRect(
-                                    borderRadius: BorderRadius.circular(14),
-                                    child: Image.file(
-                                        newImageFile!, fit: BoxFit.cover,
-                                        width: double.infinity))
-                                    : existingImageUrl != null
-                                    ? ClipRRect(
-                                    borderRadius: BorderRadius.circular(14),
-                                    child: Image.network(
-                                        existingImageUrl!, fit: BoxFit.cover,
-                                        width: double.infinity))
-                                    : const Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(Icons.add_photo_alternate_outlined,
-                                        color: Colors.grey, size: 40),
-                                    SizedBox(height: 8),
-                                    Text("Add Photo (Optional)",
-                                        style: TextStyle(
-                                            color: Colors.grey, fontSize: 13)),
-                                  ],
-                                ),
-                              ),
-                              if (newImageFile != null ||
-                                  existingImageUrl != null)
-                                Positioned(
-                                  top: 8, right: 8,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 10, vertical: 4),
-                                    decoration: BoxDecoration(
-                                        color: Colors.black54,
-                                        borderRadius: BorderRadius.circular(
-                                            20)),
-                                    child: const Text("Change",
-                                        style: TextStyle(
-                                            color: Colors.white, fontSize: 11)),
-                                  ),
-                                ),
-                              if (newImageFile != null ||
-                                  existingImageUrl != null)
-                                Positioned(
-                                  top: 8, left: 8,
-                                  child: GestureDetector(
-                                    onTap: () =>
-                                        setModalState(() {
-                                          newImageFile = null;
-                                          existingImageUrl = null;
-                                        }),
-                                    child: Container(
-                                      padding: const EdgeInsets.all(4),
-                                      decoration: const BoxDecoration(
-                                          color: Colors.red,
-                                          shape: BoxShape.circle),
-                                      child: const Icon(
-                                          Icons.close, color: Colors.white,
-                                          size: 14),
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 15),
-
-                        TextField(
-                            controller: titleController,
-                            decoration: InputDecoration(
-                                labelText: "Title",
-                                border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12)),
-                                focusedBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: const BorderSide(
-                                        color: primaryColor)))),
-                        const SizedBox(height: 15),
-                        TextField(
-                            controller: contentController,
-                            maxLines: 3,
-                            decoration: InputDecoration(
-                                labelText: "Message",
-                                border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12)),
-                                focusedBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: const BorderSide(
-                                        color: primaryColor)))),
-                        const SizedBox(height: 15),
-
-                        DropdownButtonFormField<String>(
-                          value: selectedCategory,
-                          decoration: InputDecoration(
-                              labelText: "Category",
-                              border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12))),
-                          items: ['Notice', 'Maintenance', 'Event', 'General']
-                              .map((v) =>
-                              DropdownMenuItem<String>(value: v, child: Text(
-                                  v)))
-                              .toList(),
-                          onChanged: (val) =>
-                              setModalState(() => selectedCategory = val!),
-                        ),
-
-                        const SizedBox(height: 15),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            TextButton.icon(
-                              onPressed: () async {
-                                final picked = await showDatePicker(
-                                    context: context,
-                                    initialDate: selectedDate ?? DateTime.now(),
-                                    firstDate: DateTime(2020),
-                                    lastDate: DateTime(2030));
-                                if (picked != null) setModalState(() =>
-                                selectedDate = picked);
-                              },
-                              icon: const Icon(
-                                  Icons.calendar_month, color: primaryColor),
-                              label: Text(selectedDate == null
-                                  ? "Set Event Date"
-                                  : "${selectedDate!.day}/${selectedDate!
-                                  .month}/${selectedDate!.year}"),
-                            ),
-                            Row(children: [
-                              const Text("Urgent", style: TextStyle(
-                                  color: Colors.red,
-                                  fontWeight: FontWeight.bold)),
-                              Switch(value: isUrgent, activeColor: Colors.red,
-                                  onChanged: (val) =>
-                                      setModalState(() => isUrgent = val)),
-                            ]),
-                          ],
-                        ),
-                        const SizedBox(height: 20),
-
-                        SizedBox(
-                          width: double.infinity, height: 50,
-                          child: ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                                backgroundColor: primaryColor,
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(14))),
-                            onPressed: isUploading ? null : () async {
-                              if (titleController.text.isEmpty ||
-                                  contentController.text.isEmpty) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text(
-                                        "Title and Message required")));
-                                return;
-                              }
-                              setModalState(() => isUploading = true);
-                              try {
-                                String? finalImageUrl = existingImageUrl;
-                                if (newImageFile != null) {
-                                  final fileName = '${DateTime
-                                      .now()
-                                      .millisecondsSinceEpoch}.jpg';
-                                  final path = 'public/$fileName';
-                                  await supabase.storage.from(
-                                      'announcement_images').upload(
-                                      path, newImageFile!);
-                                  finalImageUrl = supabase.storage.from(
-                                      'announcement_images').getPublicUrl(path);
-                                }
-                                await supabase.from('announcements').update({
-                                  'title': titleController.text,
-                                  'content': contentController.text,
-                                  'category': selectedCategory,
-                                  'event_date': selectedDate?.toIso8601String(),
-                                  'is_urgent': isUrgent,
-                                  'image_url': finalImageUrl,
-                                }).eq('id', data['id']);
-                                if (context.mounted) {
-                                  Navigator.pop(context);
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                          content: Text(
-                                              "Announcement updated!"),
-                                          backgroundColor: Colors.green));
-                                  fetchAnnouncements();
-                                }
-                              } catch (e) {
-                                debugPrint("Edit Error: $e");
-                                if (context.mounted)
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                          content: Text("Failed to update."),
-                                          backgroundColor: Colors.red));
-                              } finally {
-                                setModalState(() => isUploading = false);
-                              }
-                            },
-                            child: isUploading
-                                ? const SizedBox(height: 20, width: 20,
-                                child: CircularProgressIndicator(color: Colors
-                                    .white, strokeWidth: 2))
-                                : const Text("Save Changes",
-                                style: TextStyle(color: Colors.white,
-                                    fontWeight: FontWeight.bold)),
-                          ),
-                        ),
-                        const SizedBox(height: 30),
-                      ],
-                    ),
-                  ),
-                ),
-          ),
-    );
-  }
-
-  // ─────────────────────────────────────────────
-  // VIEW announcement detail
-  // ─────────────────────────────────────────────
-  void _showAnnouncementDetails(Map<String, dynamic> data) {
-    final dt = data['event_date'] != null
-        ? DateTime.parse(data['event_date']).toLocal() : null;
-    final dateDisplay = dt != null
-        ? "${dt.day}/${dt.month}/${dt.year}"
-        : "No specific date";
-    final bool hasImage = data['image_url'] != null;
-
-    showDialog(
-      context: context,
-      builder: (dialogContext) =>
-          AlertDialog(
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(22)),
-            contentPadding: EdgeInsets.zero,
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (hasImage)
-                  ClipRRect(
-                    borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(22)),
-                    child: Image.network(data['image_url'],
-                        width: double.infinity, height: 180, fit: BoxFit.cover),
-                  ),
-                Padding(
-                  padding: const EdgeInsets.all(24.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(children: [
-                        Icon(data['is_urgent'] ? Icons.warning : Icons.campaign,
-                            color: data['is_urgent']
-                                ? Colors.red
-                                : primaryColor),
-                        const SizedBox(width: 10),
-                        Expanded(
-                            child: Text(data['title'],
-                                style: const TextStyle(fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    color: textDark))),
-                      ]),
-                      const SizedBox(height: 12),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                            color: primaryColor.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(20)),
-                        child: Text(data['category'] ?? '',
-                            style: const TextStyle(
-                                color: primaryColor,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 12)),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(children: [
-                        const Icon(Icons.calendar_today_outlined, size: 13,
-                            color: Colors.grey),
-                        const SizedBox(width: 4),
-                        Text(dateDisplay, style: const TextStyle(
-                            color: Colors.grey, fontSize: 12)),
-                      ]),
-                      const Divider(height: 24),
-                      Text(data['content'],
-                          style: const TextStyle(fontSize: 14, height: 1.6)),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            actions: [
-              Row(children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => Navigator.pop(dialogContext),
-                    icon: const Icon(Icons.close, size: 16, color: Colors.grey),
-                    label: const Text(
-                        "Close", style: TextStyle(color: Colors.grey)),
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Colors.grey, width: 1),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () =>
-                        _showEditAnnouncementSheet(dialogContext, data),
-                    icon: const Icon(
-                        Icons.edit_outlined, size: 16, color: primaryColor),
-                    label: const Text(
-                        "Edit", style: TextStyle(color: primaryColor)),
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: primaryColor, width: 1),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () =>
-                        _deleteAnnouncement(dialogContext, data['id']),
-                    icon: const Icon(
-                        Icons.delete_outline, size: 16, color: Colors.red),
-                    label: const Text(
-                        "Delete", style: TextStyle(color: Colors.red)),
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Colors.red, width: 1),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                  ),
-                ),
-              ]),
-            ],
-          ),
-    );
-  }
-
-  // ─────────────────────────────────────────────
-  // NEW HEADER WIDGET
-  // ─────────────────────────────────────────────
-  Widget _buildDashboardHeader() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(20, 24, 20, 26),
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            Color(0xFF4E2A23), // 深棕
-            Color(0xFF7B3F33), // 中棕
-            Color(0xFFA45A44), // 浅棕
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-      ),
-      child: Row(
-        children: [
-          // 👤 Avatar
-          CircleAvatar(
-            radius: 26,
-            backgroundColor: Colors.white24,
-            backgroundImage:
-            adminAvatarUrl != null ? NetworkImage(adminAvatarUrl!) : null,
-            child: adminAvatarUrl == null
-                ? const Icon(Icons.person, color: Colors.white, size: 26)
-                : null,
-          ),
-
-          const SizedBox(width: 14),
-
-          // 👋 Text
-          Expanded(
+      builder: (ctx) => StatefulBuilder(
+          builder: (ctx, set) => _sheet(
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  "Hello $adminName !!",
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 17,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 4),
-              ],
-            ),
-          ),
-
-          // 🔔 Notification (这里加了点击事件)
-          GestureDetector(
-            onTap: () {
-              // 🔥 点击跳转到 AdminNotificationsPage
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const AdminNotificationsPage(),
-                ),
-              );
-            },
-            child: Stack(
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(30),
-                  ),
-                  child: const Icon(
-                    Icons.notifications_outlined,
-                    color: Colors.white,
-                    size: 24,
-                  ),
-                ),
-
-                if (hasUserNotif ||
-                    hasEventNotif ||
-                    hasFacilityNotif ||
-                    hasVisitorNotif ||
-                    hasEmergencyNotif)
-                  Positioned(
-                    right: -1,
-                    top: -1,
-                    child: Container(
-                      width: 12,
-                      height: 12,
-                      decoration: BoxDecoration(
-                        color: Colors.red,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: const Color(0xFF7B3F33), width: 2),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _handle(),
+                  const Text("Edit Announcement",
+                      style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: textDark)),
+                  const SizedBox(height: 16),
+                  _imgPick(newImg, exUrl,
+                      onTap: () async {
+                        final f = await _picker.pickImage(
+                            source: ImageSource.gallery,
+                            imageQuality: 70);
+                        if (f != null) set(() => newImg = File(f.path));
+                      },
+                      onRm: () => set(() {
+                        newImg = null;
+                        exUrl = null;
+                      })),
+                  const SizedBox(height: 12),
+                  _tf(tCtrl, "Title"),
+                  const SizedBox(height: 10),
+                  _tf(cCtrl, "Message", lines: 3),
+                  const SizedBox(height: 10),
+                  _dd(cat, (v) => set(() => cat = v!)),
+                  const SizedBox(height: 10),
+                  _dateUrgent(date, urgent,
+                      onDate: () async {
+                        final p = await showDatePicker(
+                            context: ctx,
+                            initialDate: date ?? DateTime.now(),
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime(2030));
+                        if (p != null) set(() => date = p);
+                      },
+                      onUrgent: (v) => set(() => urgent = v)),
+                  const SizedBox(height: 16),
+                  _btn(uploading, "Save Changes", () async {
+                    if (tCtrl.text.isEmpty || cCtrl.text.isEmpty) return;
+                    set(() => uploading = true);
+                    try {
+                      String? finalUrl = exUrl;
+                      if (newImg != null) {
+                        final path =
+                            'public/${DateTime.now().millisecondsSinceEpoch}.jpg';
+                        await supabase.storage
+                            .from('announcement_images')
+                            .upload(path, newImg!);
+                        finalUrl = supabase.storage
+                            .from('announcement_images')
+                            .getPublicUrl(path);
+                      }
+                      await supabase.from('announcements').update({
+                        'title': tCtrl.text,
+                        'content': cCtrl.text,
+                        'category': cat,
+                        'event_date': date?.toIso8601String(),
+                        'is_urgent': urgent,
+                        'image_url': finalUrl,
+                      }).eq('id', data['id']);
+                      if (ctx.mounted) {
+                        Navigator.pop(ctx);
+                        fetchAnnouncements();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text("Updated!"),
+                                backgroundColor: chartGreen));
+                      }
+                    } catch (e) {
+                      if (ctx.mounted)
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text("Failed."),
+                                backgroundColor: chartRed));
+                    } finally {
+                      set(() => uploading = false);
+                    }
+                  }),
+                  const SizedBox(height: 28),
+                ]),
+          )),
     );
   }
 
   void showCreateAnnouncementSheet(BuildContext context) {
-    final titleController = TextEditingController();
-    final contentController = TextEditingController();
-    DateTime? selectedDate;
-    bool isUrgent = false;
-    String selectedCategory = 'Notice';
-    File? imageFile;
-    bool isUploading = false;
+    final tCtrl = TextEditingController();
+    final cCtrl = TextEditingController();
+    DateTime? date;
+    bool urgent = false;
+    String cat = 'Notice';
+    File? imgFile;
+    bool uploading = false;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setModalState) => Container(
-          padding: EdgeInsets.only(
-              bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-              top: 25,
-              left: 20,
-              right: 20),
-          decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
-          child: SingleChildScrollView(
+      builder: (ctx) => StatefulBuilder(
+          builder: (ctx, set) => _sheet(
             child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Center(
-                  child: Text("Create Announcement",
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDark)),
-                ),
-                const SizedBox(height: 20),
-
-                // 图片选择区域
-                GestureDetector(
-                  onTap: () async {
-                    final XFile? pickedFile = await _picker.pickImage(
-                        source: ImageSource.gallery, imageQuality: 70);
-                    if (pickedFile != null) {
-                      setModalState(() => imageFile = File(pickedFile.path));
-                    }
-                  },
-                  child: Container(
-                    height: 160,
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF9F9F9),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: const Color(0xFFE0E0E0)),
-                    ),
-                    child: imageFile == null
-                        ? Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.add_photo_alternate_outlined, color: Colors.grey.shade400, size: 45),
-                        const SizedBox(height: 8),
-                        const Text("Add Cover Photo", style: TextStyle(color: Colors.grey, fontSize: 13)),
-                      ],
-                    )
-                        : ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: Image.file(imageFile!, fit: BoxFit.cover, width: double.infinity),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 15),
-
-                // 标题输入
-                TextField(
-                    controller: titleController,
-                    decoration: InputDecoration(
-                        labelText: "Title",
-                        labelStyle: const TextStyle(color: Colors.grey),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(color: primaryColor)))),
-                const SizedBox(height: 15),
-
-                // 内容输入
-                TextField(
-                    controller: contentController,
-                    maxLines: 4,
-                    decoration: InputDecoration(
-                        labelText: "Message",
-                        alignLabelWithHint: true,
-                        labelStyle: const TextStyle(color: Colors.grey),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(color: primaryColor)))),
-                const SizedBox(height: 15),
-
-                // 类别选择
-                DropdownButtonFormField<String>(
-                  value: selectedCategory,
-                  decoration: InputDecoration(
-                      labelText: "Category",
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
-                  items: ['Notice', 'Maintenance', 'Event', 'General']
-                      .map((v) => DropdownMenuItem<String>(value: v, child: Text(v)))
-                      .toList(),
-                  onChanged: (val) => setModalState(() => selectedCategory = val!),
-                ),
-
-                const SizedBox(height: 15),
-
-                // 日期与紧急程度
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    TextButton.icon(
-                      onPressed: () async {
-                        final picked = await showDatePicker(
-                            context: context,
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _handle(),
+                  const Text("New Announcement",
+                      style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: textDark)),
+                  const SizedBox(height: 16),
+                  _imgPick(imgFile, null,
+                      onTap: () async {
+                        final f = await _picker.pickImage(
+                            source: ImageSource.gallery,
+                            imageQuality: 70);
+                        if (f != null) set(() => imgFile = File(f.path));
+                      },
+                      onRm: () => set(() => imgFile = null)),
+                  const SizedBox(height: 12),
+                  _tf(tCtrl, "Title"),
+                  const SizedBox(height: 10),
+                  _tf(cCtrl, "Message", lines: 4),
+                  const SizedBox(height: 10),
+                  _dd(cat, (v) => set(() => cat = v!)),
+                  const SizedBox(height: 10),
+                  _dateUrgent(date, urgent,
+                      onDate: () async {
+                        final p = await showDatePicker(
+                            context: ctx,
                             initialDate: DateTime.now(),
                             firstDate: DateTime.now(),
                             lastDate: DateTime(2030));
-                        if (picked != null) setModalState(() => selectedDate = picked);
+                        if (p != null) set(() => date = p);
                       },
-                      icon: const Icon(Icons.calendar_month, color: primaryColor),
-                      label: Text(
-                        selectedDate == null
-                            ? "Set Event Date"
-                            : "${selectedDate!.day}/${selectedDate!.month}/${selectedDate!.year}",
-                        style: const TextStyle(color: primaryColor, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                    Row(children: [
-                      const Text("Urgent", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
-                      Switch(
-                          value: isUrgent,
-                          activeColor: Colors.red,
-                          onChanged: (val) => setModalState(() => isUrgent = val)),
-                    ]),
-                  ],
-                ),
-                const SizedBox(height: 20),
-
-                // 发布按钮
-                SizedBox(
-                  width: double.infinity,
-                  height: 55,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                        backgroundColor: primaryColor,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
-                    onPressed: isUploading ? null : () async {
-                      if (titleController.text.trim().isEmpty || contentController.text.trim().isEmpty) {
+                      onUrgent: (v) => set(() => urgent = v)),
+                  const SizedBox(height: 16),
+                  _btn(uploading, "Publish Now", () async {
+                    if (tCtrl.text.trim().isEmpty ||
+                        cCtrl.text.trim().isEmpty) return;
+                    set(() => uploading = true);
+                    try {
+                      String? imgUrl;
+                      if (imgFile != null) {
+                        final path =
+                            'public/ann_${DateTime.now().millisecondsSinceEpoch}.jpg';
+                        await supabase.storage
+                            .from('announcement_images')
+                            .upload(path, imgFile!);
+                        imgUrl = supabase.storage
+                            .from('announcement_images')
+                            .getPublicUrl(path);
+                      }
+                      await supabase.from('announcements').insert({
+                        'title': tCtrl.text.trim(),
+                        'content': cCtrl.text.trim(),
+                        'category': cat,
+                        'event_date': date?.toIso8601String(),
+                        'is_urgent': urgent,
+                        if (imgUrl != null) 'image_url': imgUrl,
+                      });
+                      if (ctx.mounted) {
+                        Navigator.pop(ctx);
+                        fetchAnnouncements();
                         ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text("Please fill in Title and Message")));
-                        return;
+                            const SnackBar(
+                                content: Text("Published!"),
+                                backgroundColor: chartGreen));
                       }
+                    } catch (e) {
+                      if (ctx.mounted)
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text("Failed."),
+                                backgroundColor: chartRed));
+                    } finally {
+                      set(() => uploading = false);
+                    }
+                  }),
+                  const SizedBox(height: 10),
+                ]),
+          )),
+    );
+  }
 
-                      setModalState(() => isUploading = true);
-                      try {
-                        String? imageUrl;
-                        // 1. 如果有图片，先上传到存储桶
-                        if (imageFile != null) {
-                          final fileName = 'ann_${DateTime.now().millisecondsSinceEpoch}.jpg';
-                          final path = 'public/$fileName';
-                          await supabase.storage.from('announcement_images').upload(path, imageFile!);
-                          imageUrl = supabase.storage.from('announcement_images').getPublicUrl(path);
-                        }
+  // ── Sheet helpers ─────────────────────────────────────────────────────────
+  Widget _sheet({required Widget child}) => Container(
+    padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+        top: 20,
+        left: 20,
+        right: 20),
+    decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+    child: SingleChildScrollView(child: child),
+  );
 
-                        // 2. 写入数据库
-                        await supabase.from('announcements').insert({
-                          'title': titleController.text.trim(),
-                          'content': contentController.text.trim(),
-                          'category': selectedCategory,
-                          'event_date': selectedDate?.toIso8601String(),
-                          'is_urgent': isUrgent,
-                          if (imageUrl != null) 'image_url': imageUrl,
-                        });
+  Widget _handle() => Center(
+      child: Container(
+          width: 40,
+          height: 4,
+          margin: const EdgeInsets.only(bottom: 20),
+          decoration: BoxDecoration(
+              color: Colors.grey.shade300,
+              borderRadius: BorderRadius.circular(2))));
 
-                        if (context.mounted) {
-                          Navigator.pop(context);
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                              content: Text("Announcement published!"), backgroundColor: Colors.green));
+  InputDecoration _dec(String l) => InputDecoration(
+    labelText: l,
+    labelStyle: const TextStyle(color: textMid, fontSize: 13),
+    filled: true,
+    fillColor: const Color(0xFFF8F6F3),
+    border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: border)),
+    enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: border)),
+    focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: primary, width: 1.5)),
+    contentPadding:
+    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+  );
 
-                          // 如果你需要刷新 Dashboard 页面，可以在这里发送通知或调用刷新逻辑
-                        }
-                      } catch (e) {
-                        debugPrint("Upload Error: $e");
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                              content: Text("Failed to publish. Check your connection."), backgroundColor: Colors.red));
-                        }
-                      } finally {
-                        setModalState(() => isUploading = false);
-                      }
-                    },
-                    child: isUploading
-                        ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                        : const Text("Publish Now", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                  ),
-                ),
-                const SizedBox(height: 10),
-              ],
+  Widget _tf(TextEditingController c, String l, {int lines = 1}) => TextField(
+      controller: c,
+      maxLines: lines,
+      style: const TextStyle(fontSize: 14, color: textDark),
+      decoration: _dec(l));
+
+  Widget _dd(String val, ValueChanged<String?> onChange) =>
+      DropdownButtonFormField<String>(
+          value: val,
+          decoration: _dec("Category"),
+          items: ['Notice', 'Maintenance', 'Event', 'General']
+              .map((v) => DropdownMenuItem(value: v, child: Text(v)))
+              .toList(),
+          onChanged: onChange);
+
+  Widget _dateUrgent(DateTime? d, bool u,
+      {required VoidCallback onDate,
+        required ValueChanged<bool> onUrgent}) =>
+      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+        TextButton.icon(
+            onPressed: onDate,
+            icon: const Icon(Icons.calendar_month_outlined,
+                color: primary, size: 15),
+            label: Text(
+                d == null
+                    ? "Set Event Date"
+                    : "${d.day}/${d.month}/${d.year}",
+                style: const TextStyle(color: primary, fontSize: 13))),
+        Row(children: [
+          Text("Urgent",
+              style: TextStyle(
+                  color: chartRed,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600)),
+          Switch(value: u, activeColor: chartRed, onChanged: onUrgent),
+        ]),
+      ]);
+
+  Widget _imgPick(File? f, String? url,
+      {required VoidCallback onTap, required VoidCallback onRm}) =>
+      GestureDetector(
+          onTap: onTap,
+          child: Stack(children: [
+            Container(
+              height: 110,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                  color: const Color(0xFFF5F3F0),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: border)),
+              child: f != null
+                  ? ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: Image.file(f,
+                      fit: BoxFit.cover, width: double.infinity))
+                  : url != null
+                  ? ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: Image.network(url,
+                      fit: BoxFit.cover, width: double.infinity))
+                  : Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.add_photo_alternate_outlined,
+                        color: Colors.grey.shade400, size: 30),
+                    const SizedBox(height: 6),
+                    Text("Tap to add photo",
+                        style: TextStyle(
+                            color: Colors.grey.shade500,
+                            fontSize: 12)),
+                  ]),
+            ),
+            if (f != null || url != null) ...[
+              Positioned(
+                  top: 8,
+                  right: 8,
+                  child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 9, vertical: 3),
+                      decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(20)),
+                      child: const Text("Change",
+                          style:
+                          TextStyle(color: Colors.white, fontSize: 11)))),
+              Positioned(
+                  top: 8,
+                  left: 8,
+                  child: GestureDetector(
+                      onTap: onRm,
+                      child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: const BoxDecoration(
+                              color: chartRed, shape: BoxShape.circle),
+                          child: const Icon(Icons.close,
+                              color: Colors.white, size: 13)))),
+            ],
+          ]));
+
+  Widget _btn(bool loading, String label, VoidCallback onTap) => SizedBox(
+    width: double.infinity,
+    height: 50,
+    child: ElevatedButton(
+      style: ElevatedButton.styleFrom(
+          backgroundColor: primary,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14))),
+      onPressed: loading ? null : onTap,
+      child: loading
+          ? const SizedBox(
+          height: 18,
+          width: 18,
+          child: CircularProgressIndicator(
+              color: Colors.white, strokeWidth: 2))
+          : Text(label,
+          style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+              fontSize: 15)),
+    ),
+  );
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // UI SECTIONS
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // ── 1. Header ─────────────────────────────────────────────────────────────
+  Widget _header() {
+    final hasAny = hasUserNotif ||
+        hasEventNotif ||
+        hasFacilityNotif ||
+        hasVisitorNotif ||
+        hasEmergencyNotif;
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Color(0xFF5C1F14), Color(0xFF8B3A2A)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+      child: Column(children: [
+        Row(children: [
+          GestureDetector(
+            onTap: () {},
+            child: Container(
+              decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                      color: Colors.white.withOpacity(0.3), width: 2)),
+              child: CircleAvatar(
+                radius: 24,
+                backgroundColor: Colors.white.withOpacity(0.15),
+                backgroundImage: adminAvatarUrl != null
+                    ? NetworkImage(adminAvatarUrl!)
+                    : null,
+                child: adminAvatarUrl == null
+                    ? const Icon(Icons.person_outline,
+                    color: Colors.white, size: 24)
+                    : null,
+              ),
             ),
           ),
-        ),
+          const SizedBox(width: 14),
+          Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text("Good ${_greeting()},",
+                        style: TextStyle(
+                            color: Colors.white.withOpacity(0.6), fontSize: 12)),
+                    const SizedBox(height: 2),
+                    Text(adminName,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -0.3)),
+                  ])),
+          GestureDetector(
+            onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const AdminNotificationsPage())),
+            child: Stack(children: [
+              Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                          color: Colors.white.withOpacity(0.15))),
+                  child: const Icon(Icons.notifications_outlined,
+                      color: Colors.white, size: 20)),
+              if (hasAny)
+                Positioned(
+                    right: 9,
+                    top: 9,
+                    child: Container(
+                        width: 9,
+                        height: 9,
+                        decoration: BoxDecoration(
+                            color: const Color(0xFFFF5252),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                                color: const Color(0xFF5C1F14), width: 1.5)))),
+            ]),
+          ),
+        ]),
+        const SizedBox(height: 20),
+        Row(children: [
+          _headerStat(
+              pendingTotal.toString(), "Pending", Icons.pending_outlined),
+          _headerDivider(),
+          _headerStat(approvedToday.toString(), "Approved",
+              Icons.check_circle_outline),
+          _headerDivider(),
+          _headerStat(
+              totalResidents.toString(), "Residents", Icons.people_outline),
+          _headerDivider(),
+          _headerStat(totalRequestsThisWeek.toString(), "This Week",
+              Icons.trending_up_outlined),
+        ]),
+      ]),
+    );
+  }
+
+  String _greeting() {
+    final h = DateTime.now().hour;
+    if (h < 12) return "morning";
+    if (h < 17) return "afternoon";
+    return "evening";
+  }
+
+  Widget _headerStat(String value, String label, IconData icon) => Expanded(
+    child: Column(children: [
+      Text(value,
+          style: const TextStyle(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.5)),
+      const SizedBox(height: 3),
+      Text(label,
+          style:
+          TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 10),
+          textAlign: TextAlign.center),
+    ]),
+  );
+
+  Widget _headerDivider() => Container(
+      height: 28,
+      width: 1,
+      color: Colors.white.withOpacity(0.15),
+      margin: const EdgeInsets.symmetric(horizontal: 4));
+
+  // ── 2. Emergency Banner ────────────────────────────────────────────────────
+  Widget _emergencyBanner() {
+    if (activeEmergencies.isEmpty) return const SizedBox.shrink();
+    return GestureDetector(
+      onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const EmergencyListPage()))
+          .then((_) => refreshAllData()),
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+            gradient: LinearGradient(
+                colors: [
+                  chartRed.withOpacity(0.12),
+                  chartRed.withOpacity(0.06)
+                ],
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: chartRed.withOpacity(0.3))),
+        child: Row(children: [
+          Container(
+              padding: const EdgeInsets.all(9),
+              decoration: BoxDecoration(
+                  color: chartRed.withOpacity(0.12), shape: BoxShape.circle),
+              child: Icon(Icons.warning_amber_rounded,
+                  color: chartRed, size: 18)),
+          const SizedBox(width: 12),
+          Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                        "${activeEmergencies.length} Active Emergency${activeEmergencies.length > 1 ? ' Issues' : ''}",
+                        style: TextStyle(
+                            color: chartRed,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13)),
+                    const SizedBox(height: 2),
+                    Text(
+                        activeEmergencies.first['title'] ?? 'Requires attention',
+                        style: TextStyle(
+                            color: chartRed.withOpacity(0.7), fontSize: 12),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                  ])),
+          Container(
+              padding:
+              const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration:
+              BoxDecoration(color: chartRed, borderRadius: BorderRadius.circular(8)),
+              child: const Text("View",
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600))),
+        ]),
       ),
     );
   }
 
+  // ── 3. Quick Access ────────────────────────────────────────────────────────
+  Widget _quickAccess() => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+    child:
+    Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _sectionHeader("Quick Access"),
+      const SizedBox(height: 14),
+      GridView.count(
+        crossAxisCount: 3,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        mainAxisSpacing: 10,
+        crossAxisSpacing: 10,
+        childAspectRatio: 0.95,
+        children: [
+          _accessCard(
+            "Users",
+            Icons.people_outline,
+            chartBlue,
+                () => navigateTo("Users"),
+            hasNotif: hasUserNotif,
+          ),
+          _accessCard(
+            "Events",
+            Icons.event_outlined,
+            chartTeal,
+                () => navigateTo("Event"),
+            hasNotif: hasEventNotif,
+          ),
+          _accessCard(
+            "Facility",
+            Icons.apartment_outlined,
+            primary,
+                () => navigateTo("Facilities"),
+            hasNotif: hasFacilityNotif,
+          ),
+          _accessCard(
+            "Visitor",
+            Icons.badge_outlined,
+            chartRose,
+                () => navigateTo("Visitor"),
+            hasNotif: hasVisitorNotif,
+          ),
+          _accessCard(
+            "Emergency",
+            Icons.warning_amber_outlined,
+            chartRed,
+                () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const EmergencyListPage()))
+                .then((_) => refreshAllData()),
+            hasNotif: hasEmergencyNotif,
+          ),
+          _accessCard(
+            "Manage",
+            Icons.settings_outlined,
+            textMid,
+                () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const ManageFacilityPage()))
+                .then((_) => refreshAllData()),
+          ),
+        ],
+      ),
+    ]),
+  );
+
+  Widget _accessCard(
+      String title,
+      IconData icon,
+      Color color,
+      VoidCallback onTap, {
+        bool hasNotif = false,
+        String subtitle = "",
+      }) =>
+      GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(10, 12, 10, 10),
+          decoration: BoxDecoration(
+              color: surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: border),
+              boxShadow: [
+                BoxShadow(
+                    color: cardShadow,
+                    blurRadius: 8,
+                    offset: const Offset(0, 2))
+              ]),
+          child: Stack(clipBehavior: Clip.none, children: [
+            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                      color: color.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10)),
+                  child: Icon(icon, color: color, size: 19)),
+              const SizedBox(height: 8),
+              Text(title,
+                  style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: textDark)),
+              if (subtitle.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text(subtitle,
+                    style: const TextStyle(fontSize: 10, color: textMid),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
+              ],
+            ]),
+            if (hasNotif)
+              Positioned(
+                  right: 0,
+                  top: 0,
+                  child: Container(
+                      width: 9,
+                      height: 9,
+                      decoration: BoxDecoration(
+                          color: chartRed,
+                          shape: BoxShape.circle,
+                          border:
+                          Border.all(color: surface, width: 1.5)))),
+          ]),
+        ),
+      );
+
+  // ── 4. Facility Overview ───────────────────────────────────────────────────
+  Widget _facilityOverview() => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
+    child:
+    Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+        _sectionHeader("Facility Overview"),
+        GestureDetector(
+          onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => const ManageFacilityPage()))
+              .then((_) => refreshAllData()),
+          child: Container(
+            padding:
+            const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+                color: primary.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(9)),
+            child: const Text("Manage",
+                style: TextStyle(
+                    color: primary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600)),
+          ),
+        ),
+      ]),
+      const SizedBox(height: 14),
+      facilityOverview.isEmpty
+          ? _card(
+          child: const Padding(
+            padding: EdgeInsets.all(24),
+            child: Center(
+                child: Text("No facilities configured",
+                    style:
+                    TextStyle(color: textLight, fontSize: 13))),
+          ))
+          : GridView.count(
+        crossAxisCount: 2,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        mainAxisSpacing: 10,
+        crossAxisSpacing: 10,
+        childAspectRatio: 1.6,
+        children: facilityOverview
+            .map((f) => _facilityTile(f))
+            .toList(),
+      ),
+    ]),
+  );
+
+  Widget _facilityTile(Map<String, dynamic> f) {
+    final String name = f['name'] ?? 'Facility';
+    final int used = f['used'] ?? 0;
+    final int cap = (f['capacity'] as num?)?.toInt() ?? 1;
+    final String status = (f['status'] ?? 'active').toString().toLowerCase();
+    final bool isClosed = status == 'closed' || status == 'maintenance';
+    final double pct = cap > 0 ? (used / cap).clamp(0.0, 1.0) : 0;
+    final bool isFull = used >= cap;
+
+    final Color barColor = isClosed
+        ? textLight
+        : isFull
+        ? chartRed
+        : pct > 0.6
+        ? chartAmber
+        : chartGreen;
+
+    final Color chipBg = isClosed
+        ? border
+        : isFull
+        ? chartRed.withOpacity(0.1)
+        : chartGreen.withOpacity(0.1);
+    final Color chipText = isClosed
+        ? textMid
+        : isFull
+        ? chartRed
+        : chartGreen;
+    final String chipLabel = isClosed
+        ? status[0].toUpperCase() + status.substring(1)
+        : isFull
+        ? "Full"
+        : "Open";
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+          color: surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: border),
+          boxShadow: [
+            BoxShadow(
+                color: cardShadow,
+                blurRadius: 6,
+                offset: const Offset(0, 2))
+          ]),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          Expanded(
+              child: Text(name,
+                  style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: textDark),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis)),
+          Container(
+              padding:
+              const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              decoration: BoxDecoration(
+                  color: chipBg, borderRadius: BorderRadius.circular(6)),
+              child: Text(chipLabel,
+                  style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                      color: chipText))),
+        ]),
+        const Spacer(),
+        ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+                value: pct,
+                backgroundColor: barColor.withOpacity(0.1),
+                valueColor: AlwaysStoppedAnimation(barColor),
+                minHeight: 5)),
+        const SizedBox(height: 7),
+        Text(isClosed ? "Unavailable" : "$used / $cap slots",
+            style: const TextStyle(fontSize: 10, color: textMid)),
+      ]),
+    );
+  }
+
+  // ── 5. Week Schedule ──────────────────────────────────────────────────────
+  Widget _weekSchedule() => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+    child:
+    Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _sectionHeader("This Week's Schedule"),
+      const SizedBox(height: 14),
+      _card(
+        child: weekSchedule.isEmpty
+            ? Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(children: [
+              Icon(Icons.calendar_today_outlined,
+                  color: textLight, size: 28),
+              const SizedBox(height: 8),
+              const Text("No events scheduled this week",
+                  style:
+                  TextStyle(color: textLight, fontSize: 13)),
+            ]))
+            : Column(
+            children: weekSchedule.asMap().entries.map((e) {
+              final i = e.key;
+              final item = e.value;
+              final type = item['type'] ?? '';
+              final eventDate = item['event_date'] != null
+                  ? DateTime.tryParse(item['event_date'].toString())
+                  : null;
+
+              Color dotColor;
+              String typeLabel;
+              switch (type) {
+                case 'booking':
+                  dotColor = primary;
+                  typeLabel = 'Booking';
+                  break;
+                case 'facility':
+                  dotColor = chartBlue;
+                  typeLabel = 'Facility';
+                  break;
+                case 'complaint':
+                  dotColor = chartAmber;
+                  typeLabel = 'Event';
+                  break;
+                default:
+                  dotColor = chartTeal;
+                  typeLabel = type.isNotEmpty
+                      ? type[0].toUpperCase() + type.substring(1)
+                      : 'Other';
+              }
+
+              final dayNames = [
+                'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'
+              ];
+              final timeStr = eventDate != null
+                  ? "${eventDate.hour.toString().padLeft(2, '0')}:${eventDate.minute.toString().padLeft(2, '0')}"
+                  : "All day";
+              final dayStr = eventDate != null
+                  ? dayNames[
+              (eventDate.weekday - 1).clamp(0, 6)]
+                  : "";
+
+              return Column(children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                      vertical: 10, horizontal: 4),
+                  child: Row(children: [
+                    SizedBox(
+                        width: 44,
+                        child: Text(timeStr,
+                            style: const TextStyle(
+                                fontSize: 11, color: textLight))),
+                    const SizedBox(width: 8),
+                    Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                            color: dotColor,
+                            shape: BoxShape.circle)),
+                    const SizedBox(width: 12),
+                    Expanded(
+                        child: Column(
+                            crossAxisAlignment:
+                            CrossAxisAlignment.start,
+                            children: [
+                              Text(item['title'] ?? typeLabel,
+                                  style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w500,
+                                      color: textDark),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis),
+                              const SizedBox(height: 2),
+                              Text("$dayStr · $typeLabel",
+                                  style: const TextStyle(
+                                      fontSize: 11,
+                                      color: textLight)),
+                            ])),
+                    Container(
+                        width: 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                            color: dotColor.withOpacity(0.3),
+                            shape: BoxShape.circle)),
+                  ]),
+                ),
+                if (i < weekSchedule.length - 1)
+                  Divider(
+                      height: 1,
+                      indent: 58,
+                      endIndent: 4,
+                      color: border),
+              ]);
+            }).toList()),
+      ),
+    ]),
+  );
+
+  // ── 6. Recent Activity ────────────────────────────────────────────────────
+  Widget _recentActivity() {
+    if (recentActivity.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _sectionHeader("Recent Activity"),
+        const SizedBox(height: 14),
+        _card(
+          child: Column(
+              children: recentActivity.asMap().entries.map((e) {
+                final i = e.key;
+                final item = e.value;
+                final type = item['type'] ?? '';
+                final status = item['status'] ?? 'pending';
+                final date =
+                (item['created_at']?.toString() ?? '').length >= 10
+                    ? item['created_at'].toString().substring(0, 10)
+                    : '';
+                final Color sColor = status == 'approved'
+                    ? chartGreen
+                    : status == 'rejected'
+                    ? chartRed
+                    : chartAmber;
+                Color tColor;
+                IconData tIcon;
+                switch (type) {
+                  case 'admin':
+                  case 'resident':
+                    tColor = chartBlue;
+                    tIcon = Icons.person_outline;
+                    break;
+                  case 'booking':
+                    tColor = chartTeal;
+                    tIcon = Icons.event_outlined;
+                    break;
+                  case 'facility':
+                    tColor = primary;
+                    tIcon = Icons.apartment_outlined;
+                    break;
+                  case 'visitor':
+                    tColor = chartRose;
+                    tIcon = Icons.badge_outlined;
+                    break;
+                  default:
+                    tColor = textLight;
+                    tIcon = Icons.circle_outlined;
+                }
+                return Column(children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 12),
+                    child: Row(children: [
+                      Container(
+                          width: 38,
+                          height: 38,
+                          decoration: BoxDecoration(
+                              color: tColor.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(11)),
+                          child: Icon(tIcon, color: tColor, size: 17)),
+                      const SizedBox(width: 12),
+                      Expanded(
+                          child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(item['title'] ?? type.toUpperCase(),
+                                    style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w500,
+                                        color: textDark),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis),
+                                const SizedBox(height: 2),
+                                Text(date,
+                                    style: const TextStyle(
+                                        fontSize: 11, color: textLight)),
+                              ])),
+                      const SizedBox(width: 8),
+                      Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 9, vertical: 4),
+                          decoration: BoxDecoration(
+                              color: sColor.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(7)),
+                          child: Text(status.toUpperCase(),
+                              style: TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w700,
+                                  color: sColor,
+                                  letterSpacing: 0.5))),
+                    ]),
+                  ),
+                  if (i < recentActivity.length - 1)
+                    Divider(
+                        height: 1, indent: 16, endIndent: 16, color: border),
+                ]);
+              }).toList()),
+        ),
+      ]),
+    );
+  }
+
+  // ── 7. Announcements ──────────────────────────────────────────────────────
+  Widget _announcements() => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
+    child:
+    Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+        _sectionHeader("Announcements"),
+        Row(children: [
+          _iconBtn(Icons.add, "New",
+                  () => showCreateAnnouncementSheet(context)),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const AdminAnnouncementPage())),
+            child: const Text("See all",
+                style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: primary)),
+          ),
+        ]),
+      ]),
+      const SizedBox(height: 14),
+      if (announcements.isEmpty)
+        _card(
+          child: Padding(
+            padding: const EdgeInsets.all(28),
+            child: Column(children: [
+              Icon(Icons.campaign_outlined, color: textLight, size: 32),
+              const SizedBox(height: 8),
+              const Text("No announcements yet.",
+                  style: TextStyle(color: textLight, fontSize: 13)),
+            ]),
+          ),
+        )
+      else
+        ...announcements.map((item) {
+          final bool urgent = item['is_urgent'] ?? false;
+          final bool hasImage = item['image_url'] != null &&
+              item['image_url'].toString().isNotEmpty;
+          return GestureDetector(
+            onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) =>
+                        AdminAnnouncementDetailPage(data: item))),
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              decoration: BoxDecoration(
+                  color: surface,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                      color: urgent
+                          ? chartRed.withOpacity(0.3)
+                          : border),
+                  boxShadow: [
+                    BoxShadow(
+                        color: cardShadow,
+                        blurRadius: 8,
+                        offset: const Offset(0, 2))
+                  ]),
+              child: Row(children: [
+                ClipRRect(
+                    borderRadius: const BorderRadius.horizontal(
+                        left: Radius.circular(15)),
+                    child: SizedBox(
+                        width: 72,
+                        height: 80,
+                        child: hasImage
+                            ? Image.network(item['image_url'],
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) =>
+                                _annPlaceholder(urgent))
+                            : _annPlaceholder(urgent))),
+                Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 12),
+                      child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (urgent)
+                              Container(
+                                  margin: const EdgeInsets.only(bottom: 4),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 7, vertical: 2),
+                                  decoration: BoxDecoration(
+                                      color: chartRed.withOpacity(0.1),
+                                      borderRadius:
+                                      BorderRadius.circular(5)),
+                                  child: Text("URGENT",
+                                      style: TextStyle(
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.w700,
+                                          color: chartRed,
+                                          letterSpacing: 0.5))),
+                            Text(item['title'] ?? 'No Title',
+                                style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: textDark),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis),
+                            const SizedBox(height: 4),
+                            Text(item['content'] ?? '',
+                                style: const TextStyle(
+                                    fontSize: 11,
+                                    color: textMid,
+                                    height: 1.4),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis),
+                          ]),
+                    )),
+                Padding(
+                    padding: const EdgeInsets.only(right: 14),
+                    child: Icon(Icons.arrow_forward_ios_rounded,
+                        color: textLight, size: 14)),
+              ]),
+            ),
+          );
+        }),
+    ]),
+  );
+
+  Widget _annPlaceholder(bool urgent) => Container(
+      color:
+      urgent ? chartRed.withOpacity(0.06) : const Color(0xFFF5F3F0),
+      child: Center(
+          child: Icon(
+              urgent
+                  ? Icons.warning_amber_rounded
+                  : Icons.campaign_outlined,
+              color: urgent ? chartRed.withOpacity(0.4) : textLight,
+              size: 24)));
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
+  Widget _card({required Widget child, Key? key}) => Container(
+    key: key,
+    width: double.infinity,
+    decoration: BoxDecoration(
+        color: surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: border),
+        boxShadow: [
+          BoxShadow(
+              color: cardShadow,
+              blurRadius: 10,
+              offset: const Offset(0, 3))
+        ]),
+    padding: const EdgeInsets.all(18),
+    child: child,
+  );
+
+  Widget _sectionHeader(String t) => Text(t,
+      style: const TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w700,
+          color: textDark,
+          letterSpacing: -0.3));
+
+  Widget _iconBtn(IconData icon, String label, VoidCallback onTap) =>
+      GestureDetector(
+        onTap: onTap,
+        child: Container(
+            padding:
+            const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+                color: primary.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(9)),
+            child: Row(children: [
+              Icon(icon, color: primary, size: 14),
+              const SizedBox(width: 4),
+              Text(label,
+                  style: const TextStyle(
+                      color: primary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600)),
+            ])),
+      );
+
+  // ── BUILD ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: bgColor,
+      backgroundColor: bg,
       body: SafeArea(
         child: RefreshIndicator(
+          color: primary,
+          displacement: 20,
           onRefresh: refreshAllData,
-          child: ListView(
-            padding: EdgeInsets.zero,
-            children: [
-
-              /// HEADER（全宽）
-              _buildDashboardHeader(),
-
-              /// CONTENT
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-
-                    buildSectionTitle("Management"),
-
-                    const SizedBox(height: 16),
-
-                    /// TOP BUTTONS
-                    Row(
-                      children: [
-                        buildTopButton(
-                          "Users",
-                          Icons.person_outline,
-                              () => navigateTo("Users"),
-                          iconColor: const Color(0xFF758BFD),
-                          hasNotification: hasUserNotif,
-                        ),
-                        const SizedBox(width: 6),
-
-                        buildTopButton(
-                          "Event",
-                          Icons.event_note_outlined,
-                              () => navigateTo("Event"),
-                          iconColor: const Color(0xFF4BC0B8),
-                          hasNotification: hasEventNotif,
-                        ),
-                        const SizedBox(width: 6),
-
-                        buildTopButton(
-                          "Facilities",
-                          Icons.home_work_outlined,
-                              () => navigateTo("Facilities"),
-                          iconColor: primaryColor,
-                          hasNotification: hasFacilityNotif,
-                        ),
-                        const SizedBox(width: 6),
-
-                        buildTopButton(
-                          "Visitor",
-                          Icons.badge_outlined,
-                              () => navigateTo("Visitor"),
-                          iconColor: const Color(0xFFE96B9E),
-                          hasNotification: hasVisitorNotif,
-                        ),
-                        const SizedBox(width: 6),
-
-                        buildTopButton(
-                          "Emergency",
-                          Icons.warning_amber_rounded,
-                              () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const EmergencyListPage(),
-                              ),
-                            ).then((_) => refreshAllData());
-                          },
-                          iconColor: const Color(0xFFFF5A5A),
-                          hasNotification: hasEmergencyNotif,
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 30),
-
-                    /// ANNOUNCEMENT HEADER
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        buildSectionTitle("Announcements"),
-
-                        // 🔥 换成了 View All 按钮
-                        TextButton(
-                          onPressed: () {
-                            // 跳转到全部公告列表页
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const AnnouncementListPage(),
-                              ),
-                            );
-                          },
-                          style: TextButton.styleFrom(
-                            foregroundColor: primaryColor,
-                            backgroundColor: primaryColor.withOpacity(0.1),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                "View All",
-                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                              ),
-                              SizedBox(width: 4),
-                              Icon(Icons.arrow_forward_ios_rounded, size: 12), // 向右的小箭头
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    /// ANNOUNCEMENTS LIST
-                    if (announcements.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.all(40),
-                        child: Center(
-                          child: Text(
-                            "No announcements yet.",
-                            style: TextStyle(color: Colors.grey),
-                          ),
-                        ),
-                      )
-                    else
-                      ...announcements.map((item) {
-                        final bool urgent = item['is_urgent'] ?? false;
-                        final bool hasImage = item['image_url'] != null;
-
-                        return GestureDetector(
-                          onTap: () => _showAnnouncementDetails(item),
-                          child: Container(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(22),
-                              border: urgent
-                                  ? Border.all(
-                                color: Colors.red.withOpacity(0.35),
-                                width: 1.5,
-                              )
-                                  : null,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.04),
-                                  blurRadius: 12,
-                                  offset: const Offset(0, 4),
-                                ),
-                              ],
-                            ),
-                            child: Row(
-                              children: [
-                                hasImage
-                                    ? ClipOval(
-                                  child: Image.network(
-                                    item['image_url'],
-                                    width: 46,
-                                    height: 46,
-                                    fit: BoxFit.cover,
-                                  ),
-                                )
-                                    : Container(
-                                  width: 46,
-                                  height: 46,
-                                  decoration: BoxDecoration(
-                                    color: (urgent
-                                        ? Colors.red
-                                        : primaryColor)
-                                        .withOpacity(0.12),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Icon(
-                                    urgent
-                                        ? Icons.priority_high
-                                        : Icons.campaign_outlined,
-                                    color: urgent
-                                        ? Colors.red
-                                        : primaryColor,
-                                    size: 22,
-                                  ),
-                                ),
-                                const SizedBox(width: 14),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                    CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        item['title'],
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 15,
-                                          color: textDark,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        item['content'],
-                                        style: const TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.black54,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                const Icon(
-                                  Icons.chevron_right,
-                                  color: Colors.black26,
-                                  size: 20,
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                  ],
-                ),
-              ),
-            ],
+          child: _loading
+              ? _loadingSkeleton()
+              : FadeTransition(
+            opacity: _fadeAnim,
+            child: ListView(
+                padding: const EdgeInsets.only(bottom: 48),
+                children: [
+                  _header(),
+                  _emergencyBanner(),
+                  _quickAccess(),
+                  _facilityOverview(),
+                  _weekSchedule(),
+                  _recentActivity(),
+                  _announcements(),
+                  const SizedBox(height: 16),
+                ]),
           ),
         ),
       ),
     );
   }
+
+  // ── Skeleton loader ───────────────────────────────────────────────────────
+  Widget _loadingSkeleton() => ListView(
+    padding: const EdgeInsets.only(bottom: 40),
+    children: [
+      Container(
+          height: 140,
+          decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Color(0xFF5C1F14), Color(0xFF8B3A2A)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ))),
+      const SizedBox(height: 20),
+      Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Column(children: [
+            _shimmer(height: 44, radius: 14),
+            const SizedBox(height: 12),
+            GridView.count(
+              crossAxisCount: 3,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: 10,
+              crossAxisSpacing: 10,
+              childAspectRatio: 1.05,
+              children: List.generate(
+                  6, (_) => _shimmer(height: 100, radius: 16)),
+            ),
+            const SizedBox(height: 20),
+            GridView.count(
+              crossAxisCount: 2,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: 10,
+              crossAxisSpacing: 10,
+              childAspectRatio: 1.6,
+              children: List.generate(
+                  4, (_) => _shimmer(height: 80, radius: 14)),
+            ),
+            const SizedBox(height: 14),
+            _shimmer(height: 200, radius: 18),
+            const SizedBox(height: 14),
+            _shimmer(height: 120, radius: 14),
+            const SizedBox(height: 14),
+            _shimmer(height: 80, radius: 14),
+            const SizedBox(height: 14),
+            _shimmer(height: 80, radius: 14),
+          ])),
+    ],
+  );
+
+  Widget _shimmer({required double height, double radius = 8}) => Container(
+      height: height,
+      decoration: BoxDecoration(
+          color: const Color(0xFFEDE9E5),
+          borderRadius: BorderRadius.circular(radius)));
 }
