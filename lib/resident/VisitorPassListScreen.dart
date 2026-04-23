@@ -18,7 +18,8 @@ class _VisitorPassListScreenState extends State<VisitorPassListScreen>
 
   List<Map<String, dynamic>> _pending = [];
   List<Map<String, dynamic>> _approved = [];
-  List<Map<String, dynamic>> _others = []; // rejected + used
+  List<Map<String, dynamic>> _rejected = [];
+  List<Map<String, dynamic>> _used = [];
   bool _loading = true;
 
   final Color primary = const Color(0xFF9A4B3C);
@@ -26,7 +27,7 @@ class _VisitorPassListScreenState extends State<VisitorPassListScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this); // ← 4 tabs
     _loadPasses();
   }
 
@@ -49,7 +50,8 @@ class _VisitorPassListScreenState extends State<VisitorPassListScreen>
       setState(() {
         _pending  = all.where((p) => p['status'] == 'pending').toList();
         _approved = all.where((p) => p['status'] == 'approved').toList();
-        _others   = all.where((p) => p['status'] == 'rejected' || p['status'] == 'used').toList();
+        _rejected = all.where((p) => p['status'] == 'rejected').toList();
+        _used     = all.where((p) => p['status'] == 'used').toList();
         _loading  = false;
       });
     } catch (e) {
@@ -79,7 +81,6 @@ class _VisitorPassListScreenState extends State<VisitorPassListScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // ── HEADER ─────────────────────────────
               Row(
                 children: [
                   Icon(Icons.verified_rounded, color: Colors.green),
@@ -98,10 +99,7 @@ class _VisitorPassListScreenState extends State<VisitorPassListScreen>
                   ),
                 ],
               ),
-
               const SizedBox(height: 8),
-
-              // Visitor Name
               Text(
                 pass['visitor_name'],
                 style: TextStyle(
@@ -110,17 +108,12 @@ class _VisitorPassListScreenState extends State<VisitorPassListScreen>
                   color: primary,
                 ),
               ),
-
               const SizedBox(height: 4),
-
               Text(
                 pass['purpose'] == 'event' ? 'Event Entry' : 'Visitor Entry',
                 style: const TextStyle(color: Colors.black54),
               ),
-
               const SizedBox(height: 20),
-
-              // ── QR CODE ─────────────────────────────
               Container(
                 padding: const EdgeInsets.all(18),
                 decoration: BoxDecoration(
@@ -136,18 +129,12 @@ class _VisitorPassListScreenState extends State<VisitorPassListScreen>
                     const SizedBox(height: 8),
                     const Text(
                       "Scan at guardhouse",
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.black45,
-                      ),
+                      style: TextStyle(fontSize: 12, color: Colors.black45),
                     ),
                   ],
                 ),
               ),
-
               const SizedBox(height: 18),
-
-              // ── INFO SECTION ────────────────────────
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
@@ -157,32 +144,23 @@ class _VisitorPassListScreenState extends State<VisitorPassListScreen>
                 child: Column(
                   children: [
                     _infoRow(Icons.calendar_today,
-                        DateFormat('d MMM yyyy').format(
-                            DateTime.parse(pass['valid_date']))),
-
+                        DateFormat('d MMM yyyy')
+                            .format(DateTime.parse(pass['valid_date']))),
                     if (pass['visitor_ic'] != null &&
                         (pass['visitor_ic'] as String).isNotEmpty)
                       _infoRow(Icons.badge_outlined, pass['visitor_ic']),
-
                     if (pass['events'] != null)
                       _infoRow(Icons.event, pass['events']['title']),
-
                     if (pass['reason'] != null &&
                         (pass['reason'] as String).isNotEmpty)
                       _infoRow(Icons.notes, pass['reason']),
                   ],
                 ),
               ),
-
               const SizedBox(height: 14),
-
-              // ── FOOTER ─────────────────────────────
               const Text(
                 "Present this QR code upon entry",
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.black38,
-                ),
+                style: TextStyle(fontSize: 12, color: Colors.black38),
               ),
             ],
           ),
@@ -199,17 +177,12 @@ class _VisitorPassListScreenState extends State<VisitorPassListScreen>
           Icon(icon, size: 16, color: Colors.black45),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(
-              text,
-              style: const TextStyle(fontSize: 13),
-            ),
+            child: Text(text, style: const TextStyle(fontSize: 13)),
           ),
         ],
       ),
     );
   }
-
-  // ── Build ──────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -228,7 +201,7 @@ class _VisitorPassListScreenState extends State<VisitorPassListScreen>
                 MaterialPageRoute(
                     builder: (_) => const VisitorPassRequestScreen()),
               );
-              _loadPasses(); // refresh after returning
+              _loadPasses();
             },
           ),
         ],
@@ -237,10 +210,13 @@ class _VisitorPassListScreenState extends State<VisitorPassListScreen>
           indicatorColor: Colors.white,
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white60,
+          isScrollable: true,                        // ← needed for 4 tabs
+          tabAlignment: TabAlignment.start,
           tabs: [
+            // ── Pending ──────────────────────────────
             Tab(
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   const Text('Pending'),
                   if (_pending.isNotEmpty) ...[
@@ -262,7 +238,34 @@ class _VisitorPassListScreenState extends State<VisitorPassListScreen>
                 ],
               ),
             ),
+            // ── Approved ─────────────────────────────
             const Tab(text: 'Approved'),
+            // ── Rejected ─────────────────────────────
+            Tab(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Rejected'),
+                  if (_rejected.isNotEmpty) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        '${_rejected.length}',
+                        style: const TextStyle(
+                            fontSize: 11, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            // ── History (used only) ───────────────────
             const Tab(text: 'History'),
           ],
         ),
@@ -272,9 +275,19 @@ class _VisitorPassListScreenState extends State<VisitorPassListScreen>
           : TabBarView(
         controller: _tabController,
         children: [
-          _buildList(_pending, emptyIcon: Icons.hourglass_empty_outlined, emptyMsg: 'No pending requests'),
-          _buildList(_approved, showQR: true, emptyIcon: Icons.check_circle_outline, emptyMsg: 'No approved passes'),
-          _buildList(_others, emptyIcon: Icons.history, emptyMsg: 'No past passes'),
+          _buildList(_pending,
+              emptyIcon: Icons.hourglass_empty_outlined,
+              emptyMsg: 'No pending requests'),
+          _buildList(_approved,
+              showQR: true,
+              emptyIcon: Icons.check_circle_outline,
+              emptyMsg: 'No approved passes'),
+          _buildList(_rejected,
+              emptyIcon: Icons.cancel_outlined,
+              emptyMsg: 'No rejected passes'),
+          _buildList(_used,
+              emptyIcon: Icons.history,
+              emptyMsg: 'No used passes'),
         ],
       ),
     );
@@ -312,7 +325,7 @@ class _VisitorPassListScreenState extends State<VisitorPassListScreen>
   }
 }
 
-// ─── Pass Card ────────────────────────────────────────────────────────────────
+// ─── Pass Card (unchanged) ────────────────────────────────────────────────────
 
 class _PassCard extends StatelessWidget {
   final Map<String, dynamic> pass;
@@ -335,8 +348,8 @@ class _PassCard extends StatelessWidget {
     };
     final status      = pass['status'] as String;
     final statusColor = statusColors[status] ?? Colors.grey;
-    final validDate   = DateFormat('d MMM, yyyy')
-        .format(DateTime.parse(pass['valid_date']));
+    final validDate   =
+    DateFormat('d MMM, yyyy').format(DateTime.parse(pass['valid_date']));
     final purposeLabel =
     pass['purpose'] == 'event' ? 'Event' : 'Normal Visit';
     final initials = (pass['visitor_name'] as String)
@@ -361,13 +374,11 @@ class _PassCard extends StatelessWidget {
       ),
       child: Column(
         children: [
-          // ── Top section ──────────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Avatar
                 CircleAvatar(
                   radius: 24,
                   backgroundColor: const Color(0xFFEADFD6),
@@ -385,7 +396,6 @@ class _PassCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Name + status chip
                       Row(children: [
                         Expanded(
                           child: Text(
@@ -412,8 +422,6 @@ class _PassCard extends StatelessWidget {
                           ),
                         ),
                       ]),
-
-                      // IC
                       if (pass['visitor_ic'] != null &&
                           (pass['visitor_ic'] as String).isNotEmpty) ...[
                         const SizedBox(height: 3),
@@ -421,14 +429,10 @@ class _PassCard extends StatelessWidget {
                             style: const TextStyle(
                                 fontSize: 13, color: Colors.black54)),
                       ],
-
-                      // Date
                       const SizedBox(height: 3),
                       Text(validDate,
                           style: const TextStyle(
                               fontSize: 12, color: Colors.black38)),
-
-                      // Event title (if event purpose)
                       if (pass['events'] != null) ...[
                         const SizedBox(height: 2),
                         Row(children: [
@@ -445,8 +449,6 @@ class _PassCard extends StatelessWidget {
                           ),
                         ]),
                       ],
-
-                      // Reason (if normal visit)
                       if (pass['reason'] != null &&
                           (pass['reason'] as String).isNotEmpty) ...[
                         const SizedBox(height: 2),
@@ -465,8 +467,6 @@ class _PassCard extends StatelessWidget {
                           ),
                         ]),
                       ],
-
-                      // Purpose pill
                       const SizedBox(height: 6),
                       Container(
                         padding: const EdgeInsets.symmetric(
@@ -489,8 +489,6 @@ class _PassCard extends StatelessWidget {
               ],
             ),
           ),
-
-          // ── View QR button (approved only) ───────────────────────────
           if (onViewQR != null) ...[
             const Divider(height: 1, thickness: 1, color: Color(0xFFF0EBE6)),
             InkWell(

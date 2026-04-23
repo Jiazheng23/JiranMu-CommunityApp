@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../AdminVisitorPassScreen.dart';
 
 class RequestDetailPage extends StatefulWidget {
   final Map data;
@@ -36,7 +37,6 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
     return null;
   }
 
-  // --- ACTIONS (APPROVE/REJECT) ---
   Future<void> approve() async {
     try {
       final String requestId = widget.data['request_id'].toString();
@@ -64,51 +64,33 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
         if (subData != null) {
           await supabase.from('events').insert({
             'id': requestId,
-            'title': subData['event_title'] ?? widget.data['title'] ??
-                "New Event",
-            'description': subData['description'] ??
-                widget.data['description'] ?? "",
+            'title': subData['event_title'] ?? widget.data['title'] ?? "New Event",
+            'description': subData['description'] ?? widget.data['description'] ?? "",
             'location': subData['location'] ?? "Community Hall",
             'event_date': subData['date'] ?? DateTime.now().toIso8601String(),
             'start_time': subData['start_time'],
             'end_time': subData['end_time'],
             'image_url': subData['image_url'],
             'user_id': userId,
-            'created_by_name': subData['created_by_name'] ??
-                subData['full_name'] ?? "Resident",
+            'created_by_name': subData['created_by_name'] ?? subData['full_name'] ?? "Resident",
             'is_private': subData['is_private'] ?? false,
             'created_at': DateTime.now().toIso8601String(),
             'max_capacity': subData['max_capacity'] ?? 20,
             'participants': 0,
           });
         }
-
-        //   // ── VISITOR: create a visitor_pass row with a QR token ──
-        // } else if (type == 'visitor') {
-        //   final subData = extractSubData(widget.data['visitor_requests']);
-        //   if (subData != null) {
-        //     // Generate a unique QR token from request ID + timestamp
-        //     final String qrToken =
-        //         'VP-$requestId-${DateTime.now().millisecondsSinceEpoch}';
-        //
-        //     await supabase.from('visitor_passes').insert({
-        //       'visitor_name': subData['visitor_name'],
-        //       'visitor_ic': subData['visitor_ic'],         // adjust if your column differs
-        //       'valid_date': subData['visit_date'] ??
-        //           subData['valid_date'] ??
-        //           DateTime.now().toIso8601String(),        // adjust column name if needed
-        //       'purpose': subData['purpose'],
-        //       'event_id': subData['event_id'],             // null is fine if not linked
-        //       'qr_token': qrToken,
-        //       'status': 'approved',
-        //       'request_id': requestId,                     // links back to requests table
-        //       'user_id': userId,
-        //       'created_at': DateTime.now().toIso8601String(),
-        //     });
-        //   }
-        // }
-
+      } else if (type == 'visitor') {
+        final subData = extractSubData(widget.data['visitor_requests']);
+        if (subData != null) {
+          await supabase.from('visitor_passes').insert({
+            'visitor_name': subData['visitor_name'],
+            'visitor_ic':   subData['ic'],
+            'valid_date':   subData['visit_date'],
+            'status':       'approved',
+          });
+        }
       }
+
       // Always update the parent request status
       await supabase.from('requests').update({
         'status': 'approved',
@@ -116,11 +98,22 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
         'processed_by': adminName,
       }).eq('request_id', requestId);
 
-      if (mounted) Navigator.pop(context);
+      if (mounted) {
+        if (type == 'visitor') {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const AdminVisitorPassScreen(),
+            ),
+          );
+        } else {
+          Navigator.pop(context);
+        }
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text("Error: $e")));
+            .showSnackBar(SnackBar(content: Text("Error approving: $e")));
       }
     }
   }
@@ -138,12 +131,11 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text("Error: $e")));
+            .showSnackBar(SnackBar(content: Text("Error rejecting: $e")));
       }
     }
   }
 
-  // --- UI TILE HELPER ---
   Widget _buildDetailTile(String key, dynamic value, {String? endTime}) {
     String k = key.toLowerCase();
     String displayValue = value?.toString() ?? "-";
@@ -162,9 +154,10 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
               width: double.infinity,
               fit: BoxFit.cover,
               errorBuilder: (_, __, ___) => Container(
-                  height: 100,
-                  color: Colors.grey[200],
-                  child: const Icon(Icons.broken_image)),
+                height: 100,
+                color: Colors.grey[200],
+                child: const Icon(Icons.broken_image),
+              ),
             ),
           ),
         ],
@@ -182,16 +175,13 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
             child: Row(
               children: [
                 Text(displayValue,
-                    style: const TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.bold)),
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                 const Padding(
                   padding: EdgeInsets.symmetric(horizontal: 10),
-                  child: Icon(Icons.arrow_forward_rounded,
-                      size: 14, color: Colors.grey),
+                  child: Icon(Icons.arrow_forward_rounded, size: 14, color: Colors.grey),
                 ),
                 Text(endTime,
-                    style: const TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.bold)),
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               ],
             ),
           ),
@@ -208,8 +198,7 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
           const SizedBox(height: 6),
           Container(
             margin: const EdgeInsets.only(left: 24),
-            padding:
-            const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
               color: isPrivate ? Colors.red.shade50 : Colors.green.shade50,
               borderRadius: BorderRadius.circular(20),
@@ -218,8 +207,7 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(isPrivate ? Icons.lock : Icons.public,
-                    size: 12,
-                    color: isPrivate ? Colors.red : Colors.green),
+                    size: 12, color: isPrivate ? Colors.red : Colors.green),
                 const SizedBox(width: 4),
                 Text(isPrivate ? "PRIVATE" : "PUBLIC",
                     style: TextStyle(
@@ -236,8 +224,7 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildLabel(
-            _getIconForKey(k), key.replaceAll('_', ' ').toUpperCase()),
+        _buildLabel(_getIconForKey(k), key.replaceAll('_', ' ').toUpperCase()),
         const SizedBox(height: 6),
         Padding(
           padding: const EdgeInsets.only(left: 24),
@@ -283,10 +270,10 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
     final status = data['status'] ?? 'pending';
 
     Map? details;
-    if (type == 'admin') details = extractSubData(data['admin_requests']);
+    if (type == 'admin')    details = extractSubData(data['admin_requests']);
     else if (type == 'resident') details = extractSubData(data['resident_requests']);
-    else if (type == 'visitor') details = extractSubData(data['visitor_requests']);
-    else if (type == 'booking') details = extractSubData(data['event_requests']);
+    else if (type == 'visitor')  details = extractSubData(data['visitor_requests']);
+    else if (type == 'booking')  details = extractSubData(data['event_requests']);
     else if (type == 'facility') details = extractSubData(data['facility_requests']);
 
     return Scaffold(
@@ -307,8 +294,7 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
             const SizedBox(height: 30),
             if (details != null) ...[
               const Row(children: [
-                Icon(Icons.assignment_outlined,
-                    size: 18, color: Colors.blueGrey),
+                Icon(Icons.assignment_outlined, size: 18, color: Colors.blueGrey),
                 SizedBox(width: 8),
                 Text("SPECIFIC DETAILS",
                     style: TextStyle(
@@ -324,8 +310,7 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
                 decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(16),
-                    border:
-                    Border.all(color: Colors.grey.shade200)),
+                    border: Border.all(color: Colors.grey.shade200)),
                 child: Wrap(
                   spacing: 20,
                   runSpacing: 25,
@@ -335,17 +320,15 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
                       e.key != 'id' &&
                       e.key != 'end_time')
                       .map((e) {
-                    bool isFullWidth = e.key
-                        .toLowerCase()
-                        .contains('image') ||
-                        e.key.toLowerCase().contains('description') ||
-                        e.key.toLowerCase().contains('start_time');
+                    bool isFullWidth =
+                        e.key.toLowerCase().contains('image') ||
+                            e.key.toLowerCase().contains('description') ||
+                            e.key.toLowerCase().contains('start_time');
 
                     return SizedBox(
                       width: isFullWidth
                           ? double.infinity
-                          : (MediaQuery.of(context).size.width - 100) /
-                          2,
+                          : (MediaQuery.of(context).size.width - 100) / 2,
                       child: _buildDetailTile(
                         e.key,
                         e.value,
@@ -384,17 +367,14 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
                   fontSize: 10,
                   fontWeight: FontWeight.bold,
                   color: Color(0xFF6D4C41))),
-          backgroundColor:
-          const Color(0xFF6D4C41).withOpacity(0.1),
+          backgroundColor: const Color(0xFF6D4C41).withOpacity(0.1),
         ),
         const SizedBox(height: 12),
         Text(data['title'] ?? "No Title",
-            style: const TextStyle(
-                fontSize: 22, fontWeight: FontWeight.bold)),
+            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
         const SizedBox(height: 8),
         Text(data['description'] ?? "No description",
-            style: TextStyle(
-                color: Colors.grey.shade600, height: 1.4),
+            style: TextStyle(color: Colors.grey.shade600, height: 1.4),
             textAlign: TextAlign.center),
       ]),
     );
@@ -406,28 +386,21 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
         padding: const EdgeInsets.all(20),
         width: double.infinity,
         decoration: BoxDecoration(
-            color: status == 'approved'
-                ? Colors.green.shade50
-                : Colors.red.shade50,
+            color: status == 'approved' ? Colors.green.shade50 : Colors.red.shade50,
             borderRadius: BorderRadius.circular(16)),
         child: Column(children: [
           Icon(
-              status == 'approved'
-                  ? Icons.check_circle
-                  : Icons.cancel,
+              status == 'approved' ? Icons.check_circle : Icons.cancel,
               color: status == 'approved' ? Colors.green : Colors.red,
               size: 30),
           const SizedBox(height: 8),
           Text("REQUEST ${status.toUpperCase()}",
               style: TextStyle(
                   fontWeight: FontWeight.w900,
-                  color: status == 'approved'
-                      ? Colors.green
-                      : Colors.red)),
+                  color: status == 'approved' ? Colors.green : Colors.red)),
           if (widget.data['processed_by'] != null)
             Text("By: ${widget.data['processed_by']}",
-                style: const TextStyle(
-                    fontSize: 12, fontStyle: FontStyle.italic)),
+                style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic)),
         ]),
       );
     }
@@ -442,12 +415,10 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
           fillColor: Colors.white,
           border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide:
-              BorderSide(color: Colors.grey.shade200)),
+              borderSide: BorderSide(color: Colors.grey.shade200)),
           enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide:
-              BorderSide(color: Colors.grey.shade200)),
+              borderSide: BorderSide(color: Colors.grey.shade200)),
         ),
       ),
       const SizedBox(height: 20),
@@ -461,9 +432,7 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12))),
             child: const Text("APPROVE",
-                style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold)),
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           ),
         ),
         const SizedBox(width: 10),
@@ -476,9 +445,7 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12))),
             child: const Text("REJECT",
-                style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold)),
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           ),
         ),
       ]),
