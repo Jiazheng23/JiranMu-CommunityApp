@@ -20,12 +20,8 @@ class _FacilityBookingSheetState extends State<FacilityBookingSheet> {
   late DateTime _visibleMonth;
   DateTime? _selectedDate;
 
-  String? _selectedStartTime; // HH:mm:ss
-  String? _selectedEndTime; // HH:mm:ss
-
-  final TextEditingController _participantsController =
-  TextEditingController(text: '1');
-  final TextEditingController _purposeController = TextEditingController();
+  String? _selectedStartTime;
+  String? _selectedEndTime;
 
   bool _isLoadingSlots = false;
   bool _isSubmitting = false;
@@ -41,8 +37,6 @@ class _FacilityBookingSheetState extends State<FacilityBookingSheet> {
 
   @override
   void dispose() {
-    _participantsController.dispose();
-    _purposeController.dispose();
     super.dispose();
   }
 
@@ -110,6 +104,8 @@ class _FacilityBookingSheetState extends State<FacilityBookingSheet> {
   }
 
   Future<void> _selectDate(DateTime date) async {
+    if (_isPastDate(date)) return;
+
     setState(() {
       _selectedDate = date;
       _selectedStartTime = null;
@@ -153,10 +149,9 @@ class _FacilityBookingSheetState extends State<FacilityBookingSheet> {
       return;
     }
 
-    final initialTime =
-        _timeOfDayFromDbString(_selectedStartTime) ??
-            _timeOfDayFromDbString(widget.facility.openTime) ??
-            TimeOfDay.now();
+    final initialTime = _timeOfDayFromDbString(_selectedStartTime) ??
+        _timeOfDayFromDbString(widget.facility.openTime) ??
+        TimeOfDay.now();
 
     final picked = await showTimePicker(
       context: context,
@@ -192,10 +187,8 @@ class _FacilityBookingSheetState extends State<FacilityBookingSheet> {
       return;
     }
 
-    final pickedDbTime = _formatMinutesToDbTime(pickedMinutes);
-
     setState(() {
-      _selectedStartTime = pickedDbTime;
+      _selectedStartTime = _formatMinutesToDbTime(pickedMinutes);
 
       final currentEndMinutes = _selectedEndTime == null
           ? null
@@ -230,10 +223,9 @@ class _FacilityBookingSheetState extends State<FacilityBookingSheet> {
         ? startMinutes + 60
         : closeMinutes;
 
-    final initialTime =
-        _timeOfDayFromDbString(_selectedEndTime) ??
-            _timeOfDayFromMinutes(suggestedMinutes) ??
-            TimeOfDay.now();
+    final initialTime = _timeOfDayFromDbString(_selectedEndTime) ??
+        _timeOfDayFromMinutes(suggestedMinutes) ??
+        TimeOfDay.now();
 
     final picked = await showTimePicker(
       context: context,
@@ -345,34 +337,13 @@ class _FacilityBookingSheetState extends State<FacilityBookingSheet> {
 
       if (hasOverlap) {
         await _showErrorDialog(
-          'This selected time range overlaps with an existing booking/request.',
+          'This selected time range overlaps with an existing booking.',
         );
         return;
       }
     }
 
-    int participants = 1;
-    if (widget.facility.requiresApproval && !widget.facility.isShared) {
-      participants = int.tryParse(_participantsController.text.trim()) ?? 0;
-
-      if (participants < 1) {
-        await _showErrorDialog('Participants must be at least 1.');
-        return;
-      }
-
-      if (participants > widget.facility.capacity) {
-        await _showErrorDialog(
-          'Participants cannot exceed facility capacity (${widget.facility.capacity}).',
-        );
-        return;
-      }
-    }
-
-    if (widget.facility.purposeRequired &&
-        _purposeController.text.trim().isEmpty) {
-      await _showErrorDialog('Purpose is required.');
-      return;
-    }
+    const int participants = 1;
 
     setState(() {
       _isSubmitting = true;
@@ -385,7 +356,6 @@ class _FacilityBookingSheetState extends State<FacilityBookingSheet> {
         startTime: _selectedStartTime!,
         endTime: _selectedEndTime!,
         participants: participants,
-        purpose: _purposeController.text.trim(),
       );
 
       if (!mounted) return;
@@ -487,6 +457,48 @@ class _FacilityBookingSheetState extends State<FacilityBookingSheet> {
     return 'Maximum duration: $hours hour(s) $remainingMinutes minute(s)';
   }
 
+  Widget _buildDayCell(DateTime? date) {
+    if (date == null) {
+      return const SizedBox.shrink();
+    }
+
+    final isSelected =
+        _selectedDate != null && _isSameDate(date, _selectedDate!);
+    final isPast = _isPastDate(date);
+
+    return InkWell(
+      onTap: isPast ? null : () => _selectDate(date),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: isSelected
+              ? const Color(0xFF9A4B3C)
+              : isPast
+              ? Colors.grey.shade100
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected
+                ? const Color(0xFF9A4B3C)
+                : const Color(0xFFE4DDD6),
+          ),
+        ),
+        child: Text(
+          '${date.day}',
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            color: isSelected
+                ? Colors.white
+                : isPast
+                ? Colors.grey
+                : const Color(0xFF2B2B2B),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildBookedRangesSection() {
     if (_selectedDate == null) return const SizedBox.shrink();
 
@@ -500,7 +512,7 @@ class _FacilityBookingSheetState extends State<FacilityBookingSheet> {
           border: Border.all(color: const Color(0xFFE4DDD6)),
         ),
         child: const Text(
-          'No existing approved bookings for this date.',
+          'No unavailable time ranges for this date.',
           style: TextStyle(
             fontSize: 13,
             color: Colors.black54,
@@ -521,7 +533,7 @@ class _FacilityBookingSheetState extends State<FacilityBookingSheet> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Existing booked time ranges',
+            'Unavailable time ranges',
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w700,
@@ -561,13 +573,29 @@ class _FacilityBookingSheetState extends State<FacilityBookingSheet> {
     );
   }
 
+  InputDecoration _inputDecoration(String label) {
+    return InputDecoration(
+      labelText: label,
+      filled: true,
+      fillColor: Colors.white,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: Color(0xFFE4DDD6)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: Color(0xFFE4DDD6)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: Color(0xFF9A4B3C), width: 1.5),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final calendarDays = _buildCalendarDays();
-
-    final buttonText = widget.facility.isInstantBooking
-        ? 'Confirm Booking'
-        : 'Submit Request';
 
     return SafeArea(
       child: FractionallySizedBox(
@@ -595,9 +623,7 @@ class _FacilityBookingSheetState extends State<FacilityBookingSheet> {
                         ],
                       ),
                       Text(
-                        widget.facility.isInstantBooking
-                            ? 'Book ${widget.facility.name}'
-                            : 'Request ${widget.facility.name}',
+                        'Book ${widget.facility.name}',
                         style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w700,
@@ -605,11 +631,9 @@ class _FacilityBookingSheetState extends State<FacilityBookingSheet> {
                         ),
                       ),
                       const SizedBox(height: 6),
-                      Text(
-                        widget.facility.isInstantBooking
-                            ? 'Select a date and exact time range to confirm your booking.'
-                            : 'Select a date and exact time range, then submit for admin approval.',
-                        style: const TextStyle(
+                      const Text(
+                        'Select a date and exact time range to confirm your booking.',
+                        style: TextStyle(
                           fontSize: 13,
                           color: Colors.black54,
                         ),
@@ -666,6 +690,7 @@ class _FacilityBookingSheetState extends State<FacilityBookingSheet> {
                                     textAlign: TextAlign.center,
                                     style: const TextStyle(
                                       fontWeight: FontWeight.w700,
+                                      color: Color(0xFF2B2B2B),
                                     ),
                                   ),
                                 ),
@@ -675,19 +700,19 @@ class _FacilityBookingSheetState extends State<FacilityBookingSheet> {
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 10),
                             const Row(
                               children: [
-                                _WeekdayLabel(label: 'Su'),
-                                _WeekdayLabel(label: 'Mo'),
-                                _WeekdayLabel(label: 'Tu'),
-                                _WeekdayLabel(label: 'We'),
-                                _WeekdayLabel(label: 'Th'),
-                                _WeekdayLabel(label: 'Fr'),
-                                _WeekdayLabel(label: 'Sa'),
+                                Expanded(child: Center(child: Text('Sun'))),
+                                Expanded(child: Center(child: Text('Mon'))),
+                                Expanded(child: Center(child: Text('Tue'))),
+                                Expanded(child: Center(child: Text('Wed'))),
+                                Expanded(child: Center(child: Text('Thu'))),
+                                Expanded(child: Center(child: Text('Fri'))),
+                                Expanded(child: Center(child: Text('Sat'))),
                               ],
                             ),
-                            const SizedBox(height: 6),
+                            const SizedBox(height: 10),
                             GridView.builder(
                               shrinkWrap: true,
                               physics: const NeverScrollableScrollPhysics(),
@@ -695,169 +720,89 @@ class _FacilityBookingSheetState extends State<FacilityBookingSheet> {
                               gridDelegate:
                               const SliverGridDelegateWithFixedCrossAxisCount(
                                 crossAxisCount: 7,
-                                mainAxisSpacing: 6,
-                                crossAxisSpacing: 6,
+                                crossAxisSpacing: 8,
+                                mainAxisSpacing: 8,
                                 childAspectRatio: 1,
                               ),
                               itemBuilder: (context, index) {
-                                final date = calendarDays[index];
-                                if (date == null) {
-                                  return const SizedBox.shrink();
-                                }
-
-                                final isSelected = _selectedDate != null &&
-                                    _isSameDate(_selectedDate!, date);
-                                final isPast = _isPastDate(date);
-
-                                return InkWell(
-                                  onTap: isPast ? null : () => _selectDate(date),
-                                  borderRadius: BorderRadius.circular(10),
-                                  child: Container(
-                                    alignment: Alignment.center,
-                                    decoration: BoxDecoration(
-                                      color: isSelected
-                                          ? const Color(0xFF9A4B3C)
-                                          : Colors.transparent,
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    child: Text(
-                                      '${date.day}',
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                        color: isPast
-                                            ? Colors.black26
-                                            : isSelected
-                                            ? Colors.white
-                                            : const Color(0xFF2B2B2B),
-                                      ),
-                                    ),
-                                  ),
-                                );
+                                return _buildDayCell(calendarDays[index]);
                               },
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 20),
-                      const Text(
-                        'Select Time Range',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF2B2B2B),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 16),
                       if (_isLoadingSlots)
                         const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 24),
-                          child: Center(child: CircularProgressIndicator()),
+                          padding: EdgeInsets.symmetric(vertical: 16),
+                          child: Center(
+                            child: CircularProgressIndicator(),
+                          ),
                         )
-                      else ...[
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _TimePickerField(
-                                label: 'Start Time',
-                                value: _selectedStartTime == null
-                                    ? null
-                                    : _formatDbTimeTo12Hour(_selectedStartTime!),
-                                onTap: _selectedDate == null ? null : _pickStartTime,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: _TimePickerField(
-                                label: 'End Time',
-                                value: _selectedEndTime == null
-                                    ? null
-                                    : _formatDbTimeTo12Hour(_selectedEndTime!),
-                                onTap: (_selectedDate == null ||
-                                    _selectedStartTime == null)
-                                    ? null
-                                    : _pickEndTime,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 14),
+                      else
                         _buildBookedRangesSection(),
-                      ],
-                      if (widget.facility.requiresApproval &&
-                          !widget.facility.isShared) ...[
-                        const SizedBox(height: 20),
-                        const Text(
-                          'Participants',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF2B2B2B),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        TextField(
-                          controller: _participantsController,
-                          keyboardType: TextInputType.number,
-                          decoration: InputDecoration(
-                            hintText: 'Enter number of participants',
-                            helperText: 'Maximum: ${widget.facility.capacity}',
-                            filled: true,
-                            fillColor: Colors.white,
-                            border: OutlineInputBorder(
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: InkWell(
+                              onTap: _pickStartTime,
                               borderRadius: BorderRadius.circular(14),
-                              borderSide: const BorderSide(
-                                color: Color(0xFFE4DDD6),
-                              ),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(14),
-                              borderSide: const BorderSide(
-                                color: Color(0xFFE4DDD6),
+                              child: InputDecorator(
+                                decoration: _inputDecoration('Start Time').copyWith(
+                                  suffixIcon:
+                                  const Icon(Icons.access_time_outlined),
+                                ),
+                                child: Text(
+                                  _selectedStartTime == null
+                                      ? 'Select time'
+                                      : _formatDbTimeTo12Hour(_selectedStartTime!),
+                                  style: TextStyle(
+                                    color: _selectedStartTime == null
+                                        ? Colors.grey.shade600
+                                        : const Color(0xFF2B2B2B),
+                                  ),
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      ],
-                      if (widget.facility.purposeRequired) ...[
-                        const SizedBox(height: 16),
-                        const Text(
-                          'Purpose',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF2B2B2B),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        TextField(
-                          controller: _purposeController,
-                          maxLines: 3,
-                          decoration: InputDecoration(
-                            hintText: 'Purpose is required',
-                            filled: true,
-                            fillColor: Colors.white,
-                            border: OutlineInputBorder(
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: InkWell(
+                              onTap: _pickEndTime,
                               borderRadius: BorderRadius.circular(14),
-                              borderSide: const BorderSide(
-                                color: Color(0xFFE4DDD6),
-                              ),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(14),
-                              borderSide: const BorderSide(
-                                color: Color(0xFFE4DDD6),
+                              child: InputDecorator(
+                                decoration: _inputDecoration('End Time').copyWith(
+                                  suffixIcon:
+                                  const Icon(Icons.access_time_outlined),
+                                ),
+                                child: Text(
+                                  _selectedEndTime == null
+                                      ? 'Select time'
+                                      : _formatDbTimeTo12Hour(_selectedEndTime!),
+                                  style: TextStyle(
+                                    color: _selectedEndTime == null
+                                        ? Colors.grey.shade600
+                                        : const Color(0xFF2B2B2B),
+                                  ),
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ],
                   ),
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(18, 8, 18, 18),
+              Container(
+                padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFF7F3EE),
+                  border: Border(
+                    top: BorderSide(color: Color(0xFFE4DDD6)),
+                  ),
+                ),
                 child: SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
@@ -865,25 +810,26 @@ class _FacilityBookingSheetState extends State<FacilityBookingSheet> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF9A4B3C),
                       foregroundColor: Colors.white,
-                      disabledBackgroundColor: Colors.grey.shade400,
+                      disabledBackgroundColor: Colors.grey.shade300,
+                      disabledForegroundColor: Colors.white70,
                       elevation: 0,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      padding: const EdgeInsets.symmetric(vertical: 15),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
                       ),
                     ),
                     child: _isSubmitting
                         ? const SizedBox(
-                      width: 22,
-                      height: 22,
+                      height: 20,
+                      width: 20,
                       child: CircularProgressIndicator(
-                        strokeWidth: 2.5,
+                        strokeWidth: 2.2,
                         color: Colors.white,
                       ),
                     )
-                        : Text(
-                      buttonText,
-                      style: const TextStyle(
+                        : const Text(
+                      'Confirm Booking',
+                      style: TextStyle(
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -921,7 +867,11 @@ class _InfoRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icon, size: 18, color: Colors.black54),
+        Icon(
+          icon,
+          size: 18,
+          color: Colors.black54,
+        ),
         const SizedBox(width: 8),
         Expanded(
           child: Text(
@@ -933,83 +883,6 @@ class _InfoRow extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _WeekdayLabel extends StatelessWidget {
-  const _WeekdayLabel({
-    required this.label,
-  });
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Text(
-        label,
-        textAlign: TextAlign.center,
-        style: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
-          color: Color(0xFF6A6A6A),
-        ),
-      ),
-    );
-  }
-}
-
-class _TimePickerField extends StatelessWidget {
-  const _TimePickerField({
-    required this.label,
-    required this.value,
-    required this.onTap,
-  });
-
-  final String label;
-  final String? value;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final isDisabled = onTap == null;
-
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
-        decoration: BoxDecoration(
-          color: isDisabled ? Colors.grey.shade100 : Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: const Color(0xFFE4DDD6)),
-        ),
-        child: Row(
-          children: [
-            const Icon(
-              Icons.access_time_rounded,
-              size: 18,
-              color: Colors.black54,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                value ?? label,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: value == null ? Colors.black45 : const Color(0xFF2B2B2B),
-                  fontWeight: value == null ? FontWeight.w500 : FontWeight.w600,
-                ),
-              ),
-            ),
-            const Icon(
-              Icons.keyboard_arrow_down_rounded,
-              color: Colors.black45,
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

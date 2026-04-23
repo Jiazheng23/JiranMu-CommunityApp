@@ -2,6 +2,7 @@ import 'package:assignment/facility/facility_model.dart';
 import 'package:assignment/facility/facility_service.dart';
 import 'package:flutter/material.dart';
 import 'create_facility_page.dart';
+import 'facility_unavailable_slots_page.dart';
 
 class ManageFacilityPage extends StatefulWidget {
   const ManageFacilityPage({super.key});
@@ -70,25 +71,164 @@ class _ManageFacilityPageState extends State<ManageFacilityPage> {
     }
   }
 
+  Future<void> _openUnavailableSlotsPage(FacilityModel facility) async {
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => FacilityUnavailableSlotsPage(facility: facility),
+      ),
+    );
+
+    if (result == true && mounted) {
+      _reloadFacilities();
+    }
+  }
+
   Future<void> _toggleActive(FacilityModel facility, bool newValue) async {
     try {
-      await _facilityService.updateFacilityActiveStatus(
-        id: facility.id,
-        isActive: newValue,
-      );
+      if (newValue == facility.isActive) return;
+
+      if (newValue) {
+        await _facilityService.updateFacilityActiveStatus(
+          id: facility.id,
+          isActive: true,
+        );
+
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${facility.name} is now available')),
+        );
+        _reloadFacilities();
+        return;
+      }
+
+      final upcomingCount =
+      await _facilityService.fetchUpcomingApprovedBookingCount(facility.id);
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            newValue
-                ? '${facility.name} activated'
-                : '${facility.name} deactivated',
+      if (upcomingCount == 0) {
+        final confirm = await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Mark as unavailable?'),
+            content: Text(
+              'This will stop new resident bookings for ${facility.name}.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryColor,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Confirm'),
+              ),
+            ],
           ),
-        ),
+        );
+
+        if (confirm == true) {
+          await _facilityService.updateFacilityActiveStatus(
+            id: facility.id,
+            isActive: false,
+          );
+
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('${facility.name} is now unavailable')),
+          );
+        }
+
+        _reloadFacilities();
+        return;
+      }
+
+      final reasonController = TextEditingController();
+      String? errorText;
+
+      final confirmed = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) {
+          return StatefulBuilder(
+            builder: (context, setDialogState) {
+              return AlertDialog(
+                title: const Text('Cancel bookings and mark unavailable?'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${facility.name} has $upcomingCount upcoming approved booking(s).',
+                    ),
+                    const SizedBox(height: 10),
+                    const Text(
+                      'To continue, enter a reason. The upcoming bookings will be cancelled and residents can see the reason in booking history.',
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: reasonController,
+                      maxLines: 3,
+                      decoration: InputDecoration(
+                        labelText: 'Cancellation reason',
+                        errorText: errorText,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(dialogContext, false),
+                    child: const Text('Back'),
+                  ),
+                  ElevatedButton(
+                    onPressed: () {
+                      if (reasonController.text.trim().isEmpty) {
+                        setDialogState(() {
+                          errorText = 'Please enter a reason';
+                        });
+                        return;
+                      }
+                      Navigator.pop(dialogContext, true);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primaryColor,
+                      foregroundColor: Colors.white,
+                    ),
+                    child: const Text('Cancel & Confirm'),
+                  ),
+                ],
+              );
+            },
+          );
+        },
       );
 
+      if (confirmed == true) {
+        await _facilityService.deactivateFacilityAndCancelUpcomingBookings(
+          facilityId: facility.id,
+          reason: reasonController.text.trim(),
+        );
+
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '${facility.name} is now unavailable and upcoming bookings were cancelled.',
+            ),
+          ),
+        );
+      }
+
+      reasonController.dispose();
       _reloadFacilities();
     } catch (e) {
       if (!mounted) return;
@@ -96,6 +236,7 @@ class _ManageFacilityPageState extends State<ManageFacilityPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to update facility: $e')),
       );
+      _reloadFacilities();
     }
   }
 
@@ -240,7 +381,9 @@ class _ManageFacilityPageState extends State<ManageFacilityPage> {
               runSpacing: 8,
               children: [
                 _buildInfoChip(
-                  isVenue ? Icons.location_city_outlined : Icons.home_work_outlined,
+                  isVenue
+                      ? Icons.location_city_outlined
+                      : Icons.home_work_outlined,
                   isVenue ? 'Event' : 'Facility',
                 ),
                 _buildInfoChip(Icons.people_outline, '${facility.capacity} pax'),
@@ -277,6 +420,21 @@ class _ManageFacilityPageState extends State<ManageFacilityPage> {
                     style: OutlinedButton.styleFrom(
                       foregroundColor: primaryColor,
                       side: const BorderSide(color: primaryColor),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _openUnavailableSlotsPage(facility),
+                    icon: const Icon(Icons.block_flipped),
+                    label: const Text('Slots'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: textDark,
+                      side: BorderSide(color: Colors.grey.shade400),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
                       ),
