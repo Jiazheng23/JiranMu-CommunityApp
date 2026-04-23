@@ -49,7 +49,8 @@ class _ManageFacilityPageState extends State<ManageFacilityPage> {
     return facilities.where((facility) {
       return facility.name.toLowerCase().contains(query) ||
           facility.location.toLowerCase().contains(query) ||
-          facility.bookingMode.toLowerCase().contains(query);
+          facility.bookingMode.toLowerCase().contains(query) ||
+          facility.usageType.toLowerCase().contains(query);
     }).toList();
   }
 
@@ -132,8 +133,10 @@ class _ManageFacilityPageState extends State<ManageFacilityPage> {
           color: softYellow.withOpacity(0.45),
           borderRadius: BorderRadius.circular(16),
         ),
-        child: const Icon(
-          Icons.apartment_rounded,
+        child: Icon(
+          facility.usageType == 'event'
+              ? Icons.location_city_rounded
+              : Icons.apartment_rounded,
           color: primaryColor,
           size: 30,
         ),
@@ -166,6 +169,8 @@ class _ManageFacilityPageState extends State<ManageFacilityPage> {
   }
 
   Widget _buildFacilityCard(FacilityModel facility) {
+    final isVenue = facility.usageType == 'event';
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       elevation: 0,
@@ -234,6 +239,10 @@ class _ManageFacilityPageState extends State<ManageFacilityPage> {
               spacing: 8,
               runSpacing: 8,
               children: [
+                _buildInfoChip(
+                  isVenue ? Icons.location_city_outlined : Icons.home_work_outlined,
+                  isVenue ? 'Event' : 'Facility',
+                ),
                 _buildInfoChip(Icons.people_outline, '${facility.capacity} pax'),
                 _buildInfoChip(
                   Icons.calendar_view_day_outlined,
@@ -348,7 +357,7 @@ class _ManageFacilityPageState extends State<ManageFacilityPage> {
                     });
                   },
                   decoration: InputDecoration(
-                    hintText: 'Search facility...',
+                    hintText: 'Search facility / event...',
                     hintStyle: TextStyle(color: Colors.grey.shade600),
                     prefixIcon: const Icon(Icons.search, color: primaryColor),
                     suffixIcon: _searchText.isEmpty

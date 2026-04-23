@@ -8,12 +8,17 @@ class FacilityService {
 
   final SupabaseClient _supabase = Supabase.instance.client;
 
-  Future<List<FacilityModel>> fetchFacilities({bool activeOnly = true}) async {
+  Future<List<FacilityModel>> fetchFacilities({
+    bool activeOnly = true,
+    String usageType = 'facility',
+  }) async {
     var query = _supabase.from('facilities').select();
 
     if (activeOnly) {
       query = query.eq('is_active', true);
     }
+
+    query = query.eq('usage_type', usageType);
 
     final data = await query.order('name');
 
@@ -59,6 +64,7 @@ class FacilityService {
     required String openTime,
     required String closeTime,
     required String bookingMode,
+    required String usageType,
     required bool isActive,
     required int slotDurationMinutes,
     int? maxDurationMinutes,
@@ -74,6 +80,7 @@ class FacilityService {
       'open_time': openTime,
       'close_time': closeTime,
       'booking_mode': bookingMode,
+      'usage_type': usageType,
       'is_active': isActive,
       'slot_duration_minutes': slotDurationMinutes,
       'max_duration_minutes': maxDurationMinutes,
@@ -92,6 +99,7 @@ class FacilityService {
     required String openTime,
     required String closeTime,
     required String bookingMode,
+    required String usageType,
     required bool isActive,
     required int slotDurationMinutes,
     int? maxDurationMinutes,
@@ -107,6 +115,7 @@ class FacilityService {
       'open_time': openTime,
       'close_time': closeTime,
       'booking_mode': bookingMode,
+      'usage_type': usageType,
       'is_active': isActive,
       'slot_duration_minutes': slotDurationMinutes,
       'max_duration_minutes': maxDurationMinutes,

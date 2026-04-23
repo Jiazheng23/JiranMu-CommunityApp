@@ -9,6 +9,7 @@ class FacilityModel {
     required this.openTime,
     required this.closeTime,
     required this.bookingMode,
+    required this.usageType,
     required this.isActive,
     required this.slotDurationMinutes,
     required this.maxDurationMinutes,
@@ -25,8 +26,8 @@ class FacilityModel {
   final String openTime;
   final String closeTime;
   final String bookingMode;
+  final String usageType;
   final bool isActive;
-
   final int slotDurationMinutes;
   final int? maxDurationMinutes;
   final bool purposeRequired;
@@ -34,22 +35,26 @@ class FacilityModel {
 
   bool get isInstantBooking => bookingMode == 'instant';
   bool get requiresApproval => bookingMode == 'approval';
-  bool get hasMaxDuration => maxDurationMinutes != null;
+
+  bool get isFacilityType => usageType == 'facility';
+  bool get isVenueType => usageType == 'event';
 
   factory FacilityModel.fromMap(Map<String, dynamic> map) {
     return FacilityModel(
-      id: map['id'] as String,
-      name: map['name'] ?? '',
-      description: map['description'] ?? '',
-      imageUrl: map['image_url'] ?? '',
-      location: map['location'] ?? '',
-      capacity: (map['capacity'] ?? 0) as int,
+      id: map['id']?.toString() ?? '',
+      name: map['name']?.toString() ?? '',
+      description: map['description']?.toString() ?? '',
+      imageUrl: map['image_url']?.toString() ?? '',
+      location: map['location']?.toString() ?? '',
+      capacity: (map['capacity'] as num?)?.toInt() ?? 0,
       openTime: map['open_time']?.toString() ?? '',
       closeTime: map['close_time']?.toString() ?? '',
-      bookingMode: map['booking_mode'] ?? 'instant',
+      bookingMode: map['booking_mode']?.toString() ?? 'instant',
+      usageType: map['usage_type']?.toString() ?? 'facility',
       isActive: map['is_active'] ?? true,
-      slotDurationMinutes: (map['slot_duration_minutes'] ?? 60) as int,
-      maxDurationMinutes: map['max_duration_minutes'] as int?,
+      slotDurationMinutes:
+      (map['slot_duration_minutes'] as num?)?.toInt() ?? 60,
+      maxDurationMinutes: (map['max_duration_minutes'] as num?)?.toInt(),
       purposeRequired: map['purpose_required'] ?? false,
       isShared: map['is_shared'] ?? false,
     );
@@ -66,6 +71,7 @@ class FacilityModel {
       'open_time': openTime,
       'close_time': closeTime,
       'booking_mode': bookingMode,
+      'usage_type': usageType,
       'is_active': isActive,
       'slot_duration_minutes': slotDurationMinutes,
       'max_duration_minutes': maxDurationMinutes,

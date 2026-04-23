@@ -24,9 +24,9 @@ class _ResidentPersonalInformationPageState
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
-  final _icController = TextEditingController();
   final _blockController = TextEditingController();
   final _unitController = TextEditingController();
+  final _residentTypeController = TextEditingController();
   final _ageController = TextEditingController();
   final _heightController = TextEditingController();
   final _weightController = TextEditingController();
@@ -40,10 +40,7 @@ class _ResidentPersonalInformationPageState
     'O',
   ];
 
-  final List<String> _residentTypes = const ['owner', 'tenant'];
-
   String? _selectedBloodType;
-  String _selectedResidentType = 'owner';
   bool _obscureNewPassword = true;
   bool _obscureConfirmPassword = true;
   bool _isSaving = false;
@@ -51,14 +48,16 @@ class _ResidentPersonalInformationPageState
   @override
   void initState() {
     super.initState();
+
     _nameController.text = widget.user['full_name']?.toString() ?? '';
     _emailController.text = widget.user['email']?.toString() ??
         Supabase.instance.client.auth.currentUser?.email ??
         '';
     _phoneController.text = widget.user['phone_number']?.toString() ?? '';
-    _icController.text = widget.user['ic']?.toString() ?? '';
-    _blockController.text = widget.user['block']?.toString() ?? '';
-    _unitController.text = widget.user['unit_number']?.toString() ?? '';
+    _blockController.text = widget.user['block']?.toString() ?? '-';
+    _unitController.text = widget.user['unit_number']?.toString() ?? '-';
+    _residentTypeController.text =
+        _formatResidentType(widget.user['resident_type']?.toString());
     _ageController.text = widget.user['age']?.toString() ?? '';
     _heightController.text = widget.user['height']?.toString() ?? '';
     _weightController.text = widget.user['weight']?.toString() ?? '';
@@ -67,10 +66,24 @@ class _ResidentPersonalInformationPageState
     if (_bloodTypes.contains(bloodValue)) {
       _selectedBloodType = bloodValue;
     }
+  }
 
-    final residentType = widget.user['resident_type']?.toString();
-    if (_residentTypes.contains(residentType)) {
-      _selectedResidentType = residentType!;
+  String _formatResidentType(String? value) {
+    if (value == null || value.trim().isEmpty) return '-';
+
+    final raw = value.trim().toLowerCase();
+    switch (raw) {
+      case 'owner':
+        return 'Owner';
+      case 'tenant':
+        return 'Tenant';
+      case 'family_member':
+        return 'Family Member';
+      default:
+        return raw
+            .split('_')
+            .map((e) => e.isEmpty ? e : '${e[0].toUpperCase()}${e.substring(1)}')
+            .join(' ');
     }
   }
 
@@ -79,9 +92,9 @@ class _ResidentPersonalInformationPageState
     _nameController.dispose();
     _emailController.dispose();
     _phoneController.dispose();
-    _icController.dispose();
     _blockController.dispose();
     _unitController.dispose();
+    _residentTypeController.dispose();
     _ageController.dispose();
     _heightController.dispose();
     _weightController.dispose();
@@ -180,9 +193,6 @@ class _ResidentPersonalInformationPageState
       final updates = {
         'full_name': _nameController.text.trim(),
         'phone_number': _phoneController.text.trim(),
-        'ic': _nullableText(_icController.text),
-        'block': _blockController.text.trim(),
-        'unit_number': _unitController.text.trim(),
         'age': _nullableText(_ageController.text) == null
             ? null
             : int.parse(_ageController.text.trim()),
@@ -193,7 +203,6 @@ class _ResidentPersonalInformationPageState
             ? null
             : double.parse(_weightController.text.trim()),
         'blood': _selectedBloodType,
-        'resident_type': _selectedResidentType,
       };
 
       await Supabase.instance.client
@@ -236,10 +245,18 @@ class _ResidentPersonalInformationPageState
     return Scaffold(
       backgroundColor: _bgColor,
       appBar: AppBar(
-        title: const Text('Personal Information'),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black87,
+        backgroundColor: const Color(0xFF9A4B3C),
+        foregroundColor: Colors.white,
         elevation: 0,
+        scrolledUnderElevation: 0,
+        iconTheme: const IconThemeData(color: Colors.white),
+        title: const Text(
+          'Personal Details',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
@@ -272,12 +289,6 @@ class _ResidentPersonalInformationPageState
                 validator: _validatePhone,
               ),
               const SizedBox(height: 14),
-              _buildTextFormField(
-                label: 'IC Number',
-                icon: Icons.badge_outlined,
-                controller: _icController,
-              ),
-              const SizedBox(height: 14),
               Row(
                 children: [
                   Expanded(
@@ -285,7 +296,7 @@ class _ResidentPersonalInformationPageState
                       label: 'Block',
                       icon: Icons.apartment_outlined,
                       controller: _blockController,
-                      validator: (value) => _validateRequired(value, 'block'),
+                      readOnly: true,
                     ),
                   ),
                   const SizedBox(width: 14),
@@ -294,10 +305,17 @@ class _ResidentPersonalInformationPageState
                       label: 'Unit Number',
                       icon: Icons.home_outlined,
                       controller: _unitController,
-                      validator: (value) => _validateRequired(value, 'unit number'),
+                      readOnly: true,
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 14),
+              _buildTextFormField(
+                label: 'Resident Type',
+                icon: Icons.groups_outlined,
+                controller: _residentTypeController,
+                readOnly: true,
               ),
               const SizedBox(height: 28),
               _buildSectionTitle('Physical Attributes'),
@@ -345,7 +363,9 @@ class _ResidentPersonalInformationPageState
                       label: 'Height (cm)',
                       icon: Icons.height,
                       controller: _heightController,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
                       validator: (value) =>
                           _validatePositiveDouble(value, 'Height'),
                     ),
@@ -356,32 +376,14 @@ class _ResidentPersonalInformationPageState
                       label: 'Weight (kg)',
                       icon: Icons.monitor_weight_outlined,
                       controller: _weightController,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
                       validator: (value) =>
                           _validatePositiveDouble(value, 'Weight'),
                     ),
                   ),
                 ],
-              ),
-              const SizedBox(height: 14),
-              _buildDropdownField<String>(
-                value: _selectedResidentType,
-                label: 'Resident Type',
-                icon: Icons.groups_outlined,
-                items: _residentTypes
-                    .map(
-                      (type) => DropdownMenuItem<String>(
-                    value: type,
-                    child: Text(type[0].toUpperCase() + type.substring(1)),
-                  ),
-                )
-                    .toList(),
-                onChanged: (value) {
-                  if (value == null) return;
-                  setState(() {
-                    _selectedResidentType = value;
-                  });
-                },
               ),
               const SizedBox(height: 28),
               _buildSectionTitle('Security'),
