@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../model/event_model.dart';
-import '../service/event_service.dart';
+import 'package:assignment/event/model/event_model.dart';
+import 'package:assignment/event/service/event_service.dart';
 
 // ─────────────────────────────────────────────
 // Resident Calendar Screen

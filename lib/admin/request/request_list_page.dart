@@ -69,15 +69,12 @@ class _RequestListPageState extends State<RequestListPage> {
       }
 
       // 4. Status and Admin Filtering Logic
-      // - Pending: Everyone sees everything
-      // - Approved/Rejected: Admins only see what THEY processed
       if (statusFilter == "pending") {
         query = query.eq('status', 'pending');
-      } else if (statusFilter == "approved" || statusFilter == "rejected") {
-        query = query.eq('status', statusFilter).eq('processed_by', adminIdentifier);
-      } else {
-        // "All" Tab: Show all pending + my handled history
-        query = query.or('status.eq.pending,and(status.in.(approved,rejected),processed_by.eq."$adminIdentifier")');
+      } else if (statusFilter == "approved") {
+        query = query.eq('status', 'approved');
+      } else if (statusFilter == "rejected") {
+        query = query.eq('status', 'rejected');
       }
 
       final data = await query.order('created_at', ascending: false);
@@ -139,16 +136,18 @@ class _RequestListPageState extends State<RequestListPage> {
     final eventData = extractSubData(data['event_requests']);
     bool isPrivate = eventData?['is_private'] ?? false;
 
+    // 状态颜色保留语义色，但稍微调柔和一点点
     Color statusColor = status == 'approved'
-        ? Colors.green
-        : (status == 'rejected' ? Colors.red : Colors.orange);
+        ? Colors.green.shade600
+        : (status == 'rejected' ? Colors.red.shade600 : Colors.orange.shade600);
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8),
       elevation: 0,
+      color: Colors.white,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: Colors.grey.shade200),
+        side: BorderSide(color: Colors.brown.shade100, width: 1), // 极浅的棕色边框
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
@@ -166,16 +165,21 @@ class _RequestListPageState extends State<RequestListPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(displayName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    Text(
+                        displayName,
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.brown.shade900)
+                    ),
                     const SizedBox(height: 4),
                     Row(
                       children: [
-                        Text(displayLabel,
-                            style: TextStyle(color: Colors.blue.shade700, fontSize: 11, fontWeight: FontWeight.bold)),
+                        Text(
+                            displayLabel,
+                            style: TextStyle(color: Colors.brown.shade600, fontSize: 11, fontWeight: FontWeight.bold) // 类型标签改为主题棕色
+                        ),
                         if (isPrivate && type == 'booking') ...[
                           const SizedBox(width: 8),
-                          const Icon(Icons.lock, size: 10, color: Colors.grey),
-                          const Text(" PRIVATE", style: TextStyle(fontSize: 9, color: Colors.grey)),
+                          Icon(Icons.lock, size: 10, color: Colors.brown.shade400),
+                          Text(" PRIVATE", style: TextStyle(fontSize: 9, color: Colors.brown.shade400)),
                         ],
                       ],
                     ),
@@ -184,7 +188,7 @@ class _RequestListPageState extends State<RequestListPage> {
                       data['processed_by'] != null
                           ? "Handled by: ${data['processed_by']}"
                           : data['created_at'].toString().substring(0, 10),
-                      style: TextStyle(color: Colors.grey.shade500, fontSize: 11),
+                      style: TextStyle(color: Colors.brown.shade400, fontSize: 11),
                     ),
                   ],
                 ),
@@ -202,7 +206,7 @@ class _RequestListPageState extends State<RequestListPage> {
                         style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 10)),
                   ),
                   const SizedBox(height: 12),
-                  const Icon(Icons.chevron_right, color: Colors.grey, size: 20),
+                  Icon(Icons.chevron_right, color: Colors.brown.shade300, size: 20), // 箭头变为浅棕色
                 ],
               ),
             ],
@@ -215,12 +219,27 @@ class _RequestListPageState extends State<RequestListPage> {
   Widget buildSearchBar() {
     return TextField(
       controller: searchController,
+      cursorColor: Colors.brown.shade600,
+      style: TextStyle(color: Colors.brown.shade900),
       decoration: InputDecoration(
         hintText: "Search $statusFilter requests...",
-        prefixIcon: const Icon(Icons.search),
+        hintStyle: TextStyle(color: Colors.brown.shade300),
+        prefixIcon: Icon(Icons.search, color: Colors.brown.shade400),
         filled: true,
         fillColor: Colors.white,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+        contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
+        border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.brown.shade100, width: 1)
+        ),
+        enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.brown.shade100, width: 1)
+        ),
+        focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.brown.shade400, width: 1.5)
+        ),
       ),
       onChanged: (value) {
         setState(() => searchText = value);
@@ -245,12 +264,23 @@ class _RequestListPageState extends State<RequestListPage> {
             fetchRequests();
           },
           child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
             decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: isSelected ? Colors.blue : Colors.transparent, width: 2)),
+              border: Border(
+                  bottom: BorderSide(
+                      color: isSelected ? Colors.brown.shade700 : Colors.transparent, // 选中时底部边框变棕色
+                      width: 2.5
+                  )
+              ),
             ),
-            child: Text(label,
-                style: TextStyle(fontSize: 10, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal, color: isSelected ? Colors.blue : Colors.grey)),
+            child: Text(
+                label,
+                style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                    color: isSelected ? Colors.brown.shade800 : Colors.brown.shade300 // 颜色过渡
+                )
+            ),
           ),
         );
       }).toList(),
@@ -260,11 +290,11 @@ class _RequestListPageState extends State<RequestListPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F6FA),
+      backgroundColor: const Color(0xFFFAF8F5), // 统一的淡米棕色背景
       appBar: AppBar(
         title: Text("${widget.type} Requests", style: const TextStyle(fontWeight: FontWeight.bold)),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
+        backgroundColor: Colors.brown.shade600, // 深棕色 AppBar
+        foregroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
       ),
@@ -273,14 +303,19 @@ class _RequestListPageState extends State<RequestListPage> {
         child: Column(
           children: [
             buildSearchBar(),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             buildStatusFilter(),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             Expanded(
               child: isLoading
-                  ? const Center(child: CircularProgressIndicator())
+                  ? Center(child: CircularProgressIndicator(color: Colors.brown.shade400)) // 棕色加载条
                   : requests.isEmpty
-                  ? Center(child: Text("No $statusFilter requests found"))
+                  ? Center(
+                  child: Text(
+                      "No $statusFilter requests found",
+                      style: TextStyle(color: Colors.brown.shade500, fontSize: 16)
+                  )
+              )
                   : ListView.builder(
                 itemCount: requests.length,
                 itemBuilder: (context, index) => buildRequestCard(requests[index]),

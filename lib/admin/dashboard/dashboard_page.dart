@@ -5,7 +5,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../request/request_list_page.dart';
 import 'package:image_picker/image_picker.dart';
 import 'admin_notifications_page.dart';
-import 'package:assignment/resident/announcement_list_page.dart';
+import 'admin_announcement_page.dart';
+import 'admin_announcement_detail_page.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -91,8 +92,8 @@ class _DashboardPageState extends State<DashboardPage> {
           hasUserNotif = requests.any((r) =>
           r['type'] == 'admin' ||
               r['type'] == 'resident');
-          hasEventNotif = requests.any((r) => r['type'] == 'complaint');
-          hasFacilityNotif = requests.any((r) => r['type'] == 'booking');
+          hasEventNotif = requests.any((r) => r['type'] == 'booking');
+          hasFacilityNotif = requests.any((r) => r['type'] == 'facility');
           hasVisitorNotif = requests.any((r) => r['type'] == 'visitor');
           hasEmergencyNotif = emergencies.isNotEmpty;
         });
@@ -507,14 +508,18 @@ class _DashboardPageState extends State<DashboardPage> {
     final dateDisplay = dt != null
         ? "${dt.day}/${dt.month}/${dt.year}"
         : "No specific date";
-    final bool hasImage = data['image_url'] != null;
+
+    // 🚨 增强图片判断逻辑：确保不为空且是有效的网络链接
+    final String imageUrl = data['image_url']?.toString() ?? '';
+    final bool hasImage = imageUrl.isNotEmpty && imageUrl.startsWith('http');
 
     showDialog(
       context: context,
       builder: (dialogContext) =>
           AlertDialog(
+            backgroundColor: const Color(0xFFFAF8F5), // 质感淡米棕色背景
             shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(22)),
+                borderRadius: BorderRadius.circular(24)), // 圆角调大一点更柔和
             contentPadding: EdgeInsets.zero,
             content: Column(
               mainAxisSize: MainAxisSize.min,
@@ -523,9 +528,20 @@ class _DashboardPageState extends State<DashboardPage> {
                 if (hasImage)
                   ClipRRect(
                     borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(22)),
-                    child: Image.network(data['image_url'],
-                        width: double.infinity, height: 180, fit: BoxFit.cover),
+                        top: Radius.circular(24)),
+                    child: Image.network(
+                      imageUrl,
+                      width: double.infinity,
+                      height: 180,
+                      fit: BoxFit.cover,
+                      // 🚨 加入 errorBuilder，防止图片链接失效或跨域导致黄屏报错
+                      errorBuilder: (context, error, stackTrace) => Container(
+                        width: double.infinity,
+                        height: 180,
+                        color: Colors.brown.shade100, // 报错时显示浅棕色底
+                        child: Icon(Icons.broken_image, size: 50, color: Colors.brown.shade300),
+                      ),
+                    ),
                   ),
                 Padding(
                   padding: const EdgeInsets.all(24.0),
@@ -533,41 +549,51 @@ class _DashboardPageState extends State<DashboardPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(children: [
-                        Icon(data['is_urgent'] ? Icons.warning : Icons.campaign,
-                            color: data['is_urgent']
-                                ? Colors.red
-                                : primaryColor),
+                        Icon(
+                          data['is_urgent'] == true ? Icons.warning : Icons.campaign,
+                          color: data['is_urgent'] == true
+                              ? Colors.red.shade600
+                              : Colors.brown.shade600, // 图标改为棕色
+                        ),
                         const SizedBox(width: 10),
                         Expanded(
-                            child: Text(data['title'],
-                                style: const TextStyle(fontSize: 18,
+                            child: Text(data['title'] ?? 'No Title',
+                                style: TextStyle(
+                                    fontSize: 18,
                                     fontWeight: FontWeight.bold,
-                                    color: textDark))),
+                                    color: Colors.brown.shade900))), // 标题深棕色
                       ]),
                       const SizedBox(height: 12),
                       Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
-                            color: primaryColor.withOpacity(0.1),
+                            color: Colors.brown.shade100, // 标签浅棕底
                             borderRadius: BorderRadius.circular(20)),
-                        child: Text(data['category'] ?? '',
-                            style: const TextStyle(
-                                color: primaryColor,
+                        child: Text(data['category'] ?? 'General',
+                            style: TextStyle(
+                                color: Colors.brown.shade800, // 标签深棕字
                                 fontWeight: FontWeight.w600,
                                 fontSize: 12)),
                       ),
                       const SizedBox(height: 8),
                       Row(children: [
-                        const Icon(Icons.calendar_today_outlined, size: 13,
-                            color: Colors.grey),
+                        Icon(Icons.calendar_today_outlined, size: 13,
+                            color: Colors.brown.shade400),
                         const SizedBox(width: 4),
-                        Text(dateDisplay, style: const TextStyle(
-                            color: Colors.grey, fontSize: 12)),
+                        Text(dateDisplay, style: TextStyle(
+                            color: Colors.brown.shade500, fontSize: 12)), // 日期浅棕色
                       ]),
-                      const Divider(height: 24),
-                      Text(data['content'],
-                          style: const TextStyle(fontSize: 14, height: 1.6)),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 16.0),
+                        child: Divider(height: 1, color: Colors.black12),
+                      ),
+                      Text(data['content'] ?? '',
+                          style: TextStyle(
+                              fontSize: 14,
+                              height: 1.6,
+                              color: Colors.brown.shade800 // 正文颜色
+                          )),
                     ],
                   ),
                 ),
@@ -576,14 +602,15 @@ class _DashboardPageState extends State<DashboardPage> {
             actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             actions: [
               Row(children: [
+                // Close 按钮
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed: () => Navigator.pop(dialogContext),
-                    icon: const Icon(Icons.close, size: 16, color: Colors.grey),
-                    label: const Text(
-                        "Close", style: TextStyle(color: Colors.grey)),
+                    icon: Icon(Icons.close, size: 16, color: Colors.brown.shade400),
+                    label: Text(
+                        "Close", style: TextStyle(color: Colors.brown.shade500)),
                     style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Colors.grey, width: 1),
+                      side: BorderSide(color: Colors.brown.shade200, width: 1),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12)),
                       padding: const EdgeInsets.symmetric(vertical: 12),
@@ -591,16 +618,18 @@ class _DashboardPageState extends State<DashboardPage> {
                   ),
                 ),
                 const SizedBox(width: 8),
+
+                // Edit 按钮
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed: () =>
                         _showEditAnnouncementSheet(dialogContext, data),
-                    icon: const Icon(
-                        Icons.edit_outlined, size: 16, color: primaryColor),
-                    label: const Text(
-                        "Edit", style: TextStyle(color: primaryColor)),
+                    icon: Icon(
+                        Icons.edit_outlined, size: 16, color: Colors.brown.shade700),
+                    label: Text(
+                        "Edit", style: TextStyle(color: Colors.brown.shade700)),
                     style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: primaryColor, width: 1),
+                      side: BorderSide(color: Colors.brown.shade400, width: 1),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12)),
                       padding: const EdgeInsets.symmetric(vertical: 12),
@@ -608,16 +637,18 @@ class _DashboardPageState extends State<DashboardPage> {
                   ),
                 ),
                 const SizedBox(width: 8),
+
+                // Delete 按钮
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed: () =>
                         _deleteAnnouncement(dialogContext, data['id']),
-                    icon: const Icon(
-                        Icons.delete_outline, size: 16, color: Colors.red),
-                    label: const Text(
-                        "Delete", style: TextStyle(color: Colors.red)),
+                    icon: Icon(
+                        Icons.delete_outline, size: 16, color: Colors.red.shade600),
+                    label: Text(
+                        "Delete", style: TextStyle(color: Colors.red.shade600)),
                     style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Colors.red, width: 1),
+                      side: BorderSide(color: Colors.red.shade200, width: 1),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12)),
                       padding: const EdgeInsets.symmetric(vertical: 12),
@@ -1031,20 +1062,20 @@ class _DashboardPageState extends State<DashboardPage> {
                       children: [
                         buildSectionTitle("Announcements"),
 
-                        // 🔥 换成了 View All 按钮
+                        // View All 按钮
                         TextButton(
                           onPressed: () {
                             // 跳转到全部公告列表页
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (context) => const AnnouncementListPage(),
+                                builder: (context) => const AdminAnnouncementPage(),
                               ),
                             );
                           },
                           style: TextButton.styleFrom(
-                            foregroundColor: primaryColor,
-                            backgroundColor: primaryColor.withOpacity(0.1),
+                            foregroundColor: Colors.brown.shade700,
+                            backgroundColor: Colors.brown.shade50,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(20),
                             ),
@@ -1058,7 +1089,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                               ),
                               SizedBox(width: 4),
-                              Icon(Icons.arrow_forward_ios_rounded, size: 12), // 向右的小箭头
+                              Icon(Icons.arrow_forward_ios_rounded, size: 12),
                             ],
                           ),
                         ),
@@ -1069,113 +1100,126 @@ class _DashboardPageState extends State<DashboardPage> {
 
                     /// ANNOUNCEMENTS LIST
                     if (announcements.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.all(40),
+                      Padding(
+                        padding: const EdgeInsets.all(40),
                         child: Center(
                           child: Text(
                             "No announcements yet.",
-                            style: TextStyle(color: Colors.grey),
+                            style: TextStyle(color: Colors.grey.shade500),
                           ),
                         ),
                       )
                     else
                       ...announcements.map((item) {
                         final bool urgent = item['is_urgent'] ?? false;
-                        final bool hasImage = item['image_url'] != null;
+                        final bool hasImage = item['image_url'] != null && item['image_url'].toString().isNotEmpty;
 
                         return GestureDetector(
-                          onTap: () => _showAnnouncementDetails(item),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                // 这里替换成你的公告详情页类名，把公告数据传过去
+                                builder: (context) => AdminAnnouncementDetailPage(data: item),
+                              ),
+                            );
+                          },
                           child: Container(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            padding: const EdgeInsets.all(16),
+                            margin: const EdgeInsets.only(bottom: 16),
+                            // 关键：裁剪边缘，让顶部的图片也能跟着有圆角
+                            clipBehavior: Clip.antiAlias,
                             decoration: BoxDecoration(
                               color: Colors.white,
-                              borderRadius: BorderRadius.circular(22),
+                              borderRadius: BorderRadius.circular(16), // 大圆角卡片
                               border: urgent
                                   ? Border.all(
-                                color: Colors.red.withOpacity(0.35),
+                                color: Colors.red.withOpacity(0.5),
                                 width: 1.5,
                               )
-                                  : null,
+                                  : Border.all(
+                                color: Colors.grey.shade200,
+                                width: 1,
+                              ),
                               boxShadow: [
                                 BoxShadow(
                                   color: Colors.black.withOpacity(0.04),
-                                  blurRadius: 12,
+                                  blurRadius: 10,
                                   offset: const Offset(0, 4),
                                 ),
                               ],
                             ),
-                            child: Row(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                hasImage
-                                    ? ClipOval(
-                                  child: Image.network(
+                                // ====================
+                                // 顶部区域：大图 Banner
+                                // ====================
+                                SizedBox(
+                                  height: 130, // 顶部海报的高度，可自行调节
+                                  width: double.infinity,
+                                  child: hasImage
+                                      ? Image.network(
                                     item['image_url'],
-                                    width: 46,
-                                    height: 46,
-                                    fit: BoxFit.cover,
-                                  ),
-                                )
-                                    : Container(
-                                  width: 46,
-                                  height: 46,
-                                  decoration: BoxDecoration(
-                                    color: (urgent
-                                        ? Colors.red
-                                        : primaryColor)
-                                        .withOpacity(0.12),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Icon(
-                                    urgent
-                                        ? Icons.priority_high
-                                        : Icons.campaign_outlined,
-                                    color: urgent
-                                        ? Colors.red
-                                        : primaryColor,
-                                    size: 22,
+                                    fit: BoxFit.cover, // 填满整个顶部区域
+                                    errorBuilder: (context, error, stackTrace) => Container(
+                                      color: Colors.orange.shade400, // 图片加载失败时的备用背景
+                                      child: const Icon(Icons.campaign, size: 50, color: Colors.white54),
+                                    ),
+                                  )
+                                      : Container(
+                                    // 如果没有图片，显示默认底色和图标 (比如照片里的橘色)
+                                    color: urgent ? Colors.red.shade400 : Colors.orange.shade400,
+                                    child: Center(
+                                      child: Icon(
+                                        urgent ? Icons.priority_high : Icons.campaign_rounded,
+                                        size: 50,
+                                        color: Colors.white.withOpacity(0.6),
+                                      ),
+                                    ),
                                   ),
                                 ),
-                                const SizedBox(width: 14),
-                                Expanded(
+
+                                // ====================
+                                // 底部区域：文字内容
+                                // ====================
+                                Padding(
+                                  padding: const EdgeInsets.all(16.0),
                                   child: Column(
-                                    crossAxisAlignment:
-                                    CrossAxisAlignment.start,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
+                                      // 标题
                                       Text(
-                                        item['title'],
+                                        item['title'] ?? 'No Title',
                                         style: const TextStyle(
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 15,
-                                          color: textDark,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 16,
+                                          color: Colors.black87,
                                         ),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                       ),
-                                      const SizedBox(height: 4),
+                                      const SizedBox(height: 6),
+
+                                      // 内容描述
                                       Text(
-                                        item['content'],
-                                        style: const TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.black54,
+                                        item['content'] ?? '',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: Colors.grey.shade600,
+                                          height: 1.4, // 增加行高，阅读更舒适
                                         ),
-                                        maxLines: 1,
+                                        maxLines: 2, // 最多显示两行，多余显示省略号
                                         overflow: TextOverflow.ellipsis,
                                       ),
+                                      const SizedBox(height: 12),
                                     ],
                                   ),
-                                ),
-                                const SizedBox(width: 8),
-                                const Icon(
-                                  Icons.chevron_right,
-                                  color: Colors.black26,
-                                  size: 20,
                                 ),
                               ],
                             ),
                           ),
                         );
-                      }).toList(),
+                      }),
                   ],
                 ),
               ),
