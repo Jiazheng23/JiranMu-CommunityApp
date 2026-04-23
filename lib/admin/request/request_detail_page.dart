@@ -280,7 +280,6 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
     Map? details;
     if (type == 'admin')         details = extractSubData(data['admin_requests']);
     else if (type == 'resident') details = extractSubData(data['resident_requests']);
-    else if (type == 'visitor')  details = extractSubData(data['visitor_requests']);
     else if (type == 'booking')  details = extractSubData(data['event_requests']);
     else if (type == 'facility') details = extractSubData(data['facility_requests']);
 
