@@ -12,6 +12,8 @@ import '../admin/emergency/location.dart';
 import 'VisitorPassListScreen.dart';
 import 'announcement_detail_page.dart';
 import 'announcement_list_page.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:intl/intl.dart';
 
 class ResidentHomePage extends StatefulWidget {
   const ResidentHomePage({super.key});
@@ -48,6 +50,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
   @override
   void initState() {
     super.initState();
+    _checkUnreadAnnouncements();
     _fetchLatestAnnouncements(); // 页面初始化时获取最新的公告
     _loadUpcomingEvents();
   }
@@ -110,7 +113,43 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     }
   }
 
-  // 辅助函数：格式化日期为 "5 Jan, 2026"
+  // 记录是否有未读公告
+  bool _hasUnreadAnnouncements = false;
+
+  // 去数据库检查是否有新公告
+  Future<void> _checkUnreadAnnouncements() async {
+    try {
+      // 1. 从 Supabase 获取最新的一条公告时间
+      final response = await Supabase.instance.client
+          .from('announcements')
+          .select('created_at')
+          .order('created_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
+
+      if (response != null && response['created_at'] != null) {
+        DateTime latestDbDate = DateTime.parse(response['created_at']);
+
+        final prefs = await SharedPreferences.getInstance();
+        String? lastReadStr = prefs.getString('last_read_announcements');
+
+        if (lastReadStr == null) {
+          if (mounted) setState(() => _hasUnreadAnnouncements = true);
+        } else {
+          DateTime lastReadDate = DateTime.parse(lastReadStr);
+
+          if (latestDbDate.isAfter(lastReadDate)) {
+            if (mounted) setState(() => _hasUnreadAnnouncements = true);
+          } else {
+            if (mounted) setState(() => _hasUnreadAnnouncements = false);
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint("Error checking unread announcements: $e");
+    }
+  }
+
   String _formatDate(String? dateStr) {
     if (dateStr == null) return '';
     try {
@@ -135,7 +174,6 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
         .showSnackBar(const SnackBar(content: Text("Logged out successfully")));
   }
 
-  // 重置紧急状态
   void resetState() {
     _timer?.cancel();
     setState(() {
@@ -145,7 +183,6 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     });
   }
 
-  // 带倒计时的紧急求救
   void handleEmergency() {
     if (isEmergency) {
       resetState();
@@ -181,7 +218,6 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
             Navigator.of(context, rootNavigator: true).pop();
           }
 
-  // ── Shared widgets ────────────────────────────
           final userId = Supabase.instance.client.auth.currentUser?.id;
 
           if (userId != null) {
@@ -345,17 +381,17 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     );
   }
 
-  // 🔥 动态横向滑动公告卡片 (支持点击查看详情)
   Widget buildAnnouncementSlider() {
     if (isLoadingAnnouncement) {
       return Container(
         width: double.infinity,
-        height: 140, // 固定高度防止页面跳动
+        height: 140,
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(22),
         ),
-        child: const Center(child: CircularProgressIndicator(color: Color(0xFF9A4B3C))),
+        child: Center(
+            child: CircularProgressIndicator(color: Colors.brown.shade400)),
       );
     }
 
@@ -367,17 +403,17 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
           color: Colors.white,
           borderRadius: BorderRadius.circular(22),
         ),
-        child: const Center(
+        child: Center(
           child: Text(
             "No announcements at the moment.",
-            style: TextStyle(color: Colors.black54),
+            style: TextStyle(color: Colors.brown.shade400),
           ),
         ),
       );
     }
 
     return SizedBox(
-      height: 145,
+      height: 220,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: latestAnnouncements.length,
@@ -388,10 +424,18 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
           final content = announcement['content'] ?? '';
           final category = announcement['category'] ?? 'General';
           final isUrgent = announcement['is_urgent'] ?? false;
+
+
+          final String imageUrl = announcement['image_url']?.toString() ?? '';
+          final bool hasImage = imageUrl.isNotEmpty && imageUrl.startsWith('http');
+
+
           final dateStr = _formatDate(announcement['created_at']);
 
           return Container(
-            width: MediaQuery.of(context).size.width * 0.75, // 显示75%的宽度，让右侧露出下一张
+
+            width: MediaQuery.of(context).size.width * 0.75,
+            margin: const EdgeInsets.symmetric(vertical: 4),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(22),
@@ -411,97 +455,98 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => AnnouncementDetailPage(announcement: announcement),
-                    ),
-                  );
-                },
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          if (isUrgent) ...[
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              margin: const EdgeInsets.only(right: 8),
-                              decoration: BoxDecoration(
-                                color: Colors.red.shade50,
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(color: Colors.red.shade200),
-                              ),
-                              child: const Text(
-                                "URGENT",
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.redAccent,
-                                ),
-                              ),
-                            ),
-                          ],
-                          Expanded(
-                            child: Text(
-                              title,
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w700,
-                                color: textDark,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
+                      builder: (context) => AnnouncementDetailPage(
+                        announcement: announcement,
                       ),
-                      const SizedBox(height: 8),
-                      Expanded(
-                        child: Text(
-                          content,
-                          style: const TextStyle(fontSize: 13, color: Colors.black54, height: 1.4),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
+                    ),
+                  ).then((_) {
+                    _checkUnreadAnnouncements();
+                  });
+                },
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    hasImage
+                        ? SizedBox(
+                      height: 100,
+                      child: ClipRRect(
+                        // 裁剪顶部圆角
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(22),
+                          topRight: Radius.circular(22),
+                        ),
+                        child: Image.network(
+                          imageUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) =>
+                              _buildColorBlockFallback(isUrgent),
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          CircleAvatar(
-                            radius: 12,
-                            backgroundColor: isUrgent ? Colors.red.shade50 : const Color(0xFFEADFD6),
-                            child: Icon(
-                                isUrgent ? Icons.warning_amber_rounded : Icons.campaign_rounded,
-                                size: 12,
-                                color: isUrgent ? Colors.redAccent : const Color(0xFF9A4B3C)
+                    )
+                        : _buildColorBlockFallback(isUrgent),
+
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                if (isUrgent) ...[
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 4),
+                                    margin: const EdgeInsets.only(right: 8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.red.shade50,
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(color: Colors.red.shade200),
+                                    ),
+                                    child: const Text(
+                                      "URGENT",
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.redAccent,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                                Expanded(
+                                  child: Text(
+                                    title,
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.brown.shade900,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              category.toUpperCase(),
-                              style: const TextStyle(
-                                fontSize: 10,
-                                color: Colors.black54,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 0.5,
+                            const SizedBox(height: 8),
+
+                            Expanded(
+                              child: Text(
+                                content,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.brown.shade800,
+                                  height: 1.4,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
                             ),
-                          ),
-                          Text(
-                            dateStr,
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: primaryColor,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
+                            const SizedBox(height: 12),
+                          ],
+                        ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -511,7 +556,26 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     );
   }
 
-  // ── Upcoming events section ───────────────────
+  Widget _buildColorBlockFallback(bool isUrgent) {
+    return Container(
+      height: 100, // 同一张大图的高度一致
+      decoration: BoxDecoration(
+        // 如果没有图片，显示默认底色和图标 (比如照片里的橘色/紧急时是红色系)
+        color: isUrgent ? const Color(0xFFFFC1AC) : Colors.amber.shade400,
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(22),
+          topRight: Radius.circular(22),
+        ),
+      ),
+      child: Center(
+        child: Icon(
+          isUrgent ? Icons.warning_amber_rounded : Icons.campaign_rounded,
+          size: 50,
+          color: Colors.white.withOpacity(0.6),
+        ),
+      ),
+    );
+  }
 
   Widget buildUpcomingEventsSection() {
     if (_eventsLoading) {
@@ -561,7 +625,6 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
   }
 
   Widget _buildEventCard(CommunityEvent event) {
-    // Format date as "Mon, 22 Apr"
     const months = [
       'Jan','Feb','Mar','Apr','May','Jun',
       'Jul','Aug','Sep','Oct','Nov','Dec'
@@ -593,7 +656,6 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Image / gradient banner
             ClipRRect(
               borderRadius:
               const BorderRadius.vertical(top: Radius.circular(22)),
@@ -623,7 +685,6 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Date pill
                   Container(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 8, vertical: 3),
@@ -684,20 +745,15 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     );
   }
 
-  // ── Tabs ──────────────────────────────────────
-
   Widget buildHomeTab() {
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 100),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Location chip
-          // 顶部：Location chip & Notification Icon
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // Location chip (左侧)
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
@@ -726,16 +782,23 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                 ),
               ),
 
-              // Notification Bell (右侧)
               GestureDetector(
-                onTap: () {
-                  // 点击铃铛直接进入 Announcement 列表
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const AnnouncementListPage(),
-                    ),
-                  );
+                onTap: () async {
+                  setState(() => _hasUnreadAnnouncements = false);
+
+                  final prefs = await SharedPreferences.getInstance();
+                  await prefs.setString('last_read_announcements', DateTime.now().toIso8601String());
+
+                  if (mounted) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const AnnouncementListPage(),
+                      ),
+                    ).then((_) {
+                      _checkUnreadAnnouncements();
+                    });
+                  }
                 },
                 child: Container(
                   padding: const EdgeInsets.all(10),
@@ -753,19 +816,19 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                     clipBehavior: Clip.none,
                     children: [
                       Icon(Icons.notifications_none_rounded, color: primaryColor, size: 24),
-                      // 通知小红点 (Badge)
-                      Positioned(
-                        top: 0,
-                        right: 2,
-                        child: Container(
-                          width: 8,
-                          height: 8,
-                          decoration: BoxDecoration(
-                            color: Colors.red.shade500,
-                            shape: BoxShape.circle,
+                      if (_hasUnreadAnnouncements)
+                        Positioned(
+                          top: 0,
+                          right: 2,
+                          child: Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: Colors.red.shade500,
+                              shape: BoxShape.circle,
+                            ),
                           ),
                         ),
-                      ),
                     ],
                   ),
                 ),
@@ -876,10 +939,9 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
               );
             },
           ),
-          buildAnnouncementSlider(), // 🔥 替换为滑动组件
+          buildAnnouncementSlider(),
 
           const SizedBox(height: 28),
-          // "See all" navigates to the full calendar
           buildSectionTitle(
             "Upcoming Events",
             onSeeAll: () => Navigator.push(
