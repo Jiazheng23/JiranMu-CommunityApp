@@ -7,11 +7,7 @@ class EventDetailsScreen extends StatelessWidget {
   final CommunityEvent event;
   final String currentRole;
   final String currentUserId;
-
-  /// The display name of the current user — needed so the share sheet
-  /// can send messages as them.
   final String currentUserName;
-
   final VoidCallback onRefresh;
 
   const EventDetailsScreen({
@@ -25,8 +21,10 @@ class EventDetailsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color cork = const Color(0xFFAD8762);
-    final Color apricot = const Color(0xFFFFB38A);
+    // ── NEW THEME COLORS ──────────────────────────────
+    const Color primaryRed = Color(0xFF9A4B3C); // Deep Red/Brown
+    const Color accentPeach = Color(0xFFFC9D7E); // Apricot/Peach
+    const Color bgColor = Color(0xFFF5F1ED);    // Beige Background
 
     final bool isHost =
         event.userId == currentUserId ||
@@ -35,12 +33,13 @@ class EventDetailsScreen extends StatelessWidget {
     final bool isApproved = event.status == 'approved';
 
     return Scaffold(
+      backgroundColor: bgColor, // Updated background
       appBar: AppBar(
         title: const Text(
           "Event Details",
           style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
         ),
-        backgroundColor: cork,
+        backgroundColor: primaryRed, // Updated AppBar
         iconTheme: const IconThemeData(color: Colors.white),
         centerTitle: true,
         actions: [
@@ -69,16 +68,14 @@ class EventDetailsScreen extends StatelessWidget {
                     : Container(
                   height: 250,
                   width: double.infinity,
-                  color: cork.withOpacity(0.1),
-                  child: Icon(Icons.image, size: 100, color: cork),
+                  color: primaryRed.withOpacity(0.05),
+                  child: Icon(Icons.image, size: 100, color: primaryRed.withOpacity(0.2)),
                 ),
-                // Privacy badge on image
                 Positioned(
                   top: 14,
                   right: 14,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 5),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(
                       color: event.isPrivate
                           ? Colors.purple.withOpacity(0.85)
@@ -89,9 +86,7 @@ class EventDetailsScreen extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
-                          event.isPrivate
-                              ? Icons.lock_outline
-                              : Icons.public,
+                          event.isPrivate ? Icons.lock_outline : Icons.public,
                           color: Colors.white,
                           size: 12,
                         ),
@@ -115,16 +110,14 @@ class EventDetailsScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Status badge (for non-approved states)
                   if (!isApproved)
                     Container(
-                      margin: const EdgeInsets.only(bottom: 10),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 4),
+                      margin: const EdgeInsets.only(bottom: 15),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
                         color: event.status == 'pending'
                             ? Colors.orange.shade50
-                            : Colors.red.shade50,
+                            : primaryRed.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
@@ -132,56 +125,40 @@ class EventDetailsScreen extends StatelessWidget {
                         style: TextStyle(
                           color: event.status == 'pending'
                               ? Colors.orange.shade800
-                              : Colors.red.shade800,
+                              : primaryRed,
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
                     ),
 
-                  // Title
                   Text(
                     event.title,
-                    style: TextStyle(
+                    style: const TextStyle(
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
-                        color: cork),
+                        color: Color(0xFF2B2B2B)), // Dark Text
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 15),
 
-                  // Details
-                  _detailRow(
-                    Icons.person,
-                    "Organised by",
-                    event.createdByName.isNotEmpty
-                        ? event.createdByName
-                        : 'Resident',
-                  ),
-                  _detailRow(Icons.location_on, "Location", event.location),
-                  _detailRow(
-                    Icons.calendar_today,
-                    "Date",
-                    event.eventDate.toString().split(' ')[0],
-                  ),
-                  _detailRow(
-                    Icons.access_time,
-                    "Time",
-                    "${event.startTime} - ${event.endTime}",
-                  ),
-                  _detailRow(
-                    Icons.group,
-                    "Capacity",
-                    "${event.participants ?? 0} / ${event.maxCapacity}",
-                  ),
+                  _detailRow(Icons.person, "Organised by",
+                      event.createdByName.isNotEmpty ? event.createdByName : 'Resident', accentPeach, primaryRed),
+                  _detailRow(Icons.location_on, "Location", event.location, accentPeach, primaryRed),
+                  _detailRow(Icons.calendar_today, "Date",
+                      event.eventDate.toString().split(' ')[0], accentPeach, primaryRed),
+                  _detailRow(Icons.access_time, "Time",
+                      "${event.startTime} - ${event.endTime}", accentPeach, primaryRed),
+                  _detailRow(Icons.group, "Capacity",
+                      "${event.participants ?? 0} / ${event.maxCapacity}", accentPeach, primaryRed),
 
-                  const Divider(height: 40),
+                  const Divider(height: 40, thickness: 1),
 
-                  Text(
+                  const Text(
                     "Description",
                     style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
-                        color: cork),
+                        color: primaryRed), // Primary theme color
                   ),
                   const SizedBox(height: 10),
                   Text(
@@ -194,9 +171,8 @@ class EventDetailsScreen extends StatelessWidget {
 
                   const SizedBox(height: 40),
 
-                  // ── Action section ──────────────────────────
                   if (isApproved && !isHost)
-                    _joinSection(context, cork, apricot),
+                    _joinSection(context, primaryRed, accentPeach),
                 ],
               ),
             ),
@@ -205,8 +181,6 @@ class EventDetailsScreen extends StatelessWidget {
       ),
     );
   }
-
-  // ── Share sheet ───────────────────────────────
 
   void _showShareSheet(BuildContext context) {
     showModalBottomSheet(
@@ -224,25 +198,22 @@ class EventDetailsScreen extends StatelessWidget {
     );
   }
 
-  // ── Helpers ───────────────────────────────────
-
-  Widget _detailRow(IconData icon, String label, String value) {
+  Widget _detailRow(IconData icon, String label, String value, Color iconColor, Color labelColor) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
         children: [
-          Icon(icon, color: const Color(0xFFFFB38A), size: 20),
-          const SizedBox(width: 10),
+          Icon(icon, color: iconColor, size: 20),
+          const SizedBox(width: 12),
           Text("$label: ",
-              style: const TextStyle(fontWeight: FontWeight.bold)),
-          Expanded(child: Text(value)),
+              style: TextStyle(fontWeight: FontWeight.bold, color: labelColor.withOpacity(0.8))),
+          Expanded(child: Text(value, style: const TextStyle(color: Colors.black87))),
         ],
       ),
     );
   }
 
-  // ── Join section (non-host, approved) ─────────
-  Widget _joinSection(BuildContext context, Color cork, Color apricot) {
+  Widget _joinSection(BuildContext context, Color primary, Color accent) {
     final int participantCount = event.participants ?? 0;
     final bool isFull = participantCount >= event.maxCapacity;
 
@@ -256,30 +227,25 @@ class EventDetailsScreen extends StatelessWidget {
             await EventService().joinEvent(event.id, currentUserId);
             onRefresh();
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                  content: Text("Successfully joined the event!")),
+              const SnackBar(content: Text("Successfully joined the event!")),
             );
             Navigator.pop(context);
           } catch (e) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                  content: Text(
-                      e.toString().replaceAll("Exception: ", ""))),
+              SnackBar(content: Text(e.toString().replaceAll("Exception: ", ""))),
             );
           }
         },
         style: ElevatedButton.styleFrom(
-          backgroundColor: apricot,
-          padding: const EdgeInsets.all(15),
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12)),
+          backgroundColor: accent, // Peach color
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.all(16),
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
         child: Text(
           isFull ? "Event Full" : "Join Event",
-          style: const TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.bold),
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
         ),
       ),
     );

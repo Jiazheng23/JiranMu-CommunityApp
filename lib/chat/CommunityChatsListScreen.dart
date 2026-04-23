@@ -57,8 +57,8 @@ class ConversationPreview {
     required this.lastMessage,
     required this.lastTime,
     required this.roomId,
-    this.unreadCount = 0,
-  });
+    int? unreadCount,
+  }) : unreadCount = unreadCount ?? 0;
 }
 
 class GroupChatPreview {
@@ -68,6 +68,7 @@ class GroupChatPreview {
   final String block;
   final String lastMessage;
   final DateTime lastTime;
+  final int unreadCount;
 
   GroupChatPreview({
     required this.groupId,
@@ -76,7 +77,8 @@ class GroupChatPreview {
     required this.block,
     required this.lastMessage,
     required this.lastTime,
-  });
+    int? unreadCount,
+  }) : unreadCount = unreadCount ?? 0;
 }
 
 // ─────────────────────────────────────────────
@@ -104,13 +106,20 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
   bool _loading = true;
   String? _errorMessage;
 
-  // These are now re-assigned after UserSession.init() completes
   String _currentUserId = '';
   String _currentUserEmail = '';
+
+  // Logged-in user profile (for header)
+  String _currentUserName = '';
+  String _currentUserBlock = '';
 
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   String _filter = 'all';
+
+  // Search state
+  bool _isSearchActive = false;
+  final List<String> _recentSearches = [];
 
   // ── Resident state ──────────────────────────
   List<ResidentProfile> _blockNeighbours = [];
@@ -124,6 +133,9 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
 
   late final TabController _tabController;
 
+  // ── FAB state ────────────────────────────────
+  bool _fabExpanded = false;
+
   // ══════════════════════════════════════════════
   // INIT
   // ══════════════════════════════════════════════
@@ -135,8 +147,6 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
     _initAndLoad();
   }
 
-  /// Awaits UserSession.init() so the role is guaranteed to be set
-  /// before we decide which data to load.
   Future<void> _initAndLoad() async {
     setState(() {
       _loading = true;
@@ -144,7 +154,6 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
     });
 
     try {
-      // ✅ Always await init so role/uid are populated
       await UserSession.init();
 
       _currentUserId = UserSession.uid ?? '';
@@ -188,7 +197,6 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
   // ══════════════════════════════════════════════
 
   Future<void> _loadResidentData() async {
-    // Note: _loading is already true from _initAndLoad; no need to set again.
     try {
       final myProfile = await supabase
           .from('resident')
@@ -209,6 +217,10 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
         return;
       }
 
+      // Store current user info for header
+      _currentUserName = myProfile['full_name']?.toString() ?? '';
+      _currentUserBlock = myBlock;
+
       // Neighbours in same block
       final neighboursData = await supabase
           .from('resident')
@@ -220,7 +232,7 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
           .map((e) => ResidentProfile.fromMap(e as Map<String, dynamic>))
           .toList();
 
-      // Fetch all rooms for current user using two separate queries
+      // Fetch all rooms for current user
       final roomsAsUser1 = await supabase
           .from('chat_rooms')
           .select('room_id, user1_id, user2_id')
@@ -252,7 +264,7 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
 
         final msgs = await supabase
             .from('messages')
-            .select('content, created_at')
+            .select('content, created_at, sender')
             .eq('room_id', roomId)
             .order('created_at', ascending: false)
             .limit(1);
@@ -265,11 +277,21 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
             ? DateTime.parse(msgList[0]['created_at'] as String)
             : DateTime.now();
 
+        // Count unread messages not sent by current user
+        final unreadMsgsRes = await supabase
+            .from('messages')
+            .select('id')
+            .eq('room_id', roomId)
+            .neq('sender', _currentUserId)
+            .eq('is_read', false);
+        final int unreadCount = (unreadMsgsRes as List<dynamic>).length;
+
         convos.add(ConversationPreview(
           resident: neighbour,
           lastMessage: lastMsg,
           lastTime: lastTime,
           roomId: roomId,
+          unreadCount: unreadCount,
         ));
       }
       convos.sort((a, b) => b.lastTime.compareTo(a.lastTime));
@@ -309,6 +331,14 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
             ? DateTime.parse(msgList[0]['created_at'] as String)
             : DateTime.now();
 
+        final unreadGroupRes = await supabase
+            .from('messages')
+            .select('id')
+            .eq('room_id', roomId)
+            .neq('sender', _currentUserId)
+            .eq('is_read', false);
+        final int unreadCount = (unreadGroupRes as List<dynamic>).length;
+
         groupChats.add(GroupChatPreview(
           groupId: groupData['id'] as String,
           roomId: roomId,
@@ -316,6 +346,7 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
           block: groupData['block']?.toString() ?? '',
           lastMessage: lastMsg,
           lastTime: lastTime,
+          unreadCount: unreadCount,
         ));
       }
       groupChats.sort((a, b) => b.lastTime.compareTo(a.lastTime));
@@ -373,7 +404,6 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
         }
       }
 
-      // No existing room — create one
       if (roomId == null) {
         roomId = await _generateRoomId();
         await supabase.from('chat_rooms').insert({
@@ -429,6 +459,17 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
 
   Future<void> _loadAdminData() async {
     try {
+      // Load admin profile for header
+      final adminProfile = await supabase
+          .from('admin_new')
+          .select('full_name, email')
+          .eq('id', _currentUserId)
+          .maybeSingle();
+
+      if (adminProfile != null) {
+        _currentUserName = adminProfile['full_name']?.toString() ?? '';
+      }
+
       final blocksData =
       await supabase.from('resident').select('block').neq('block', '');
       final blocks = (blocksData as List)
@@ -461,6 +502,14 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
             ? DateTime.parse(msgList[0]['created_at'] as String)
             : DateTime.now();
 
+        final unreadAdminRes = await supabase
+            .from('messages')
+            .select('id')
+            .eq('room_id', roomId)
+            .neq('sender', _currentUserId)
+            .eq('is_read', false);
+        final int unreadCount = (unreadAdminRes as List<dynamic>).length;
+
         groups.add(GroupChatPreview(
           groupId: g['id'] as String,
           roomId: roomId,
@@ -468,6 +517,7 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
           block: g['block']?.toString() ?? '',
           lastMessage: lastMsg,
           lastTime: lastTime,
+          unreadCount: unreadCount,
         ));
       }
       groups.sort((a, b) => b.lastTime.compareTo(a.lastTime));
@@ -514,6 +564,15 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
     if (diff.inHours < 24) return '${diff.inHours} hr';
     if (diff.inDays == 1) return '1 day';
     return '${diff.inDays} days';
+  }
+
+  void _addRecentSearch(String query) {
+    if (query.trim().isEmpty) return;
+    setState(() {
+      _recentSearches.remove(query);
+      _recentSearches.insert(0, query);
+      if (_recentSearches.length > 5) _recentSearches.removeLast();
+    });
   }
 
   // ══════════════════════════════════════════════
@@ -631,10 +690,18 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
             (c) => c.resident.name.toLowerCase().contains(_searchQuery))
         .toList();
 
+    final filteredGroupChats = _searchQuery.isEmpty
+        ? _residentGroupChats
+        : _residentGroupChats
+        .where((g) =>
+    g.name.toLowerCase().contains(_searchQuery) ||
+        g.block.toLowerCase().contains(_searchQuery))
+        .toList();
+
     final List<Map<String, dynamic>> combinedList = [];
 
     if (_filter == 'all' || _filter == 'group') {
-      combinedList.addAll(_residentGroupChats.map((g) => {
+      combinedList.addAll(filteredGroupChats.map((g) => {
         'type': 'group',
         'data': g,
       }));
@@ -651,41 +718,83 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
       final aTime = a['type'] == 'group'
           ? (a['data'] as GroupChatPreview).lastTime
           : (a['data'] as ConversationPreview).lastTime;
-
       final bTime = b['type'] == 'group'
           ? (b['data'] as GroupChatPreview).lastTime
           : (b['data'] as ConversationPreview).lastTime;
-
       return bTime.compareTo(aTime);
+    });
+
+    final totalUnread = combinedList.fold<int>(0, (int sum, item) {
+      if (item['type'] == 'group') {
+        return sum + ((item['data'] as GroupChatPreview).unreadCount);
+      } else {
+        return sum + ((item['data'] as ConversationPreview).unreadCount);
+      }
     });
 
     return CustomScrollView(
       slivers: [
-        SliverToBoxAdapter(child: _buildHeader(title: 'Messages')),
-        SliverToBoxAdapter(child: _buildNeighboursStrip()),
-        SliverToBoxAdapter(child: _buildDivider()),
+        // ── Header with resident profile ──
         SliverToBoxAdapter(
-          child: _buildSearchBar(hint: 'Search neighbours…'),
-        ),
-        const SliverToBoxAdapter(child: SizedBox(height: 8)),
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(22, 8, 22, 8),
-            child: Row(
-              children: [
-                _buildFilterChip('All', 'all'),
-                _buildFilterChip('Direct', 'dm'),
-                _buildFilterChip('Groups', 'group'),
-              ],
-            ),
+          child: _buildProfileHeader(
+            name: _currentUserName,
+            subtitle: 'Block $_currentUserBlock',
           ),
         ),
+
+        // ── Search bar ──
+        SliverToBoxAdapter(
+          child: _buildSearchBar(hint: 'Search neighbours, groups…'),
+        ),
+
+        // ── Recent searches (shown when search is active but empty) ──
+        if (_isSearchActive && _searchQuery.isEmpty && _recentSearches.isNotEmpty)
+          SliverToBoxAdapter(child: _buildRecentSearches()),
+
+        // ── Search result count ──
+        if (_searchQuery.isNotEmpty)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(22, 8, 22, 0),
+              child: Text(
+                '${combinedList.length} result${combinedList.length == 1 ? '' : 's'} for "$_searchQuery"',
+                style:
+                const TextStyle(fontSize: 12, color: Colors.black45),
+              ),
+            ),
+          ),
+
+        // ── Neighbours strip (hidden when searching) ──
+        if (_searchQuery.isEmpty) ...[
+          SliverToBoxAdapter(child: _buildNeighboursStrip()),
+          SliverToBoxAdapter(child: _buildDivider()),
+          const SliverToBoxAdapter(child: SizedBox(height: 6)),
+        ],
+
+        // ── Filter chips ──
+        if (_searchQuery.isEmpty)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(22, 6, 22, 8),
+              child: Row(
+                children: [
+                  _buildFilterChip('All', 'all', totalUnread: totalUnread),
+                  _buildFilterChip('Direct', 'dm'),
+                  _buildFilterChip('Groups', 'group'),
+                ],
+              ),
+            ),
+          ),
+
+        // ── Invitations widget ──
         SliverToBoxAdapter(
           child: ResidentInvitationsWidget(
             currentUserId: _currentUserId,
             currentUser: _currentUserEmail,
           ),
         ),
+
+        // ── Chat list ──
         if (combinedList.isEmpty)
           SliverFillRemaining(
             hasScrollBody: false,
@@ -707,12 +816,11 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
           )
         else
           SliverPadding(
-            padding: const EdgeInsets.fromLTRB(22, 8, 22, 100),
+            padding: const EdgeInsets.fromLTRB(22, 4, 22, 100),
             sliver: SliverList(
               delegate: SliverChildBuilderDelegate(
                     (context, i) {
                   final item = combinedList[i];
-
                   if (item['type'] == 'group') {
                     final group = item['data'] as GroupChatPreview;
                     return Padding(
@@ -722,6 +830,7 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
                         primaryColor: _primary,
                         formatTime: _formatTime,
                         isAdmin: false,
+                        searchQuery: _searchQuery,
                         onTap: () => _openResidentGroupChat(group),
                       ),
                     );
@@ -734,6 +843,7 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
                         primaryColor: _primary,
                         accentColor: _accent,
                         formatTime: _formatTime,
+                        searchQuery: _searchQuery,
                         onTap: () => _openOrCreateResidentDM(convo.resident),
                       ),
                     );
@@ -789,20 +899,22 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
           ),
         ),
         SizedBox(
-          height: 100,
+          height: 104,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 22),
             itemCount: _blockNeighbours.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 14),
+            separatorBuilder: (_, __) => const SizedBox(width: 12),
             itemBuilder: (context, i) => _NeighbourCard(
               profile: _blockNeighbours[i],
               primaryColor: _primary,
+              // Simulated online status — replace with real presence if available
+              isOnline: i % 3 == 0,
               onTap: () => _openOrCreateResidentDM(_blockNeighbours[i]),
             ),
           ),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
       ],
     );
   }
@@ -812,26 +924,6 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
   // ══════════════════════════════════════════════
 
   Widget _buildAdminLayout() {
-    return CustomScrollView(
-      slivers: [
-        SliverToBoxAdapter(
-            child: _buildHeader(title: 'Community Chats', isAdmin: true)),
-        SliverToBoxAdapter(child: _buildDivider()),
-        SliverToBoxAdapter(
-            child: _buildSearchBar(hint: 'Search group chats…')),
-        const SliverToBoxAdapter(child: SizedBox(height: 10)),
-        if (_adminGroupChats.isNotEmpty)
-          SliverToBoxAdapter(
-            child: _buildSectionLabel('GROUP CHATS',
-                count: _adminGroupChats.length),
-          ),
-        _buildAdminGroupSliver(),
-        const SliverToBoxAdapter(child: SizedBox(height: 100)),
-      ],
-    );
-  }
-
-  Widget _buildAdminGroupSliver() {
     final filtered = _searchQuery.isEmpty
         ? _adminGroupChats
         : _adminGroupChats
@@ -840,6 +932,64 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
         g.block.toLowerCase().contains(_searchQuery))
         .toList();
 
+    return Stack(
+      children: [
+        CustomScrollView(
+          slivers: [
+            // ── Header with admin profile ──
+            SliverToBoxAdapter(
+              child: _buildProfileHeader(
+                name: _currentUserName,
+                subtitle: 'Administrator',
+              ),
+            ),
+            SliverToBoxAdapter(child: _buildDivider()),
+
+            // ── Search bar ──
+            SliverToBoxAdapter(
+              child: _buildSearchBar(hint: 'Search group chats…'),
+            ),
+
+            // ── Recent searches ──
+            if (_isSearchActive && _searchQuery.isEmpty && _recentSearches.isNotEmpty)
+              SliverToBoxAdapter(child: _buildRecentSearches()),
+
+            // ── Result count ──
+            if (_searchQuery.isNotEmpty)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(22, 8, 22, 0),
+                  child: Text(
+                    '${filtered.length} result${filtered.length == 1 ? '' : 's'} for "$_searchQuery"',
+                    style:
+                    const TextStyle(fontSize: 12, color: Colors.black45),
+                  ),
+                ),
+              ),
+
+            if (_adminGroupChats.isNotEmpty)
+              SliverToBoxAdapter(
+                child: _buildSectionLabel('GROUP CHATS',
+                    count: _adminGroupChats.length),
+              ),
+
+            _buildAdminGroupSliver(filtered),
+
+            const SliverToBoxAdapter(child: SizedBox(height: 100)),
+          ],
+        ),
+
+        // ── FAB (admin only: New Group) ──
+        Positioned(
+          right: 18,
+          bottom: 18,
+          child: _buildAdminFab(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAdminGroupSliver(List<GroupChatPreview> filtered) {
     if (filtered.isEmpty) {
       return SliverToBoxAdapter(
         child: Padding(
@@ -850,7 +1000,7 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
               Icon(Icons.groups_outlined, size: 56, color: Colors.black26),
               SizedBox(height: 12),
               Text(
-                'No group chats yet.\nUse + to invite residents to a block chat.',
+                'No group chats yet.\nUse + to create a block group chat.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.black45, height: 1.6),
               ),
@@ -871,6 +1021,7 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
               primaryColor: _primary,
               formatTime: _formatTime,
               isAdmin: true,
+              searchQuery: _searchQuery,
               onTap: () => _openAdminGroupChat(filtered[i]),
             ),
           ),
@@ -884,23 +1035,82 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
   // SHARED UI helpers
   // ══════════════════════════════════════════════
 
-  Widget _buildHeader({required String title, bool isAdmin = false}) {
+  /// Profile header: avatar + name + subtitle + optional search icon
+  Widget _buildProfileHeader({
+    required String name,
+    required String subtitle,
+  }) {
+    final displayName = name.isNotEmpty ? name : 'Hello';
+    final initials = _getInitials(displayName);
+    final avatarColor = _nameToColor(displayName);
+
     return Padding(
-      padding: const EdgeInsets.fromLTRB(22, 18, 22, 4),
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 10),
       child: Row(
         children: [
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 26,
-              fontWeight: FontWeight.w800,
-              color: _textDark,
-              letterSpacing: -0.5,
+          // Avatar
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [avatarColor, avatarColor.withOpacity(0.7)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(13),
+            ),
+            child: Center(
+              child: Text(
+                initials,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 15,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Name + subtitle
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  displayName,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    color: _textDark,
+                  ),
+                ),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Colors.black45,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
       ),
     );
+  }
+
+  String _getInitials(String name) {
+    final parts = name.trim().split(RegExp(r'\s+'));
+    if (parts.isEmpty) return '?';
+    if (parts.length == 1) return parts[0][0].toUpperCase();
+    return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+  }
+
+  Color _nameToColor(String name) {
+    final hue = (name.codeUnits.fold(0, (a, b) => a + b) % 360).toDouble();
+    return HSLColor.fromAHSL(1, hue, 0.55, 0.55).toColor();
   }
 
   Widget _buildSectionLabel(String label, {int? count}) {
@@ -932,24 +1142,42 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
     color: Colors.black.withOpacity(0.07),
   );
 
-  Widget _buildFilterChip(String label, String value) {
+  Widget _buildFilterChip(String label, String value, {int totalUnread = 0}) {
     final isSelected = _filter == value;
+    final showBadge = value == 'all' && totalUnread > 0 && !isSelected;
 
     return GestureDetector(
       onTap: () => setState(() => _filter = value),
       child: Container(
         margin: const EdgeInsets.only(right: 10),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
         decoration: BoxDecoration(
           color: isSelected ? _primary : Colors.grey.shade200,
           borderRadius: BorderRadius.circular(20),
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isSelected ? Colors.white : Colors.black54,
-            fontWeight: FontWeight.w600,
-          ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                color: isSelected ? Colors.white : Colors.black54,
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+              ),
+            ),
+            if (showBadge) ...[
+              const SizedBox(width: 5),
+              Container(
+                width: 7,
+                height: 7,
+                decoration: BoxDecoration(
+                  color: _primary,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ],
+          ],
         ),
       ),
     );
@@ -957,12 +1185,18 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
 
   Widget _buildSearchBar({required String hint}) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(22, 14, 22, 0),
+      padding: const EdgeInsets.fromLTRB(22, 4, 22, 4),
       child: Container(
-        height: 60,
+        height: 53,
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: _isSearchActive
+                ? _primary.withOpacity(0.5)
+                : Colors.transparent,
+            width: 1.5,
+          ),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.05),
@@ -973,18 +1207,145 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
         ),
         child: TextField(
           controller: _searchController,
+          onTap: () => setState(() => _isSearchActive = true),
           onChanged: (v) => setState(() => _searchQuery = v.toLowerCase()),
+          onSubmitted: (v) {
+            _addRecentSearch(v.trim());
+            setState(() => _isSearchActive = false);
+          },
           style: const TextStyle(fontSize: 14, color: _textDark),
           decoration: InputDecoration(
             hintText: hint,
             hintStyle: const TextStyle(color: Colors.black38, fontSize: 14),
             prefixIcon: const Icon(Icons.search_rounded,
                 color: Colors.black38, size: 20),
+            suffixIcon: _searchQuery.isNotEmpty
+                ? GestureDetector(
+              onTap: () {
+                _searchController.clear();
+                setState(() {
+                  _searchQuery = '';
+                  _isSearchActive = false;
+                });
+              },
+              child: const Icon(Icons.close_rounded,
+                  color: Colors.black38, size: 18),
+            )
+                : null,
             border: InputBorder.none,
-            contentPadding: const EdgeInsets.symmetric(vertical: 12),
+            contentPadding: const EdgeInsets.symmetric(vertical: 10),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildRecentSearches() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(22, 8, 22, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'RECENT',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              color: Colors.black38,
+              letterSpacing: 1.1,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: _recentSearches
+                .map(
+                  (s) => GestureDetector(
+                onTap: () {
+                  _searchController.text = s;
+                  setState(() => _searchQuery = s.toLowerCase());
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade200,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.history_rounded,
+                          size: 13, color: Colors.black45),
+                      const SizedBox(width: 5),
+                      Text(
+                        s,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.black54,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            )
+                .toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Admin FAB: only "New Group" ──────────────
+  Widget _buildAdminFab() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        // Expanded option
+        if (_fabExpanded) ...[
+          _FabOption(
+            label: 'New Group',
+            icon: Icons.group_add_rounded,
+            color: _primary,
+            onTap: () {
+              setState(() => _fabExpanded = false);
+              // TODO: navigate to create group screen
+            },
+          ),
+          const SizedBox(height: 12),
+        ],
+        // Main FAB
+        GestureDetector(
+          onTap: () => setState(() => _fabExpanded = !_fabExpanded),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            width: 54,
+            height: 54,
+            decoration: BoxDecoration(
+              color: _fabExpanded ? Colors.black87 : _primary,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: (_fabExpanded ? Colors.black : _primary)
+                      .withOpacity(0.35),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: AnimatedRotation(
+              turns: _fabExpanded ? 0.125 : 0,
+              duration: const Duration(milliseconds: 200),
+              child: const Icon(Icons.add_rounded,
+                  color: Colors.white, size: 28),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -992,6 +1353,58 @@ class _CommunityChatsListScreenState extends State<CommunityChatsListScreen>
 // ─────────────────────────────────────────────
 // Sub-widgets
 // ─────────────────────────────────────────────
+
+class _FabOption extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _FabOption({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            decoration: BoxDecoration(
+              color: Colors.black87,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.85),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: Colors.white, size: 20),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _CountBadge extends StatelessWidget {
   final int count;
@@ -1015,18 +1428,17 @@ class _CountBadge extends StatelessWidget {
   }
 }
 
-class _GroupChatTile extends StatelessWidget {
-  final GroupChatPreview group;
+// ── Neighbour card with online dot ──────────────
+class _NeighbourCard extends StatelessWidget {
+  final ResidentProfile profile;
   final Color primaryColor;
-  final String Function(DateTime) formatTime;
-  final bool isAdmin;
+  final bool isOnline;
   final VoidCallback onTap;
 
-  const _GroupChatTile({
-    required this.group,
+  const _NeighbourCard({
+    required this.profile,
     required this.primaryColor,
-    required this.formatTime,
-    required this.isAdmin,
+    required this.isOnline,
     required this.onTap,
   });
 
@@ -1034,11 +1446,115 @@ class _GroupChatTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
+      child: SizedBox(
+        width: 64,
+        child: Column(
+          children: [
+            Stack(
+              children: [
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        profile.avatarColor,
+                        profile.avatarColor.withOpacity(0.7),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(17),
+                    boxShadow: [
+                      BoxShadow(
+                        color: profile.avatarColor.withOpacity(0.35),
+                        blurRadius: 8,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: Center(
+                    child: Text(
+                      profile.initials,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 18,
+                      ),
+                    ),
+                  ),
+                ),
+                // Online dot
+                if (isOnline)
+                  Positioned(
+                    bottom: 1,
+                    right: 1,
+                    child: Container(
+                      width: 13,
+                      height: 13,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF22C55E),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                            color: const Color(0xFFF5F1ED), width: 2),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              profile.firstName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF2B2B2B),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Group chat tile with unread indicator ────────
+class _GroupChatTile extends StatelessWidget {
+  final GroupChatPreview group;
+  final Color primaryColor;
+  final String Function(DateTime) formatTime;
+  final bool isAdmin;
+  final String searchQuery;
+  final VoidCallback onTap;
+
+  const _GroupChatTile({
+    required this.group,
+    required this.primaryColor,
+    required this.formatTime,
+    required this.isAdmin,
+    required this.searchQuery,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hasUnread = group.unreadCount > 0;
+
+    return GestureDetector(
+      onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(18),
+          border: hasUnread
+              ? Border(
+            left: BorderSide(color: primaryColor, width: 4),
+          )
+              : null,
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.04),
@@ -1076,27 +1592,31 @@ class _GroupChatTile extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          group.name,
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF2B2B2B),
-                          ),
-                        ),
-                      ),
-                    ],
+                  _HighlightText(
+                    text: group.name,
+                    query: searchQuery,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight:
+                      hasUnread ? FontWeight.w800 : FontWeight.w700,
+                      color: const Color(0xFF2B2B2B),
+                    ),
+                    highlightColor: primaryColor,
                   ),
                   const SizedBox(height: 3),
                   Text(
                     group.lastMessage,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style:
-                    const TextStyle(fontSize: 13, color: Colors.black45),
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: hasUnread
+                          ? const Color(0xFF2B2B2B)
+                          : Colors.black45,
+                      fontWeight: hasUnread
+                          ? FontWeight.w600
+                          : FontWeight.w400,
+                    ),
                   ),
                 ],
               ),
@@ -1107,9 +1627,25 @@ class _GroupChatTile extends StatelessWidget {
               children: [
                 Text(
                   formatTime(group.lastTime),
-                  style:
-                  const TextStyle(fontSize: 12, color: Colors.black38),
-                )
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: hasUnread ? primaryColor : Colors.black38,
+                    fontWeight: hasUnread
+                        ? FontWeight.w600
+                        : FontWeight.w400,
+                  ),
+                ),
+                if (hasUnread) ...[
+                  const SizedBox(height: 5),
+                  Container(
+                    width: 9,
+                    height: 9,
+                    decoration: BoxDecoration(
+                      color: primaryColor,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ],
               ],
             ),
           ],
@@ -1119,81 +1655,13 @@ class _GroupChatTile extends StatelessWidget {
   }
 }
 
-class _NeighbourCard extends StatelessWidget {
-  final ResidentProfile profile;
-  final Color primaryColor;
-  final VoidCallback onTap;
-
-  const _NeighbourCard({
-    required this.profile,
-    required this.primaryColor,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: SizedBox(
-        width: 64,
-        child: Column(
-          children: [
-            Container(
-              width: 60,
-              height: 60,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    profile.avatarColor,
-                    profile.avatarColor.withOpacity(0.7),
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(18),
-                boxShadow: [
-                  BoxShadow(
-                    color: profile.avatarColor.withOpacity(0.4),
-                    blurRadius: 8,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
-              ),
-              child: Center(
-                child: Text(
-                  profile.initials,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 20,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              profile.firstName,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF2B2B2B),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
+// ── Conversation tile with unread indicator ──────
 class _ConversationTile extends StatelessWidget {
   final ConversationPreview preview;
   final Color primaryColor;
   final Color accentColor;
   final String Function(DateTime) formatTime;
+  final String searchQuery;
   final VoidCallback onTap;
 
   const _ConversationTile({
@@ -1201,12 +1669,14 @@ class _ConversationTile extends StatelessWidget {
     required this.primaryColor,
     required this.accentColor,
     required this.formatTime,
+    required this.searchQuery,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final resident = preview.resident;
+    final hasUnread = preview.unreadCount > 0;
 
     return GestureDetector(
       onTap: onTap,
@@ -1215,6 +1685,11 @@ class _ConversationTile extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(18),
+          border: hasUnread
+              ? Border(
+            left: BorderSide(color: primaryColor, width: 4),
+          )
+              : null,
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.04),
@@ -1255,13 +1730,16 @@ class _ConversationTile extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    resident.name,
-                    style: const TextStyle(
+                  _HighlightText(
+                    text: resident.name,
+                    query: searchQuery,
+                    style: TextStyle(
                       fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF2B2B2B),
+                      fontWeight:
+                      hasUnread ? FontWeight.w800 : FontWeight.w700,
+                      color: const Color(0xFF2B2B2B),
                     ),
+                    highlightColor: primaryColor,
                   ),
                   const SizedBox(height: 3),
                   Text(
@@ -1270,10 +1748,10 @@ class _ConversationTile extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 13,
-                      color: preview.unreadCount > 0
+                      color: hasUnread
                           ? const Color(0xFF2B2B2B)
                           : Colors.black45,
-                      fontWeight: preview.unreadCount > 0
+                      fontWeight: hasUnread
                           ? FontWeight.w600
                           : FontWeight.w400,
                     ),
@@ -1289,30 +1767,20 @@ class _ConversationTile extends StatelessWidget {
                   formatTime(preview.lastTime),
                   style: TextStyle(
                     fontSize: 12,
-                    color: preview.unreadCount > 0
-                        ? primaryColor
-                        : Colors.black38,
-                    fontWeight: preview.unreadCount > 0
+                    color: hasUnread ? primaryColor : Colors.black38,
+                    fontWeight: hasUnread
                         ? FontWeight.w600
                         : FontWeight.w400,
                   ),
                 ),
-                if (preview.unreadCount > 0) ...[
-                  const SizedBox(height: 4),
+                if (hasUnread) ...[
+                  const SizedBox(height: 5),
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 7, vertical: 2),
+                    width: 9,
+                    height: 9,
                     decoration: BoxDecoration(
                       color: primaryColor,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      '${preview.unreadCount}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                      ),
+                      shape: BoxShape.circle,
                     ),
                   ),
                 ],
@@ -1320,6 +1788,57 @@ class _ConversationTile extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ── Text with search highlight ────────────────────
+class _HighlightText extends StatelessWidget {
+  final String text;
+  final String query;
+  final TextStyle style;
+  final Color highlightColor;
+
+  const _HighlightText({
+    required this.text,
+    required this.query,
+    required this.style,
+    required this.highlightColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (query.isEmpty) {
+      return Text(text, style: style, maxLines: 1, overflow: TextOverflow.ellipsis);
+    }
+
+    final lowerText = text.toLowerCase();
+    final lowerQuery = query.toLowerCase();
+    final matchIndex = lowerText.indexOf(lowerQuery);
+
+    if (matchIndex == -1) {
+      return Text(text, style: style, maxLines: 1, overflow: TextOverflow.ellipsis);
+    }
+
+    return RichText(
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      text: TextSpan(
+        style: style,
+        children: [
+          if (matchIndex > 0)
+            TextSpan(text: text.substring(0, matchIndex)),
+          TextSpan(
+            text: text.substring(matchIndex, matchIndex + query.length),
+            style: style.copyWith(
+              color: highlightColor,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          if (matchIndex + query.length < text.length)
+            TextSpan(text: text.substring(matchIndex + query.length)),
+        ],
       ),
     );
   }

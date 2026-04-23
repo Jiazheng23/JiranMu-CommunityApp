@@ -23,19 +23,21 @@ class _ResidentEventHistoryScreenState
     extends State<ResidentEventHistoryScreen> {
   final EventService _eventService = EventService();
 
-  final Color cork = const Color(0xFFAD8762);
-  final Color apricot = const Color(0xFFFFB38A);
+  // ── NEW THEME COLORS ──────────────────────────────
+  final Color primaryRed = const Color(0xFF9A4B3C); // Deep Red/Brown
+  final Color accentPeach = const Color(0xFFFC9D7E); // Apricot/Peach
+  final Color bgColor = const Color(0xFFF5F1ED);    // Beige/Off-white
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFFFF8F0),
+      backgroundColor: bgColor, // Updated background
       appBar: AppBar(
         title: const Text(
           "My Event History",
           style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
         ),
-        backgroundColor: cork,
+        backgroundColor: primaryRed, // Updated AppBar
         centerTitle: true,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
@@ -44,12 +46,12 @@ class _ResidentEventHistoryScreenState
         onRefresh: () async {
           setState(() {});
         },
-        color: apricot,
+        color: accentPeach, // Updated indicator
         child: FutureBuilder<List<CommunityEvent>>(
           future: _eventService.fetchUserRequests(),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
+              return Center(child: CircularProgressIndicator(color: accentPeach));
             }
 
             if (snapshot.hasError) {
@@ -65,6 +67,16 @@ class _ResidentEventHistoryScreenState
             }
 
             final requests = snapshot.data ?? [];
+
+            if (requests.isNotEmpty) {
+              requests.sort((a, b) {
+                bool aIsPending = a.status.toLowerCase() == 'pending';
+                bool bIsPending = b.status.toLowerCase() == 'pending';
+                if (aIsPending && !bIsPending) return -1;
+                if (!aIsPending && bIsPending) return 1;
+                return b.eventDate.compareTo(a.eventDate);
+              });
+            }
 
             if (requests.isEmpty) {
               return _buildEmptyState();
@@ -107,16 +119,16 @@ class _ResidentEventHistoryScreenState
     final bool isPrivate = event.isPrivate;
 
     return Card(
-      elevation: 3,
+      elevation: 2,
       margin: const EdgeInsets.only(bottom: 16),
-      shadowColor: Colors.black.withOpacity(0.1),
+      shadowColor: Colors.black.withOpacity(0.05),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+      color: Colors.white,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header: Title + Privacy badge + Status + Share
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -129,7 +141,7 @@ class _ResidentEventHistoryScreenState
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
-                          color: cork,
+                          color: primaryRed, // Updated text color
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -185,21 +197,21 @@ class _ResidentEventHistoryScreenState
                           padding: const EdgeInsets.symmetric(
                               horizontal: 10, vertical: 6),
                           decoration: BoxDecoration(
-                            color: apricot.withOpacity(0.15),
+                            color: accentPeach.withOpacity(0.15),
                             borderRadius: BorderRadius.circular(20),
                             border:
-                            Border.all(color: apricot.withOpacity(0.5)),
+                            Border.all(color: accentPeach.withOpacity(0.5)),
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.share_outlined, size: 13, color: cork),
+                              Icon(Icons.share_outlined, size: 13, color: primaryRed),
                               const SizedBox(width: 4),
                               Text(
                                 'Share',
                                 style: TextStyle(
                                   fontSize: 11,
-                                  color: cork,
+                                  color: primaryRed,
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
@@ -214,7 +226,6 @@ class _ResidentEventHistoryScreenState
             ),
             const Divider(height: 24, thickness: 1),
 
-            // Event Details
             _buildIconInfo(Icons.location_on_outlined, event.location),
             const SizedBox(height: 8),
             _buildIconInfo(
@@ -304,7 +315,7 @@ class _ResidentEventHistoryScreenState
   Widget _buildIconInfo(IconData icon, String text) {
     return Row(
       children: [
-        Icon(icon, size: 18, color: apricot),
+        Icon(icon, size: 18, color: accentPeach), // Updated icon color
         const SizedBox(width: 10),
         Text(
           text,
@@ -398,17 +409,17 @@ class _ResidentEventHistoryScreenState
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(Icons.history_outlined,
-              size: 80, color: cork.withOpacity(0.2)),
+              size: 80, color: primaryRed.withOpacity(0.2)),
           const SizedBox(height: 16),
           Text(
             "No requests yet",
             style: TextStyle(
-                color: cork, fontSize: 18, fontWeight: FontWeight.w500),
+                color: primaryRed, fontSize: 18, fontWeight: FontWeight.w500),
           ),
           const SizedBox(height: 8),
           Text(
             "When you propose an event, it will appear here.",
-            style: TextStyle(color: cork.withOpacity(0.6), fontSize: 14),
+            style: TextStyle(color: primaryRed.withOpacity(0.6), fontSize: 14),
           ),
         ],
       ),

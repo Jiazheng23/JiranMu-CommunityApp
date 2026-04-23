@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../AdminVisitorPassScreen.dart';
 
 class RequestDetailPage extends StatefulWidget {
   final Map data;
@@ -14,6 +15,11 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
   final supabase = Supabase.instance.client;
   final TextEditingController reasonController = TextEditingController();
   bool _isProcessing = false;
+
+  // 🤎 统一定义棕色主题色
+  static const Color _bg = Color(0xFFF5EBE6);
+  static const Color _brown = Color(0xFF8B5E4A);
+  static const Color _darkText = Color(0xFF2B2B2B);
 
   Future<String> _getAdminIdentifier() async {
     try {
@@ -81,6 +87,16 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
             'participants':    0,
           });
         }
+      } else if (type == 'visitor') {
+        final subData = extractSubData(widget.data['visitor_requests']);
+        if (subData != null) {
+          await supabase.from('visitor_passes').insert({
+            'visitor_name': subData['visitor_name'],
+            'visitor_ic':   subData['ic'],
+            'valid_date':   subData['visit_date'],
+            'status':       'approved',
+          });
+        }
       }
 
       await supabase.from('requests').update({
@@ -95,7 +111,16 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
               content: Text('Request approved!'),
               backgroundColor: Colors.green),
         );
-        Navigator.pop(context);
+        if (type == 'visitor') {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const AdminVisitorPassScreen(),
+            ),
+          );
+        } else {
+          Navigator.pop(context);
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -175,17 +200,23 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
             padding: const EdgeInsets.only(left: 24),
             child: Row(
               children: [
-                Text(displayValue,
-                    style: const TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.bold)),
+                Flexible(
+                  child: Text(displayValue,
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.bold),
+                      overflow: TextOverflow.ellipsis),
+                ),
                 const Padding(
                   padding: EdgeInsets.symmetric(horizontal: 10),
                   child: Icon(Icons.arrow_forward_rounded,
                       size: 14, color: Colors.grey),
                 ),
-                Text(endTime,
-                    style: const TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.bold)),
+                Flexible(
+                  child: Text(endTime,
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.bold),
+                      overflow: TextOverflow.ellipsis),
+                ),
               ],
             ),
           ),
@@ -280,6 +311,7 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
     Map? details;
     if (type == 'admin')         details = extractSubData(data['admin_requests']);
     else if (type == 'resident') details = extractSubData(data['resident_requests']);
+    else if (type == 'visitor')  details = extractSubData(data['visitor_requests']);
     else if (type == 'booking')  details = extractSubData(data['event_requests']);
     else if (type == 'facility') details = extractSubData(data['facility_requests']);
 
@@ -321,22 +353,16 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(color: Colors.grey.shade200)),
                 child: Wrap(
-                  spacing: 20,
-                  runSpacing: 25,
+                  runSpacing: 25, // 只需要保留上下间距
                   children: details.entries
                       .where((e) =>
                   e.key != 'request_id' &&
                       e.key != 'id' &&
                       e.key != 'end_time')
                       .map((e) {
-                    final bool isFullWidth =
-                        e.key.toLowerCase().contains('image') ||
-                            e.key.toLowerCase().contains('description') ||
-                            e.key.toLowerCase().contains('start_time');
+                    // 💡 重点：这里不再去判断全宽还是半宽，统统设为全宽 (double.infinity)！往下排！
                     return SizedBox(
-                      width: isFullWidth
-                          ? double.infinity
-                          : (MediaQuery.of(context).size.width - 100) / 2,
+                      width: double.infinity,
                       child: _buildDetailTile(
                         e.key,
                         e.value,
