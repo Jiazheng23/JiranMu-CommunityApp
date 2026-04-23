@@ -1,7 +1,40 @@
 import 'dart:io';
+
 import 'package:assignment/facility/facility_model.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+class FacilityUnavailableSlot {
+  const FacilityUnavailableSlot({
+    required this.id,
+    required this.facilityId,
+    required this.blockDate,
+    required this.startTime,
+    required this.endTime,
+    required this.reason,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String facilityId;
+  final String blockDate;
+  final String startTime;
+  final String endTime;
+  final String? reason;
+  final String? createdAt;
+
+  factory FacilityUnavailableSlot.fromMap(Map<String, dynamic> map) {
+    return FacilityUnavailableSlot(
+      id: map['id']?.toString() ?? '',
+      facilityId: map['facility_id']?.toString() ?? '',
+      blockDate: map['block_date']?.toString() ?? '',
+      startTime: map['start_time']?.toString() ?? '',
+      endTime: map['end_time']?.toString() ?? '',
+      reason: map['reason']?.toString(),
+      createdAt: map['created_at']?.toString(),
+    );
+  }
+}
 
 class FacilityService {
   FacilityService();
@@ -11,6 +44,7 @@ class FacilityService {
   Future<List<FacilityModel>> fetchFacilities({
     bool activeOnly = true,
     String usageType = 'facility',
+    String? bookingMode,
   }) async {
     var query = _supabase.from('facilities').select();
 
@@ -19,6 +53,10 @@ class FacilityService {
     }
 
     query = query.eq('usage_type', usageType);
+
+    if (bookingMode != null && bookingMode.trim().isNotEmpty) {
+      query = query.eq('booking_mode', bookingMode);
+    }
 
     final data = await query.order('name');
 
@@ -66,9 +104,7 @@ class FacilityService {
     required String bookingMode,
     required String usageType,
     required bool isActive,
-    required int slotDurationMinutes,
     int? maxDurationMinutes,
-    required bool purposeRequired,
     required bool isShared,
   }) async {
     await _supabase.from('facilities').insert({
@@ -82,9 +118,7 @@ class FacilityService {
       'booking_mode': bookingMode,
       'usage_type': usageType,
       'is_active': isActive,
-      'slot_duration_minutes': slotDurationMinutes,
       'max_duration_minutes': maxDurationMinutes,
-      'purpose_required': purposeRequired,
       'is_shared': isShared,
     });
   }
@@ -101,9 +135,7 @@ class FacilityService {
     required String bookingMode,
     required String usageType,
     required bool isActive,
-    required int slotDurationMinutes,
     int? maxDurationMinutes,
-    required bool purposeRequired,
     required bool isShared,
   }) async {
     await _supabase.from('facilities').update({
@@ -117,9 +149,7 @@ class FacilityService {
       'booking_mode': bookingMode,
       'usage_type': usageType,
       'is_active': isActive,
-      'slot_duration_minutes': slotDurationMinutes,
       'max_duration_minutes': maxDurationMinutes,
-      'purpose_required': purposeRequired,
       'is_shared': isShared,
     }).eq('id', id);
   }
@@ -134,20 +164,207 @@ class FacilityService {
         .eq('id', id);
   }
 
-  Future<List<Map<String, dynamic>>> fetchUnavailableRanges({
-    required FacilityModel facility,
-    required DateTime bookingDate,
-  }) async {
-    final dateOnly = bookingDate.toIso8601String().split('T').first;
+  Future<int> fetchUpcomingApprovedBookingCount(String facilityId) async {
+    final today = DateTime.now().toIso8601String().split('T').first;
 
     final data = await _supabase
+        .from('facility_bookings')
+        .select('id')
+        .eq('facility_id', facilityId)
+        .eq('status', 'approved')
+        .gte('booking_date', today);
+
+    return (data as List).length;
+  }
+
+  Future<void> deactivateFacilityAndCancelUpcomingBookings({
+    required String facilityId,
+    required String reason,
+  }) async {
+    final trimmedReason = reason.trim();
+    if (trimmedReason.isEmpty) {
+      throw Exception('Cancellation reason is required.');
+    }
+
+    final today = DateTime.now().toIso8601String().split('T').first;
+    final nowIso = DateTime.now().toIso8601String();
+
+    await _supabase
+        .from('facility_bookings')
+        .update({
+      'status': 'cancelled',
+      'cancel_reason': trimmedReason,
+      'cancelled_at': nowIso,
+    })
+        .eq('facility_id', facilityId)
+        .eq('status', 'approved')
+        .gte('booking_date', today);
+
+    await _supabase
+        .from('facilities')
+        .update({'is_active': false})
+        .eq('id', facilityId);
+  }
+
+  Future<List<FacilityUnavailableSlot>> fetchFacilityUnavailableSlots(
+      String facilityId,
+      ) async {
+    final data = await _supabase
+        .from('facility_unavailable_slots')
+        .select()
+        .eq('facility_id', facilityId)
+        .order('block_date', ascending: true)
+        .order('start_time', ascending: true);
+
+    return (data as List)
+        .map(
+          (item) =>
+          FacilityUnavailableSlot.fromMap(item as Map<String, dynamic>),
+    )
+        .toList();
+  }
+
+  Future<void> createFacilityUnavailableSlot({
+    required FacilityModel facility,
+    required DateTime blockDate,
+    required String startTime,
+    required String endTime,
+    String? reason,
+  }) async {
+    final dateOnly = blockDate.toIso8601String().split('T').first;
+
+    final startMinutes = _parseTimeToMinutes(startTime);
+    final endMinutes = _parseTimeToMinutes(endTime);
+    final openMinutes = _parseTimeToMinutes(facility.openTime);
+    final closeMinutes = _parseTimeToMinutes(facility.closeTime);
+
+    if (startMinutes == null ||
+        endMinutes == null ||
+        openMinutes == null ||
+        closeMinutes == null) {
+      throw Exception('Invalid blocked time range.');
+    }
+
+    if (endMinutes <= startMinutes) {
+      throw Exception('End time must be later than start time.');
+    }
+
+    if (startMinutes < openMinutes || endMinutes > closeMinutes) {
+      throw Exception(
+        'Blocked time must be within facility operating hours.',
+      );
+    }
+
+    final approvedBookings = await _supabase
         .from('facility_bookings')
         .select('start_time, end_time')
         .eq('facility_id', facility.id)
         .eq('booking_date', dateOnly)
         .eq('status', 'approved');
 
-    return List<Map<String, dynamic>>.from(data);
+    final hasApprovedOverlap = approvedBookings.any((item) {
+      final bookedStart =
+      _parseTimeToMinutes(item['start_time']?.toString() ?? '');
+      final bookedEnd = _parseTimeToMinutes(item['end_time']?.toString() ?? '');
+
+      if (bookedStart == null || bookedEnd == null) return false;
+
+      return _hasTimeOverlap(
+        startMinutes: startMinutes,
+        endMinutes: endMinutes,
+        otherStartMinutes: bookedStart,
+        otherEndMinutes: bookedEnd,
+      );
+    });
+
+    if (hasApprovedOverlap) {
+      throw Exception(
+        'This blocked slot overlaps with existing approved bookings.',
+      );
+    }
+
+    final existingBlocks = await _supabase
+        .from('facility_unavailable_slots')
+        .select('start_time, end_time')
+        .eq('facility_id', facility.id)
+        .eq('block_date', dateOnly);
+
+    final hasBlockedOverlap = existingBlocks.any((item) {
+      final blockedStart =
+      _parseTimeToMinutes(item['start_time']?.toString() ?? '');
+      final blockedEnd =
+      _parseTimeToMinutes(item['end_time']?.toString() ?? '');
+
+      if (blockedStart == null || blockedEnd == null) return false;
+
+      return _hasTimeOverlap(
+        startMinutes: startMinutes,
+        endMinutes: endMinutes,
+        otherStartMinutes: blockedStart,
+        otherEndMinutes: blockedEnd,
+      );
+    });
+
+    if (hasBlockedOverlap) {
+      throw Exception('This blocked slot overlaps with another blocked slot.');
+    }
+
+    await _supabase.from('facility_unavailable_slots').insert({
+      'facility_id': facility.id,
+      'block_date': dateOnly,
+      'start_time': startTime,
+      'end_time': endTime,
+      'reason': reason?.trim().isEmpty == true ? null : reason?.trim(),
+    });
+  }
+
+  Future<void> deleteFacilityUnavailableSlot(String slotId) async {
+    await _supabase
+        .from('facility_unavailable_slots')
+        .delete()
+        .eq('id', slotId);
+  }
+
+  Future<List<Map<String, dynamic>>> fetchUnavailableRanges({
+    required FacilityModel facility,
+    required DateTime bookingDate,
+  }) async {
+    final dateOnly = bookingDate.toIso8601String().split('T').first;
+
+    final approvedBookings = await _supabase
+        .from('facility_bookings')
+        .select('start_time, end_time')
+        .eq('facility_id', facility.id)
+        .eq('booking_date', dateOnly)
+        .eq('status', 'approved');
+
+    final blockedSlots = await _supabase
+        .from('facility_unavailable_slots')
+        .select('start_time, end_time')
+        .eq('facility_id', facility.id)
+        .eq('block_date', dateOnly);
+
+    final bookingRanges = List<Map<String, dynamic>>.from(approvedBookings)
+        .map(
+          (item) => {
+        'start_time': item['start_time'],
+        'end_time': item['end_time'],
+        'source': 'booking',
+      },
+    )
+        .toList();
+
+    final blockedRanges = List<Map<String, dynamic>>.from(blockedSlots)
+        .map(
+          (item) => {
+        'start_time': item['start_time'],
+        'end_time': item['end_time'],
+        'source': 'blocked',
+      },
+    )
+        .toList();
+
+    return [...bookingRanges, ...blockedRanges];
   }
 
   Future<void> submitFacilityBooking({
@@ -156,7 +373,6 @@ class FacilityService {
     required String startTime,
     required String endTime,
     required int participants,
-    String? purpose,
   }) async {
     final user = _supabase.auth.currentUser;
     if (user == null) {
@@ -164,8 +380,6 @@ class FacilityService {
     }
 
     final dateOnly = bookingDate.toIso8601String().split('T').first;
-    final cleanedPurpose =
-    purpose?.trim().isNotEmpty == true ? purpose!.trim() : null;
 
     final startMinutes = _parseTimeToMinutes(startTime);
     final endMinutes = _parseTimeToMinutes(endTime);
@@ -181,12 +395,38 @@ class FacilityService {
     if (facility.maxDurationMinutes != null &&
         (endMinutes - startMinutes) > facility.maxDurationMinutes!) {
       throw Exception(
-        'Maximum duration for ${facility.name} is ${facility.maxDurationMinutes! ~/ 60} hour(s).',
+        'Maximum duration for ${facility.name} is '
+            '${facility.maxDurationMinutes! ~/ 60} hour(s).',
       );
     }
 
-    final slotLabel =
-        '${_formatDbTimeTo12Hour(startTime)} - ${_formatDbTimeTo12Hour(endTime)}';
+    final blockedSlots = await _supabase
+        .from('facility_unavailable_slots')
+        .select('start_time, end_time')
+        .eq('facility_id', facility.id)
+        .eq('block_date', dateOnly);
+
+    final overlapsBlockedSlot = blockedSlots.any((item) {
+      final blockedStart =
+      _parseTimeToMinutes(item['start_time']?.toString() ?? '');
+      final blockedEnd =
+      _parseTimeToMinutes(item['end_time']?.toString() ?? '');
+
+      if (blockedStart == null || blockedEnd == null) return false;
+
+      return _hasTimeOverlap(
+        startMinutes: startMinutes,
+        endMinutes: endMinutes,
+        otherStartMinutes: blockedStart,
+        otherEndMinutes: blockedEnd,
+      );
+    });
+
+    if (overlapsBlockedSlot) {
+      throw Exception(
+        'This facility is unavailable for the selected time range.',
+      );
+    }
 
     final approvedBookings = await _supabase
         .from('facility_bookings')
@@ -195,24 +435,30 @@ class FacilityService {
         .eq('booking_date', dateOnly)
         .eq('status', 'approved');
 
-    if (facility.isInstantBooking && facility.isShared) {
+    if (facility.isShared) {
       int usedCapacity = 0;
 
       for (final row in approvedBookings) {
         final existingStart =
         _parseTimeToMinutes(row['start_time']?.toString() ?? '');
-        final existingEnd = _parseTimeToMinutes(row['end_time']?.toString() ?? '');
+        final existingEnd =
+        _parseTimeToMinutes(row['end_time']?.toString() ?? '');
 
         if (existingStart == null || existingEnd == null) continue;
 
-        final overlap = !(endMinutes <= existingStart || startMinutes >= existingEnd);
+        final overlap = _hasTimeOverlap(
+          startMinutes: startMinutes,
+          endMinutes: endMinutes,
+          otherStartMinutes: existingStart,
+          otherEndMinutes: existingEnd,
+        );
 
         if (overlap) {
-          usedCapacity += ((row['participants'] ?? 1) as int);
+          usedCapacity += 1;
         }
       }
 
-      if (usedCapacity + participants > facility.capacity) {
+      if (usedCapacity + 1 > facility.capacity) {
         final remaining = facility.capacity - usedCapacity;
         throw Exception(
           remaining > 0
@@ -222,109 +468,48 @@ class FacilityService {
       }
 
       await _supabase.from('facility_bookings').insert({
-        'request_id': null,
         'facility_id': facility.id,
         'resident_id': user.id,
         'booking_date': dateOnly,
         'start_time': startTime,
         'end_time': endTime,
-        'slot_label': slotLabel,
-        'participants': participants,
-        'purpose': cleanedPurpose,
+        'participants': 1,
         'status': 'approved',
       });
-
       return;
     }
 
     final hasApprovedOverlap = approvedBookings.any((item) {
-      final bookedStart = _parseTimeToMinutes(item['start_time']?.toString() ?? '');
+      final bookedStart =
+      _parseTimeToMinutes(item['start_time']?.toString() ?? '');
       final bookedEnd = _parseTimeToMinutes(item['end_time']?.toString() ?? '');
 
       if (bookedStart == null || bookedEnd == null) return false;
 
-      return !(endMinutes <= bookedStart || startMinutes >= bookedEnd);
+      return _hasTimeOverlap(
+        startMinutes: startMinutes,
+        endMinutes: endMinutes,
+        otherStartMinutes: bookedStart,
+        otherEndMinutes: bookedEnd,
+      );
     });
 
     if (hasApprovedOverlap) {
       throw Exception('This time range has already been booked.');
     }
 
-    if (facility.isInstantBooking) {
-      await _supabase.from('facility_bookings').insert({
-        'request_id': null,
-        'facility_id': facility.id,
-        'resident_id': user.id,
-        'booking_date': dateOnly,
-        'start_time': startTime,
-        'end_time': endTime,
-        'slot_label': slotLabel,
-        'participants': 1,
-        'purpose': cleanedPurpose,
-        'status': 'approved',
-      });
-      return;
-    }
-
-    final myExistingRequests = await _supabase
-        .from('facility_requests')
-        .select('start_time, end_time, requests!inner(user_id, status)')
-        .eq('facility_id', facility.id)
-        .eq('booking_date', dateOnly)
-        .eq('requests.user_id', user.id)
-        .inFilter('requests.status', ['pending', 'approved']);
-
-    final hasMyOwnPendingOverlap = myExistingRequests.any((item) {
-      final bookedStart = _parseTimeToMinutes(item['start_time']?.toString() ?? '');
-      final bookedEnd = _parseTimeToMinutes(item['end_time']?.toString() ?? '');
-
-      if (bookedStart == null || bookedEnd == null) return false;
-
-      return !(endMinutes <= bookedStart || startMinutes >= bookedEnd);
+    await _supabase.from('facility_bookings').insert({
+      'facility_id': facility.id,
+      'resident_id': user.id,
+      'booking_date': dateOnly,
+      'start_time': startTime,
+      'end_time': endTime,
+      'participants': 1,
+      'status': 'approved',
     });
-
-    if (hasMyOwnPendingOverlap) {
-      throw Exception(
-        'You already submitted a booking request for this time range. Please wait for approval.',
-      );
-    }
-
-    String? requestId;
-
-    try {
-      final requestResponse = await _supabase
-          .from('requests')
-          .insert({
-        'user_id': user.id,
-        'type': 'facility',
-        'title': 'Facility Request - ${facility.name}',
-        'description': cleanedPurpose ?? 'Facility booking request',
-        'status': 'pending',
-      })
-          .select('request_id')
-          .single();
-
-      requestId = requestResponse['request_id'] as String;
-
-      await _supabase.from('facility_requests').insert({
-        'request_id': requestId,
-        'facility_id': facility.id,
-        'booking_date': dateOnly,
-        'start_time': startTime,
-        'end_time': endTime,
-        'slot_label': slotLabel,
-        'participants': participants,
-        'purpose': cleanedPurpose,
-      });
-    } catch (e) {
-      if (requestId != null) {
-        await _supabase.from('requests').delete().eq('request_id', requestId);
-      }
-      rethrow;
-    }
   }
 
-  Future<List<Map<String, dynamic>>> fetchMyConfirmedBookings() async {
+  Future<List<Map<String, dynamic>>> fetchMyBookingHistory() async {
     final user = _supabase.auth.currentUser;
     if (user == null) {
       throw Exception('User not logged in');
@@ -333,110 +518,55 @@ class FacilityService {
     final data = await _supabase
         .from('facility_bookings')
         .select('''
-        id,
-        request_id,
-        booking_date,
-        start_time,
-        end_time,
-        slot_label,
-        participants,
-        purpose,
-        status,
-        created_at,
-        facilities(
           id,
-          name,
-          location,
-          booking_mode,
-          is_shared
-        )
-      ''')
+          booking_date,
+          start_time,
+          end_time,
+          participants,
+          status,
+          cancel_reason,
+          cancelled_at,
+          created_at,
+          facilities(
+            id,
+            name,
+            location,
+            booking_mode,
+            is_shared
+          )
+        ''')
         .eq('resident_id', user.id)
-        .eq('status', 'approved')
+        .inFilter('status', ['approved', 'cancelled'])
         .order('booking_date', ascending: false)
         .order('start_time', ascending: false);
 
     return List<Map<String, dynamic>>.from(data);
   }
 
+  Future<List<Map<String, dynamic>>> fetchMyConfirmedBookings() async {
+    return fetchMyBookingHistory();
+  }
+
   Future<List<Map<String, dynamic>>> fetchMyFacilityRequests() async {
-    final user = _supabase.auth.currentUser;
-    if (user == null) {
-      throw Exception('User not logged in');
-    }
-
-    final data = await _supabase
-        .from('requests')
-        .select('''
-          request_id,
-          status,
-          created_at,
-          reject_reason,
-          facility_requests(
-            booking_date,
-            start_time,
-            end_time,
-            slot_label,
-            participants,
-            purpose,
-            facilities(name, location, booking_mode)
-          )
-        ''')
-        .eq('user_id', user.id)
-        .eq('type', 'facility')
-        .order('created_at', ascending: false);
-
-    return List<Map<String, dynamic>>.from(data);
+    return [];
   }
 
   Future<List<Map<String, dynamic>>> fetchPendingFacilityRequestsForAdmin() async {
-    final data = await _supabase
-        .from('requests')
-        .select('''
-          request_id,
-          user_id,
-          status,
-          created_at,
-          title,
-          description,
-          facility_requests(
-            facility_id,
-            booking_date,
-            start_time,
-            end_time,
-            slot_label,
-            participants,
-            purpose,
-            facilities(id, name, location, booking_mode)
-          )
-        ''')
-        .eq('type', 'facility')
-        .eq('status', 'pending')
-        .order('created_at', ascending: false);
-
-    return List<Map<String, dynamic>>.from(data);
+    return [];
   }
 
   Future<void> approveFacilityRequest(String requestId) async {
-    await _supabase.from('requests').update({
-      'status': 'approved',
-      'respond_time': DateTime.now().toIso8601String(),
-      'reject_reason': null,
-    }).eq('request_id', requestId);
+    return;
   }
 
   Future<void> rejectFacilityRequest({
     required String requestId,
     required String rejectReason,
   }) async {
-    await _supabase.from('requests').update({
-      'status': 'rejected',
-      'respond_time': DateTime.now().toIso8601String(),
-      'reject_reason': rejectReason,
-    }).eq('request_id', requestId);
+    return;
   }
 
-  String _formatDbTimeTo12Hour(String raw) {
+  String formatDbTimeTo12Hour(String raw) {
     final totalMinutes = _parseTimeToMinutes(raw);
     if (totalMinutes == null) return raw;
 
@@ -461,5 +591,15 @@ class FacilityService {
     if (hour == null || minute == null) return null;
 
     return (hour * 60) + minute;
+  }
+
+  bool _hasTimeOverlap({
+    required int startMinutes,
+    required int endMinutes,
+    required int otherStartMinutes,
+    required int otherEndMinutes,
+  }) {
+    return !(endMinutes <= otherStartMinutes ||
+        startMinutes >= otherEndMinutes);
   }
 }

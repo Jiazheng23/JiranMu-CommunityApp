@@ -10,19 +10,30 @@ class ResidentBookingHistoryPage extends StatefulWidget {
 }
 
 class _ResidentBookingHistoryPageState
-    extends State<ResidentBookingHistoryPage> {
+    extends State<ResidentBookingHistoryPage>
+    with SingleTickerProviderStateMixin {
   final FacilityService _facilityService = FacilityService();
 
-  bool _isLoading = true;
-  String _statusFilter = 'all';
+  static const Color bgColor = Color(0xFFF5F1ED);
+  static const Color primaryColor = Color(0xFF9A4B3C);
+  static const Color textDark = Color(0xFF2B2B2B);
 
-  List<Map<String, dynamic>> _requests = [];
-  List<Map<String, dynamic>> _confirmedBookings = [];
+  late TabController _tabController;
+
+  bool _isLoading = true;
+  List<Map<String, dynamic>> _history = [];
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 3, vsync: this);
     _loadHistory();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadHistory() async {
@@ -31,14 +42,12 @@ class _ResidentBookingHistoryPageState
         _isLoading = true;
       });
 
-      final requests = await _facilityService.fetchMyFacilityRequests();
-      final bookings = await _facilityService.fetchMyConfirmedBookings();
+      final history = await _facilityService.fetchMyBookingHistory();
 
       if (!mounted) return;
 
       setState(() {
-        _requests = requests;
-        _confirmedBookings = bookings;
+        _history = history;
       });
     } catch (e) {
       if (!mounted) return;
@@ -65,14 +74,26 @@ class _ResidentBookingHistoryPageState
     return null;
   }
 
+  String _formatDate(String raw) {
+    if (raw.trim().isEmpty) return '-';
+
+    try {
+      final date = DateTime.parse(raw);
+      final day = date.day.toString().padLeft(2, '0');
+      final month = date.month.toString().padLeft(2, '0');
+      final year = date.year.toString();
+      return '$day/$month/$year';
+    } catch (_) {
+      return raw;
+    }
+  }
+
   Color _statusColor(String status) {
     switch (status.toLowerCase()) {
       case 'approved':
         return Colors.green;
-      case 'rejected':
-        return Colors.red;
-      case 'pending':
-        return Colors.orange;
+      case 'cancelled':
+        return Colors.redAccent;
       default:
         return Colors.grey;
     }
@@ -98,128 +119,40 @@ class _ResidentBookingHistoryPageState
     );
   }
 
-  List<Map<String, dynamic>> _buildUnifiedHistory() {
-    final List<Map<String, dynamic>> items = [];
+  List<Map<String, dynamic>> _historyByStatus(String status) {
+    if (status == 'all') return _history;
 
-    // A. facility requests (pending / approved / rejected)
-    for (final request in _requests) {
-      final detail = _extractSubData(request['facility_requests']);
-      final facility = _extractSubData(detail?['facilities']);
-
-      items.add({
-        'source': 'request',
-        'status': request['status']?.toString() ?? 'pending',
-        'facility_name': facility?['name']?.toString() ?? 'Facility',
-        'location': facility?['location']?.toString() ?? '-',
-        'booking_date': detail?['booking_date']?.toString() ?? '-',
-        'start_time': detail?['start_time']?.toString() ?? '-',
-        'end_time': detail?['end_time']?.toString() ?? '-',
-        'participants': detail?['participants']?.toString() ?? '-',
-        'purpose': detail?['purpose']?.toString() ?? '-',
-        'reject_reason': request['reject_reason']?.toString(),
-        'source_label': 'Facility Request',
-        'created_at': request['created_at']?.toString(),
-      });
-    }
-
-    // B. only confirmed bookings without request_id
-    // instant / shared instant only
-    for (final booking in _confirmedBookings) {
-      if (booking['request_id'] != null) continue;
-
-      final facility = _extractSubData(booking['facilities']);
-      final isShared = facility?['is_shared'] ?? false;
-
-      items.add({
-        'source': 'booking',
-        'status': 'approved',
-        'facility_name': facility?['name']?.toString() ?? 'Facility',
-        'location': facility?['location']?.toString() ?? '-',
-        'booking_date': booking['booking_date']?.toString() ?? '-',
-        'start_time': booking['start_time']?.toString() ?? '-',
-        'end_time': booking['end_time']?.toString() ?? '-',
-        'participants': booking['participants']?.toString() ?? '1',
-        'purpose': booking['purpose']?.toString() ?? '-',
-        'reject_reason': null,
-        'source_label': isShared
-            ? 'Shared Instant Booking'
-            : 'Instant Booking',
-        'created_at': booking['created_at']?.toString(),
-      });
-    }
-
-    // Optional: sort by created_at descending if available
-    items.sort((a, b) {
-      final aTime = a['created_at']?.toString() ?? '';
-      final bTime = b['created_at']?.toString() ?? '';
-      return bTime.compareTo(aTime);
-    });
-
-    return items;
-  }
-
-  List<Map<String, dynamic>> _filteredHistory() {
-    final allItems = _buildUnifiedHistory();
-
-    if (_statusFilter == 'all') return allItems;
-
-    return allItems
-        .where((item) =>
-    item['status']?.toString().toLowerCase() == _statusFilter)
+    return _history
+        .where(
+          (item) => item['status']?.toString().toLowerCase() == status,
+    )
         .toList();
   }
 
-  Widget _buildTopTab(String label, String value) {
-    final isSelected = _statusFilter == value;
-
-    return Expanded(
-      child: InkWell(
-        onTap: () {
-          setState(() {
-            _statusFilter = value;
-          });
-        },
-        child: Container(
-          alignment: Alignment.center,
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          decoration: BoxDecoration(
-            border: Border(
-              bottom: BorderSide(
-                color: isSelected ? Colors.white : Colors.transparent,
-                width: 3,
-              ),
-            ),
-          ),
-          child: Text(
-            label,
-            style: TextStyle(
-              color: isSelected ? Colors.white : Colors.white70,
-              fontSize: 13,
-              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildHistoryCard(Map<String, dynamic> item) {
-    final status = item['status']?.toString() ?? 'pending';
-    final facilityName = item['facility_name']?.toString() ?? 'Facility';
-    final location = item['location']?.toString() ?? '-';
+    final facility = _extractSubData(item['facilities']);
+
+    final status = item['status']?.toString() ?? 'approved';
+    final facilityName = facility?['name']?.toString() ?? 'Facility';
+    final location = facility?['location']?.toString() ?? '-';
     final bookingDate = item['booking_date']?.toString() ?? '-';
     final startTime = item['start_time']?.toString() ?? '-';
     final endTime = item['end_time']?.toString() ?? '-';
-    final participants = item['participants']?.toString() ?? '-';
-    final purpose = item['purpose']?.toString() ?? '-';
-    final rejectReason = item['reject_reason']?.toString();
+    final participants = item['participants']?.toString() ?? '1';
+    final cancelReason = item['cancel_reason']?.toString();
+    final cancelledAt = item['cancelled_at']?.toString();
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 14),
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
-        side: BorderSide(color: Colors.grey.shade200),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -233,7 +166,8 @@ class _ResidentBookingHistoryPageState
                     facilityName,
                     style: const TextStyle(
                       fontSize: 16,
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w700,
+                      color: textDark,
                     ),
                   ),
                 ),
@@ -241,22 +175,37 @@ class _ResidentBookingHistoryPageState
               ],
             ),
             const SizedBox(height: 10),
-            Text('Date: $bookingDate'),
-            Text('Time: $startTime - $endTime'),
+            Text('Date: ${_formatDate(bookingDate)}'),
+            Text(
+              'Time: ${_facilityService.formatDbTimeTo12Hour(startTime)} - '
+                  '${_facilityService.formatDbTimeTo12Hour(endTime)}',
+            ),
             Text('Location: $location'),
             Text('Participants: $participants'),
-            Text('Purpose: $purpose'),
-            if (status.toLowerCase() == 'rejected' &&
-                rejectReason != null &&
-                rejectReason.isNotEmpty) ...[
+            if (status.toLowerCase() == 'cancelled') ...[
               const SizedBox(height: 8),
               Text(
-                'Reject Reason: $rejectReason',
+                'Cancelled by admin',
                 style: const TextStyle(
                   color: Colors.redAccent,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
+              if (cancelReason != null && cancelReason.trim().isNotEmpty)
+                Text(
+                  'Reason: $cancelReason',
+                  style: const TextStyle(
+                    color: Colors.redAccent,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              if (cancelledAt != null && cancelledAt.trim().isNotEmpty)
+                Text(
+                  'Cancelled on: ${_formatDate(cancelledAt)}',
+                  style: const TextStyle(
+                    color: Colors.black54,
+                  ),
+                ),
             ],
           ],
         ),
@@ -264,82 +213,104 @@ class _ResidentBookingHistoryPageState
     );
   }
 
-  Widget _buildEmptyState(String message) {
-    return Center(
-      child: Text(
-        message,
-        style: const TextStyle(
-          fontSize: 14,
-          color: Colors.black54,
-          fontWeight: FontWeight.w600,
+  Widget _buildHistoryList(
+      List<Map<String, dynamic>> items, {
+        required IconData emptyIcon,
+        required String emptyMsg,
+      }) {
+    if (_isLoading) {
+      return const Center(
+        child: CircularProgressIndicator(color: primaryColor),
+      );
+    }
+
+    if (items.isEmpty) {
+      return RefreshIndicator(
+        color: primaryColor,
+        onRefresh: _loadHistory,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: [
+            const SizedBox(height: 180),
+            Column(
+              children: [
+                Icon(emptyIcon, size: 64, color: Colors.black12),
+                const SizedBox(height: 12),
+                Text(
+                  emptyMsg,
+                  style: const TextStyle(
+                    color: Colors.black38,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
+      );
+    }
+
+    return RefreshIndicator(
+      color: primaryColor,
+      onRefresh: _loadHistory,
+      child: ListView.separated(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        itemCount: items.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 12),
+        itemBuilder: (context, index) => _buildHistoryCard(items[index]),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final historyItems = _filteredHistory();
+    final allItems = _historyByStatus('all');
+    final approvedItems = _historyByStatus('approved');
+    final cancelledItems = _historyByStatus('cancelled');
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F1ED),
+      backgroundColor: bgColor,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF9A4B3C),
+        title: const Text('Booking History'),
+        backgroundColor: primaryColor,
         foregroundColor: Colors.white,
         elevation: 0,
         scrolledUnderElevation: 0,
-        iconTheme: const IconThemeData(color: Colors.white),
-        title: const Text(
-          'Booking History',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(48),
-          child: Container(
-            color: const Color(0xFF9A4B3C),
-            child: Row(
-              children: [
-                _buildTopTab('All', 'all'),
-                _buildTopTab('Pending', 'pending'),
-                _buildTopTab('Approved', 'approved'),
-                _buildTopTab('Rejected', 'rejected'),
-              ],
-            ),
-          ),
+        bottom: TabBar(
+          controller: _tabController,
+          indicatorColor: Colors.white,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white60,
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
+          tabs: const [
+            Tab(text: 'All'),
+            Tab(text: 'Approved'),
+            Tab(text: 'Cancelled'),
+          ],
         ),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-        onRefresh: _loadHistory,
-        child: historyItems.isEmpty
-            ? ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          children: const [
-            SizedBox(height: 180),
-            Center(
-              child: Text(
-                'No facility history found.',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.black54,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        )
-            : ListView.builder(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(16),
-          itemCount: historyItems.length,
-          itemBuilder: (context, index) {
-            return _buildHistoryCard(historyItems[index]);
-          },
-        ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          _buildHistoryList(
+            allItems,
+            emptyIcon: Icons.history,
+            emptyMsg: 'No booking history found',
+          ),
+          _buildHistoryList(
+            approvedItems,
+            emptyIcon: Icons.check_circle_outline,
+            emptyMsg: 'No approved booking history',
+          ),
+          _buildHistoryList(
+            cancelledItems,
+            emptyIcon: Icons.cancel_outlined,
+            emptyMsg: 'No cancelled booking history',
+          ),
+        ],
       ),
     );
   }

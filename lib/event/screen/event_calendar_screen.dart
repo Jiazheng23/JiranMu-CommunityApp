@@ -17,14 +17,16 @@ class EventCalendarScreen extends StatefulWidget {
 }
 
 class _EventCalendarScreenState extends State<EventCalendarScreen> {
-  final Color cork = const Color(0xFFAD8762);
-  final Color apricot = const Color(0xFFFFB38A);
-  final Color creamBg = const Color(0xFFFFF8F0);
+  // ── NEW THEME COLORS ──────────────────────────────
+  final Color bgColor = const Color(0xFFF5F1ED);
+  final Color primaryColor = const Color(0xFF9A4B3C);
+  final Color accentColor = const Color(0xFFFC9D7E);
+  final Color softYellow = const Color(0xFFF0E6B8);
+  final Color textDark = const Color(0xFF2B2B2B);
 
-  // Three separate dot colors
-  static const Color _createdEventDot = Color(0xFF6C63FF); // indigo — events YOU created
-  static const Color _joinedEventDot  = Color(0xFF22C55E); // green  — events you JOINED
-  // apricot (above) is reused for community events (public, not yours)
+  // Keep these as they are per your request
+  static const Color _createdEventDot = Color(0xFF6C63FF);
+  static const Color _joinedEventDot  = Color(0xFF22C55E);
 
   CalendarFormat _calendarFormat = CalendarFormat.month;
   DateTime _focusedDay = DateTime.now();
@@ -99,7 +101,6 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
 
   // ── Data ─────────────────────────────────────
 
-  /// Refreshes all events and updates state so the calendar dots render correctly.
   void _refreshEvents() {
     if (!mounted) return;
     setState(() => _isLoadingEvents = true);
@@ -121,13 +122,9 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
     }
   }
 
-  /// Separately loads created vs joined so they get distinct dots on the calendar.
   Future<void> _loadMyEvents() async {
     try {
-      // Events the resident created (approved)
       final created = await _eventService.fetchMyApprovedEvents(currentUserId);
-
-      // Events the resident joined (approved), excluding ones they also created
       final joined = await _eventService.fetchJoinedEvents(currentUserId);
       final createdIds = created.map((e) => e.id).toSet();
       final joinedApproved = joined
@@ -174,13 +171,13 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
   Widget build(BuildContext context) {
     if (_isInitializing) {
       return Scaffold(
-        backgroundColor: creamBg,
-        body: Center(child: CircularProgressIndicator(color: apricot)),
+        backgroundColor: bgColor,
+        body: Center(child: CircularProgressIndicator(color: accentColor)),
       );
     }
 
     return Scaffold(
-      backgroundColor: creamBg,
+      backgroundColor: bgColor,
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 20),
@@ -190,7 +187,7 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
           'Community Calendar',
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
-        backgroundColor: cork,
+        backgroundColor: primaryColor,
         centerTitle: true,
         elevation: 0,
       ),
@@ -210,7 +207,7 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
             ),
           ).then((_) => _refreshEvents());
         },
-        backgroundColor: apricot,
+        backgroundColor: accentColor,
         shape: const CircleBorder(),
         elevation: 4,
         child: const Icon(Icons.add, color: Colors.white, size: 30),
@@ -219,7 +216,7 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
       bottomNavigationBar: BottomAppBar(
         shape: const CircularNotchedRectangle(),
         notchMargin: 8.0,
-        color: cork,
+        color: primaryColor,
         child: SizedBox(
           height: 60,
           child: Row(
@@ -277,13 +274,13 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
                   formatButtonVisible: false,
                   titleCentered: true,
                   titleTextStyle: TextStyle(
-                      color: cork,
+                      color: primaryColor,
                       fontWeight: FontWeight.bold,
                       fontSize: 17),
                   leftChevronIcon:
-                  Icon(Icons.chevron_left, color: cork),
+                  Icon(Icons.chevron_left, color: primaryColor),
                   rightChevronIcon:
-                  Icon(Icons.chevron_right, color: cork),
+                  Icon(Icons.chevron_right, color: primaryColor),
                 ),
                 onDaySelected: (selectedDay, focusedDay) {
                   setState(() {
@@ -297,20 +294,20 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
                 daysOfWeekHeight: 24,
                 daysOfWeekStyle: DaysOfWeekStyle(
                   weekdayStyle: TextStyle(
-                      color: cork, fontSize: 12, fontWeight: FontWeight.w600),
+                      color: primaryColor, fontSize: 12, fontWeight: FontWeight.w600),
                   weekendStyle: TextStyle(
-                      color: cork.withOpacity(0.7),
+                      color: primaryColor.withOpacity(0.7),
                       fontSize: 12,
                       fontWeight: FontWeight.w600),
                 ),
                 calendarStyle: CalendarStyle(
                   cellMargin: const EdgeInsets.all(4),
                   todayDecoration: BoxDecoration(
-                      color: apricot.withOpacity(0.5),
+                      color: softYellow,
                       shape: BoxShape.circle),
+                  todayTextStyle: TextStyle(color: textDark, fontWeight: FontWeight.bold),
                   selectedDecoration:
-                  BoxDecoration(color: cork, shape: BoxShape.circle),
-                  // Suppress default markers — we paint custom ones in markerBuilder
+                  BoxDecoration(color: primaryColor, shape: BoxShape.circle),
                   markersMaxCount: 0,
                   outsideDaysVisible: false,
                 ),
@@ -326,8 +323,6 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
                       return const SizedBox.shrink();
                     }
 
-                    // Wrap in Align so dots anchor to the bottom of the cell
-                    // without overlapping the day number.
                     return Align(
                       alignment: Alignment.bottomCenter,
                       child: Padding(
@@ -336,7 +331,6 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
                           mainAxisSize: MainAxisSize.min,
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            // Apricot dots — community events
                             if (hasCommunityEvents)
                               ...List.generate(
                                 events.length.clamp(0, 3),
@@ -345,10 +339,9 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
                                   height: 5,
                                   margin: const EdgeInsets.symmetric(horizontal: 1),
                                   decoration: BoxDecoration(
-                                      color: apricot, shape: BoxShape.circle),
+                                      color: accentColor, shape: BoxShape.circle),
                                 ),
                               ),
-                            // Indigo dot — events this resident CREATED
                             if (hasCreated) ...[
                               if (hasCommunityEvents) const SizedBox(width: 2),
                               Container(
@@ -367,7 +360,6 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
                                 ),
                               ),
                             ],
-                            // Green dot — events this resident JOINED
                             if (hasJoined) ...[
                               if (hasCommunityEvents || hasCreated)
                                 const SizedBox(width: 2),
@@ -395,7 +387,6 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
                 ),
               ),
 
-              // ── Legend (residents only) — uses Wrap to prevent overflow ───
               if (currentRole == 'resident')
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
@@ -403,7 +394,7 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
                     spacing: 10,
                     runSpacing: 4,
                     children: [
-                      _legendItem(apricot, 'Community events'),
+                      _legendItem(accentColor, 'Community events'),
                       _legendItem(_createdEventDot, 'Your events', glow: true),
                       _legendItem(_joinedEventDot, 'Joined events', glow: true),
                     ],
@@ -429,7 +420,7 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
         const SizedBox(width: 4),
         Text(label,
             style:
-            const TextStyle(fontSize: 11, color: Colors.black45)),
+            TextStyle(fontSize: 11, color: textDark.withOpacity(0.6))),
       ],
     );
   }
@@ -459,7 +450,7 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
     if (_isLoadingEvents) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 40),
-        child: Center(child: CircularProgressIndicator(color: apricot)),
+        child: Center(child: CircularProgressIndicator(color: accentColor)),
       );
     }
 
@@ -469,8 +460,6 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
         .where((e) => isSameDay(e.eventDate, selectedDay))
         .toList();
 
-    // Private events the resident is involved in (created or joined)
-    // that aren't already in the public list
     final myPrivateDayEvents = currentRole == 'resident'
         ? [
       ..._myCreatedEvents,
@@ -526,12 +515,12 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
       ),
       child: Card(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        color: Colors.white,
         shape:
         RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         elevation: 4,
         child: Column(
           children: [
-            // Image / placeholder
             Stack(
               children: [
                 ClipRRect(
@@ -546,12 +535,11 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
                       : Container(
                     height: 150,
                     width: double.infinity,
-                    color: cork.withOpacity(0.1),
+                    color: primaryColor.withOpacity(0.1),
                     child:
-                    Icon(Icons.image, color: cork, size: 50),
+                    Icon(Icons.image, color: primaryColor, size: 50),
                   ),
                 ),
-                // "Your Event" badge (created)
                 if (isMyEvent)
                   Positioned(
                     top: 10,
@@ -583,7 +571,6 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
                       ),
                     ),
                   ),
-                // "Joined" badge
                 if (!isMyEvent && hasJoined)
                   Positioned(
                     top: 10,
@@ -615,7 +602,6 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
                       ),
                     ),
                   ),
-                // "Private" badge
                 if (event.isPrivate)
                   Positioned(
                     top: 10,
@@ -645,11 +631,10 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
               ],
             ),
 
-            // Details
             ListTile(
               title: Text(event.title,
                   style: TextStyle(
-                      color: cork,
+                      color: primaryColor,
                       fontWeight: FontWeight.bold,
                       fontSize: 18)),
               subtitle: Column(
@@ -665,7 +650,7 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
                   LinearProgressIndicator(
                     value: occupancy,
                     backgroundColor: Colors.grey[200],
-                    color: isFull ? Colors.red : apricot,
+                    color: isFull ? Colors.red : accentColor,
                     minHeight: 8,
                     borderRadius: BorderRadius.circular(5),
                   ),
@@ -692,11 +677,11 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
 
   Widget _buildInfoRow(IconData icon, String label) {
     return Row(children: [
-      Icon(icon, size: 16, color: apricot),
+      Icon(icon, size: 16, color: accentColor),
       const SizedBox(width: 5),
       Expanded(
           child: Text(label,
-              style: const TextStyle(fontSize: 13, color: Colors.black87))),
+              style: TextStyle(fontSize: 13, color: textDark))),
     ]);
   }
 
@@ -708,7 +693,7 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
       return Text(
         "You are the Host",
         style: TextStyle(
-            color: cork,
+            color: primaryColor,
             fontWeight: FontWeight.bold,
             fontStyle: FontStyle.italic,
             fontSize: 13),
@@ -737,11 +722,12 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
         }
       },
       style: ElevatedButton.styleFrom(
-          backgroundColor: apricot,
+          backgroundColor: accentColor,
+          elevation: 2,
           shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10))),
       child: Text(isFull ? "Full" : "Join",
-          style: const TextStyle(color: Colors.white)),
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
     );
   }
 
@@ -769,10 +755,10 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.event_busy, size: 50, color: cork.withOpacity(0.3)),
+          Icon(Icons.event_busy, size: 50, color: primaryColor.withOpacity(0.3)),
           const SizedBox(height: 10),
           Text("No events for this day.",
-              style: TextStyle(color: cork.withOpacity(0.6))),
+              style: TextStyle(color: primaryColor.withOpacity(0.6))),
         ],
       ),
     );

@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../model/event_model.dart';
 import 'package:flutter/foundation.dart';
+import 'package:intl/intl.dart';
 
 class EventService {
   final supabase = Supabase.instance.client;
@@ -58,7 +59,6 @@ class EventService {
         throw Exception("User must be logged in to create events.");
       }
 
-      // 1. Insert into master 'requests' table
       final response = await supabase.from('requests').insert({
         'user_id': userId,
         'type': 'booking',
@@ -69,7 +69,6 @@ class EventService {
 
       final String newRequestId = response['request_id'].toString();
 
-      // 2. Insert into sub-table 'event_requests'
       await supabase.from('event_requests').insert({
         'request_id': newRequestId,
         'event_title': eventData['title'],
@@ -84,7 +83,6 @@ class EventService {
         'is_private': eventData['is_private'] ?? false,
       });
 
-      // 3. If admin, promote to live 'events' table immediately
       if (userRole == 'admin') {
         await approveAndPromoteRequest(newRequestId);
       }
@@ -137,7 +135,6 @@ class EventService {
   // 5. FETCHING METHODS
   // ─────────────────────────────────────────────
 
-  /// Fetches live PUBLIC events for the community calendar.
   Future<List<CommunityEvent>> fetchAllEvents(
       {int? limit, bool upcomingOnly = true}) async {
     try {
@@ -148,8 +145,7 @@ class EventService {
           .eq('is_private', false);
 
       if (upcomingOnly) {
-        final String today =
-        DateTime.now().toIso8601String().split('T')[0];
+        final String today = DateTime.now().toIso8601String().split('T')[0];
         query = query.gte('event_date', today);
       }
 
@@ -164,9 +160,6 @@ class EventService {
     }
   }
 
-  /// Fetches all approved events created by [userId].
-  /// Used by the calendar screen to paint per-day indicators.
-  /// Returns BOTH public and private events.
   Future<List<CommunityEvent>> fetchMyApprovedEvents(String userId) async {
     try {
       final response = await supabase
@@ -178,7 +171,6 @@ class EventService {
           .eq('user_id', userId)
           .order('event_date', ascending: true);
 
-      // Rows in 'events' are always approved (they only get inserted on approval)
       return (response as List)
           .map((e) => CommunityEvent.fromJson({
         ...Map<String, dynamic>.from(e as Map),
@@ -191,8 +183,6 @@ class EventService {
     }
   }
 
-  /// Fetches all event requests (pending/approved/rejected) for the
-  /// currently logged-in user. Used by ResidentEventHistoryScreen.
   Future<List<CommunityEvent>> fetchUserRequests() async {
     final String? userId = supabase.auth.currentUser?.id;
     if (userId == null) return [];
@@ -211,14 +201,8 @@ class EventService {
     }
   }
 
-  /// Fetches all events the resident has joined via event_participants.
-  /// Uses a left-join on requests so that events whose request row was
-  /// cleaned up after promotion are still returned.
   Future<List<CommunityEvent>> fetchJoinedEvents(String userId) async {
     try {
-      // Fetch participant rows with the full event data.
-      // We do NOT require requests!inner so approved events that had
-      // their request soft-deleted are still visible.
       final response = await supabase
           .from('event_participants')
           .select('event_id, events(*)')
@@ -226,14 +210,15 @@ class EventService {
 
       final List<dynamic> data = response as List<dynamic>;
 
-      return data.map((item) {
+      return data
+          .map((item) {
         if (item['events'] == null) return null;
-        final eventMap =
-        Map<String, dynamic>.from(item['events'] as Map);
-        // All rows in events are approved
+        final eventMap = Map<String, dynamic>.from(item['events'] as Map);
         eventMap['status'] = 'approved';
         return CommunityEvent.fromJson(eventMap);
-      }).whereType<CommunityEvent>().toList();
+      })
+          .whereType<CommunityEvent>()
+          .toList();
     } catch (e) {
       debugPrint("Fetch Joined Events Error: $e");
       return [];
@@ -280,14 +265,12 @@ class EventService {
 
       await supabase
           .from('events')
-          .update({'participants': currentParticipants + 1}).eq(
-          'id', eventId);
+          .update({'participants': currentParticipants + 1}).eq('id', eventId);
     } catch (e) {
       rethrow;
     }
   }
 
-  /// Allows a resident to leave an event they previously joined.
   Future<void> leaveEvent(String eventId, String userId) async {
     try {
       final existing = await supabase
@@ -307,7 +290,6 @@ class EventService {
           .eq('event_id', eventId)
           .eq('user_id', userId);
 
-      // Decrement participant count (floor at 0)
       final event = await supabase
           .from('events')
           .select('participants')
@@ -325,7 +307,6 @@ class EventService {
     }
   }
 
-  /// Returns true if [userId] has already joined [eventId].
   Future<bool> hasJoinedEvent(String eventId, String userId) async {
     try {
       final result = await supabase
@@ -352,6 +333,10 @@ class EventService {
     }
   }
 
+  // ─────────────────────────────────────────────
+  // 7. AVAILABILITY & SUGGESTIONS (UPDATED)
+  // ─────────────────────────────────────────────
+
   Future<bool> isFacilityAvailable(
       String location, String date, String startTime, String endTime) async {
     final response = await supabase
@@ -363,27 +348,93 @@ class EventService {
 
     final int newStart = _timeToMinutes(startTime);
     final int newEnd = _timeToMinutes(endTime);
+    const int bufferMinutes = 120; // 2 hours
 
     for (var event in response) {
       final int existStart = _timeToMinutes(event['start_time']);
       final int existEnd = _timeToMinutes(event['end_time']);
-      if (newStart < existEnd && newEnd > existStart) return false;
+
+      if (existStart < (newEnd + bufferMinutes) &&
+          existEnd > (newStart - bufferMinutes)) {
+        return false;
+      }
     }
     return true;
   }
 
-  Future<CommunityEvent> fetchEventById(String eventId) async {
-    final data = await supabase
-        .from('events')
-        .select()
-        .eq('id', eventId)
-        .single();
-    return CommunityEvent.fromJson(data);
+  /// NEW FUNCTION: Finds gaps in the schedule to suggest to the user
+  Future<List<String>> getAvailableSlots({
+    required String location,
+    required String date,
+    required String openTime,
+    required String closeTime,
+  }) async {
+    try {
+      debugPrint("Checking slots for $location on $date in the 'events' table");
+
+      // 1. Query the 'events' table directly
+      final response = await supabase
+          .from('events')
+          .select('start_time, end_time')
+          .eq('location', location)
+          .eq('event_date', date); // Confirm your column is 'event_date' or 'date'
+
+      final activeEvents = response as List;
+      debugPrint("Found ${activeEvents.length} confirmed events.");
+
+      int openMin = _timeToMinutes(openTime);
+      int closeMin = _timeToMinutes(closeTime);
+      const int cleaningBuffer = 120; // 2 hours
+
+      // 2. Map existing events into "Blocked" windows
+      List<Map<String, int>> blockedWindows = activeEvents.map((e) {
+        return {
+          'start': _timeToMinutes(e['start_time'].toString()),
+          'end': _timeToMinutes(e['end_time'].toString()) + cleaningBuffer,
+        };
+      }).toList();
+
+      // 3. Sort by start time
+      blockedWindows.sort((a, b) => a['start']!.compareTo(b['start']!));
+
+      List<String> suggestions = [];
+      int currentPos = openMin;
+
+      for (var window in blockedWindows) {
+        // Check if there is a gap of at least 1 hour
+        if (window['start']! - currentPos >= 60) {
+          suggestions.add(
+              "${_minutesToDisplayTime(currentPos)} - ${_minutesToDisplayTime(window['start']!)}");
+        }
+        if (window['end']! > currentPos) {
+          currentPos = window['end']!;
+        }
+      }
+
+      // 4. Check final gap until venue closing
+      if (closeMin - currentPos >= 60) {
+        suggestions.add(
+            "${_minutesToDisplayTime(currentPos)} - ${_minutesToDisplayTime(closeMin)}");
+      }
+
+      debugPrint("Final Suggestions: $suggestions");
+      return suggestions;
+
+    } catch (e) {
+      debugPrint("Error calculating slots: $e");
+      return [];
+    }
   }
 
   // ─────────────────────────────────────────────
-  // 7. MAPPING HELPERS
+  // 8. HELPERS & MAPPING
   // ─────────────────────────────────────────────
+
+  Future<CommunityEvent> fetchEventById(String eventId) async {
+    final data =
+    await supabase.from('events').select().eq('id', eventId).single();
+    return CommunityEvent.fromJson(data);
+  }
 
   List<CommunityEvent> _mapResponseToEventList(dynamic response) {
     if (response == null) return [];
@@ -403,7 +454,6 @@ class EventService {
       flattened['user_id'] =
           flattened['user_id'] ?? json['requests']['user_id'];
 
-      // Use request_id as id when main 'id' is null (history/pending views)
       if (flattened['id'] == null) {
         flattened['id'] =
             (flattened['request_id'] ?? json['request_id']).toString();
@@ -414,7 +464,29 @@ class EventService {
 
   int _timeToMinutes(String timeString) {
     if (timeString.isEmpty) return 0;
-    final parts = timeString.split(':');
-    return (int.parse(parts[0]) * 60) + int.parse(parts[1]);
+    try {
+      // Splits "14:15:00" or "14:15" into a list
+      final parts = timeString.split(':');
+
+      // We only care about the first two parts (Hours and Minutes)
+      if (parts.length < 2) return 0;
+
+      final int hours = int.parse(parts[0]);
+      final int minutes = int.parse(parts[1]);
+
+      return (hours * 60) + minutes;
+    } catch (e) {
+      debugPrint("Error parsing time '$timeString': $e");
+      return 0;
+    }
+  }
+
+  String _minutesToDisplayTime(int totalMinutes) {
+    int minutes = totalMinutes.clamp(0, 1439);
+    int h = minutes ~/ 60;
+    int m = minutes % 60;
+    final period = h >= 12 ? "PM" : "AM";
+    final displayH = h > 12 ? h - 12 : (h == 0 ? 12 : h);
+    return "$displayH:${m.toString().padLeft(2, '0')} $period";
   }
 }

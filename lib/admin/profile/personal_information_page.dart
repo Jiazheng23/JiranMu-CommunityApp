@@ -100,10 +100,22 @@ class _PersonalInformationPageState extends State<PersonalInformationPage> {
       }
 
       if (mounted) {
+        widget.user['full_name'] = _nameController.text.trim();
+        widget.user['phone'] = _phoneController.text.trim();
+        widget.user['ic'] = _icController.text.trim();
+        widget.user['age'] = int.tryParse(_ageController.text.trim());
+        widget.user['height'] = double.tryParse(_heightController.text.trim());
+        widget.user['weight'] = double.tryParse(_weightController.text.trim());
+        widget.user['blood'] = _selectedBloodType;
+
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Profile updated successfully!"), backgroundColor: Color(0xFF6B8E6B)),
+          const SnackBar(
+            content: Text("Profile updated successfully!"),
+            backgroundColor: Color(0xFF6B8E6B),
+          ),
         );
-        Navigator.pop(context);
+
+        Navigator.pop(context, true);
       }
     } catch (e) {
       if (mounted) {
