@@ -149,7 +149,7 @@ class _AdminEmergencyPageState extends State<AdminEmergencyPage> {
 
   void subscribeRealtime() {
     // 假设你的主键是 id（如果是 emergency_id 请自行替换）
-    final emergencyId = widget.emergency['id'] ?? widget.emergency['emergency_id'];
+    final emergencyId = widget.emergency['emergency_id'] ?? widget.emergency['emergency_id'];
 
     supabase.channel('emergency-updates-$emergencyId').onPostgresChanges(
         event: PostgresChangeEvent.update,
@@ -211,7 +211,7 @@ class _AdminEmergencyPageState extends State<AdminEmergencyPage> {
         builder: (context) => const Center(child: CircularProgressIndicator()),
       );
 
-      final String emergencyId = (widget.emergency['id'] ?? widget.emergency['emergency_id']).toString();
+      final String emergencyId = (widget.emergency['emergency_id'] ?? widget.emergency['emergency_id']).toString();
       final String fileName = 'resolution_$emergencyId\_${DateTime.now().millisecondsSinceEpoch}.jpg';
       final String filePath = 'records/$fileName';
 
@@ -234,7 +234,7 @@ class _AdminEmergencyPageState extends State<AdminEmergencyPage> {
         'admin_resolution_url': publicUrl, // 🔥 这里改为了 admin 专属的字段
         'solved_at': DateTime.now().toIso8601String(),
         'solved_by': adminName,
-      }).eq('id', emergencyId); // 这里用的是 id，如果是 emergency_id 请自行替换
+      }).eq('emergency_id', emergencyId); // 这里用的是 id，如果是 emergency_id 请自行替换
 
       if (mounted) {
         setState(() {

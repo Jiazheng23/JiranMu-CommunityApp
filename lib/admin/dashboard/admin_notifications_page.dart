@@ -22,19 +22,61 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
     _fetchNotifications();
   }
 
-  // 从 requests 表抓取最新的 pending 状态数据作为通知
+  // 🚨 核心修改：同时从 requests 和 emergency 表抓取数据并合并
   Future<void> _fetchNotifications() async {
     setState(() => isLoading = true);
     try {
-      final response = await supabase
+      // 1. 获取 requests 表的待处理请求
+      final requestsResponse = await supabase
           .from('requests')
           .select('*')
-          .eq('status', 'pending') // 主要拉取未处理的请求
+          .eq('status', 'pending')
           .order('created_at', ascending: false)
-          .limit(20); // 只看最近20条
+          .limit(20);
+
+      // 2. 获取 emergency 表的待处理请求
+      // (假设你的 emergency 表也有 status 字段。如果没有，请去掉 .eq 这行)
+      final emergencyResponse = await supabase
+          .from('emergency')
+          .select('*')
+          .eq('status', 'active')
+          .order('created_at', ascending: false)
+          .limit(20);
+
+      // 3. 把两边的数据合并到一个列表里，并统一格式
+      List<dynamic> combinedList = [];
+
+      // 加入 requests 数据
+      combinedList.addAll(requestsResponse);
+
+      // 加入 emergency 数据（给它强行加上 type、title 等字段，以适配 UI）
+      for (var emg in emergencyResponse) {
+        combinedList.add({
+          // 灵活获取 emergency 的数据，避免报错
+          'id': emg['id'] ?? emg['emergency_id'],
+          'type': 'emergency',
+          'title': '🚨 EMERGENCY SOS!',
+          'description': emg['description'] ?? emg['reason'] ?? 'Immediate attention required.',
+          'created_at': emg['created_at'],
+          'status': emg['status'] ?? 'pending',
+          'original_data': emg, // 保留原始数据备用
+        });
+      }
+
+      // 4. 按照时间 (created_at) 将合并后的列表从新到旧排序
+      combinedList.sort((a, b) {
+        final dateA = DateTime.tryParse(a['created_at']?.toString() ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final dateB = DateTime.tryParse(b['created_at']?.toString() ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+        return dateB.compareTo(dateA); // 倒序
+      });
+
+      // 5. 截取最新的 20 条显示
+      if (combinedList.length > 20) {
+        combinedList = combinedList.sublist(0, 20);
+      }
 
       setState(() {
-        notifications = response;
+        notifications = combinedList;
       });
     } catch (e) {
       debugPrint("Error fetching notifications: $e");
@@ -43,9 +85,11 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
     }
   }
 
-  // 根据类型获取图标
+  // 根据类型获取图标 (🚨 新增了 emergency 图标)
   IconData _getIconForType(String type) {
     switch (type.toLowerCase()) {
+      case 'emergency':
+        return Icons.emergency; // SOS 十字图标
       case 'resident':
         return Icons.person_add_alt_1;
       case 'visitor':
@@ -60,9 +104,11 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
     }
   }
 
-  // 根据类型获取图标颜色
+  // 根据类型获取图标颜色 (🚨 新增了 emergency 专属大红色)
   Color _getColorForType(String type) {
     switch (type.toLowerCase()) {
+      case 'emergency':
+        return Colors.red; // 紧急情况用正红色
       case 'resident':
         return Colors.blue;
       case 'visitor':
@@ -125,6 +171,10 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(16),
+                // 🚨 如果是 emergency，给整个卡片加一个淡淡的红色描边，更显眼
+                border: type.toLowerCase() == 'emergency'
+                    ? Border.all(color: Colors.red.shade200, width: 1.5)
+                    : null,
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withOpacity(0.03),
@@ -148,7 +198,12 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
                 ),
                 title: Text(
                   title,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                      // 🚨 emergency 的标题也变成红色
+                      color: type.toLowerCase() == 'emergency' ? Colors.red.shade800 : Colors.black87
+                  ),
                 ),
                 subtitle: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -171,7 +226,7 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
                   width: 10,
                   height: 10,
                   decoration: const BoxDecoration(
-                    color: Colors.redAccent, // 红点提示未读/待处理
+                    color: Colors.redAccent,
                     shape: BoxShape.circle,
                   ),
                 ),
@@ -180,7 +235,6 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
                   String? targetPageType;
                   Widget? emergencyPage;
 
-                  // 1. 把数据库里的 type 转换成你 RequestListPage 需要的 type
                   switch (dbType) {
                     case 'resident':
                     case 'user':
@@ -196,34 +250,28 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
                     case 'visitor':
                       targetPageType = "Visitor";
                       break;
-                    case 'emergency':
-                    case 'complaint':
-                    // 紧急情况你之前是单独的页面
+                    case 'emergency': // 🚨 emergency 和 complaint 都会跳到专门的紧急页面
                       emergencyPage = const EmergencyListPage();
                       break;
                     default:
                       targetPageType = null;
                   }
 
-                  // 2. 执行跳转逻辑
                   if (targetPageType != null) {
-                    // 跳转到通用的 RequestListPage
                     Navigator.push(
                       context,
                       MaterialPageRoute(
                         builder: (_) => RequestListPage(type: targetPageType!),
                       ),
-                    ).then((_) => _fetchNotifications()); // 处理完退回来时，刷新通知列表
+                    ).then((_) => _fetchNotifications());
                   } else if (emergencyPage != null) {
-                    // 跳转到紧急页面
                     Navigator.push(
                       context,
                       MaterialPageRoute(
                         builder: (_) => emergencyPage!,
                       ),
-                    ).then((_) => _fetchNotifications()); // 处理完退回来时，刷新通知列表
+                    ).then((_) => _fetchNotifications());
                   } else {
-                    // 如果都没匹配上
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text("Unknown request type.")),
                     );

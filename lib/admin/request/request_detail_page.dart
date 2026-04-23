@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../AdminVisitorPassScreen.dart';
+import '../AdminVisitorPassScreen.dart'; // 确认你的路径是否正确
 
 class RequestDetailPage extends StatefulWidget {
   final Map data;
@@ -14,6 +14,11 @@ class RequestDetailPage extends StatefulWidget {
 class _RequestDetailPageState extends State<RequestDetailPage> {
   final supabase = Supabase.instance.client;
   final TextEditingController reasonController = TextEditingController();
+
+  // 🤎 统一定义棕色主题色
+  static const Color _bg = Color(0xFFF5EBE6);
+  static const Color _brown = Color(0xFF8B5E4A);
+  static const Color _darkText = Color(0xFF2B2B2B);
 
   Future<String> _getAdminIdentifier() async {
     try {
@@ -91,7 +96,6 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
         }
       }
 
-      // Always update the parent request status
       await supabase.from('requests').update({
         'status': 'approved',
         'respond_time': DateTime.now().toIso8601String(),
@@ -155,8 +159,8 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
               fit: BoxFit.cover,
               errorBuilder: (_, __, ___) => Container(
                 height: 100,
-                color: Colors.grey[200],
-                child: const Icon(Icons.broken_image),
+                color: Colors.brown.shade50,
+                child: Icon(Icons.broken_image, color: Colors.brown.shade300),
               ),
             ),
           ),
@@ -175,13 +179,13 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
             child: Row(
               children: [
                 Text(displayValue,
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 10),
-                  child: Icon(Icons.arrow_forward_rounded, size: 14, color: Colors.grey),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: _darkText)),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: Icon(Icons.arrow_forward_rounded, size: 14, color: Colors.brown.shade300),
                 ),
                 Text(endTime,
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: _darkText)),
               ],
             ),
           ),
@@ -229,10 +233,10 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
         Padding(
           padding: const EdgeInsets.only(left: 24),
           child: Text(displayValue,
-              style: const TextStyle(
+              style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w600,
-                  color: Color(0xFF263238))),
+                  color: _darkText)),
         ),
       ],
     );
@@ -241,13 +245,13 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
   Widget _buildLabel(IconData icon, String label) {
     return Row(
       children: [
-        Icon(icon, size: 16, color: const Color(0xFF6D4C41)),
+        Icon(icon, size: 16, color: _brown),
         const SizedBox(width: 8),
         Text(label,
             style: TextStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.w800,
-                color: Colors.grey.shade500,
+                color: Colors.brown.shade400,
                 letterSpacing: 0.8)),
       ],
     );
@@ -277,13 +281,13 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
     else if (type == 'facility') details = extractSubData(data['facility_requests']);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7F9),
+      backgroundColor: _bg, // 🤎 背景改成棕色主题
       appBar: AppBar(
-        title: const Text("Review Request",
-            style: TextStyle(fontWeight: FontWeight.bold)),
+        title: Text("Review Request",
+            style: TextStyle(fontWeight: FontWeight.bold, color: _darkText)),
         centerTitle: true,
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
+        backgroundColor: _bg, // 🤎 AppBar 跟随背景色
+        foregroundColor: _darkText,
         elevation: 0,
       ),
       body: SingleChildScrollView(
@@ -294,13 +298,13 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
             const SizedBox(height: 30),
             if (details != null) ...[
               const Row(children: [
-                Icon(Icons.assignment_outlined, size: 18, color: Colors.blueGrey),
+                Icon(Icons.assignment_outlined, size: 18, color: _brown), // 🤎 图标变棕色
                 SizedBox(width: 8),
                 Text("SPECIFIC DETAILS",
                     style: TextStyle(
                         fontWeight: FontWeight.w900,
                         fontSize: 12,
-                        color: Colors.blueGrey,
+                        color: _brown, // 🤎 标题变棕色
                         letterSpacing: 1.2)),
               ]),
               const Divider(height: 24),
@@ -310,25 +314,17 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
                 decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.grey.shade200)),
-                child: Wrap(
-                  spacing: 20,
-                  runSpacing: 25,
+                    border: Border.all(color: Colors.brown.shade100)), // 🤎 边框变浅棕色
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: details.entries
                       .where((e) =>
                   e.key != 'request_id' &&
                       e.key != 'id' &&
                       e.key != 'end_time')
                       .map((e) {
-                    bool isFullWidth =
-                        e.key.toLowerCase().contains('image') ||
-                            e.key.toLowerCase().contains('description') ||
-                            e.key.toLowerCase().contains('start_time');
-
-                    return SizedBox(
-                      width: isFullWidth
-                          ? double.infinity
-                          : (MediaQuery.of(context).size.width - 100) / 2,
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 24),
                       child: _buildDetailTile(
                         e.key,
                         e.value,
@@ -356,9 +352,10 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
       decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.brown.shade50), // 🤎 加上极浅的棕色边框
           boxShadow: [
             BoxShadow(
-                color: Colors.black.withOpacity(0.04), blurRadius: 20)
+                color: Colors.brown.withOpacity(0.05), blurRadius: 20) // 🤎 棕色微弱阴影
           ]),
       child: Column(children: [
         Chip(
@@ -366,15 +363,16 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
               style: const TextStyle(
                   fontSize: 10,
                   fontWeight: FontWeight.bold,
-                  color: Color(0xFF6D4C41))),
-          backgroundColor: const Color(0xFF6D4C41).withOpacity(0.1),
+                  color: Colors.white)), // 🤎 标签文字变白
+          backgroundColor: _brown, // 🤎 标签底色变主题棕
+          side: BorderSide.none,
         ),
         const SizedBox(height: 12),
         Text(data['title'] ?? "No Title",
-            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: _darkText)),
         const SizedBox(height: 8),
         Text(data['description'] ?? "No description",
-            style: TextStyle(color: Colors.grey.shade600, height: 1.4),
+            style: TextStyle(color: Colors.brown.shade600, height: 1.4), // 🤎 描述文字变浅棕
             textAlign: TextAlign.center),
       ]),
     );
@@ -391,64 +389,123 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
         child: Column(children: [
           Icon(
               status == 'approved' ? Icons.check_circle : Icons.cancel,
-              color: status == 'approved' ? Colors.green : Colors.red,
+              color: status == 'approved' ? Colors.green.shade600 : Colors.red.shade600,
               size: 30),
           const SizedBox(height: 8),
           Text("REQUEST ${status.toUpperCase()}",
               style: TextStyle(
                   fontWeight: FontWeight.w900,
-                  color: status == 'approved' ? Colors.green : Colors.red)),
+                  color: status == 'approved' ? Colors.green.shade700 : Colors.red.shade700)),
           if (widget.data['processed_by'] != null)
-            Text("By: ${widget.data['processed_by']}",
-                style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic)),
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text("By: ${widget.data['processed_by']}",
+                  style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: Colors.grey.shade600)),
+            ),
         ]),
       );
     }
 
-    return Column(children: [
-      TextField(
-        controller: reasonController,
-        maxLines: 2,
-        decoration: InputDecoration(
-          hintText: "Reason for rejection (optional)",
-          filled: true,
-          fillColor: Colors.white,
-          border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.grey.shade200)),
-          enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.grey.shade200)),
+    // 🤎 处于 pending 状态时，只显示两个按钮，不显示输入框了
+    return Row(children: [
+      Expanded(
+        child: ElevatedButton(
+          onPressed: approve,
+          style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF4CAF50), // 略微柔和的绿色
+              padding: const EdgeInsets.all(16),
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12))),
+          child: const Text("APPROVE",
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 1)),
         ),
       ),
-      const SizedBox(height: 20),
-      Row(children: [
-        Expanded(
-          child: ElevatedButton(
-            onPressed: approve,
-            style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green,
-                padding: const EdgeInsets.all(16),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12))),
-            child: const Text("APPROVE",
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          ),
+      const SizedBox(width: 10),
+      Expanded(
+        child: ElevatedButton(
+          onPressed: _showRejectDialog, // 🚨 这里改成了调用弹窗方法
+          style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFE53935), // 略微柔和的红色
+              padding: const EdgeInsets.all(16),
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12))),
+          child: const Text("REJECT",
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 1)),
         ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: ElevatedButton(
-            onPressed: reject,
-            style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                padding: const EdgeInsets.all(16),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12))),
-            child: const Text("REJECT",
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          ),
-        ),
-      ]),
+      ),
     ]);
+  }
+
+  // 🤎 拒绝时弹出的对话框
+  // 🤎 拒绝时弹出的对话框（加大尺寸版）
+  void _showRejectDialog() {
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          // 🚨 1. 缩小弹窗到屏幕边缘的距离，允许弹窗变得更宽
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          title: const Text("Reject Request",
+              style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF2B2B2B))),
+          content: SizedBox(
+            // 🚨 2. 强制内容区域撑开，这里设置为屏幕宽度的 90%
+            width: MediaQuery.of(context).size.width * 0.9,
+            child: Column(
+              mainAxisSize: MainAxisSize.min, // 高度依然自适应内容
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text("Please provide a reason for rejection.",
+                    style: TextStyle(color: Colors.grey.shade600, fontSize: 14)),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: reasonController,
+                  // 🚨 3. 把输入框变高，从 3 行增加到 5 行
+                  maxLines: 5,
+                  cursorColor: const Color(0xFF8B5E4A),
+                  decoration: InputDecoration(
+                    hintText: "Reason (optional)",
+                    hintStyle: TextStyle(color: Colors.brown.shade300),
+                    filled: true,
+                    fillColor: const Color(0xFFF5EBE6),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none),
+                    focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: Color(0xFF8B5E4A), width: 1.5)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actionsPadding: const EdgeInsets.only(right: 20, bottom: 20), // 调整按钮区域的边距
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              style: TextButton.styleFrom(
+                  foregroundColor: Colors.grey.shade500,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12)),
+              child: const Text("CANCEL", style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                reject();
+              },
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFE53935),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12), // 让按钮也大一点
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+              child: const Text("CONFIRM",
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        );
+      },
+    );
   }
 }
