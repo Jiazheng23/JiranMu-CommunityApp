@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../emergency/admin_emergency_page.dart';
+import 'package:assignment/admin/emergency/admin_emergency_page.dart';
 
 class EmergencyListPage extends StatefulWidget {
   const EmergencyListPage({super.key});

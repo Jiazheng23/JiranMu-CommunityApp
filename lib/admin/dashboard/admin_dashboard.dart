@@ -2,13 +2,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
-import '../../chat/CommunityChatsListScreen.dart';
-import '../AdminCreateChatScreen.dart';
+import 'package:assignment/chat/CommunityChatsListScreen.dart';
+import 'package:assignment/admin/AdminCreateChatScreen.dart';
 import 'create_facility_page.dart';
 import 'dashboard_page.dart';
-import '../profile/admin_profile_page.dart';
+import 'package:assignment/admin/profile/admin_profile_page.dart';
 
-// 定义全局颜色常量 (确保风格统一)
 const Color primaryColor = Color(0xFF9A4B3C);
 const Color textDark = Color(0xFF2B2B2B);
 const Color softBrown = Color(0xFFEADFD6);
@@ -27,7 +26,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
   final ImagePicker _picker = ImagePicker();
   final supabase = Supabase.instance.client;
 
-  // 使用 getter 初始化页面
   List<Widget> get pages => [
     const DashboardPage(),
     const CreateFacilityPage(),
@@ -42,7 +40,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
     {'icon': Icons.person_outline, 'label': 'Profile'},
   ];
 
-  // 🔥 核心功能：创建公告的弹出层
   void showCreateAnnouncementSheet(BuildContext context) {
     final titleController = TextEditingController();
     final contentController = TextEditingController();
@@ -77,7 +74,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 ),
                 const SizedBox(height: 20),
 
-                // 图片选择区域
                 GestureDetector(
                   onTap: () async {
                     final XFile? pickedFile = await _picker.pickImage(
@@ -111,7 +107,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 ),
                 const SizedBox(height: 15),
 
-                // 标题输入
                 TextField(
                     controller: titleController,
                     decoration: InputDecoration(
@@ -123,7 +118,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
                             borderSide: const BorderSide(color: primaryColor)))),
                 const SizedBox(height: 15),
 
-                // 内容输入
                 TextField(
                     controller: contentController,
                     maxLines: 4,
@@ -137,7 +131,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
                             borderSide: const BorderSide(color: primaryColor)))),
                 const SizedBox(height: 15),
 
-                // 类别选择
                 DropdownButtonFormField<String>(
                   value: selectedCategory,
                   decoration: InputDecoration(
@@ -151,7 +144,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
                 const SizedBox(height: 15),
 
-                // 日期与紧急程度
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -183,7 +175,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 ),
                 const SizedBox(height: 20),
 
-                // 发布按钮
                 SizedBox(
                   width: double.infinity,
                   height: 55,
@@ -202,7 +193,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       setModalState(() => isUploading = true);
                       try {
                         String? imageUrl;
-                        // 1. 如果有图片，先上传到存储桶
                         if (imageFile != null) {
                           final fileName = 'ann_${DateTime.now().millisecondsSinceEpoch}.jpg';
                           final path = 'public/$fileName';
@@ -210,7 +200,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           imageUrl = supabase.storage.from('announcement_images').getPublicUrl(path);
                         }
 
-                        // 2. 写入数据库
                         await supabase.from('announcements').insert({
                           'title': titleController.text.trim(),
                           'content': contentController.text.trim(),
@@ -225,7 +214,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                               content: Text("Announcement published!"), backgroundColor: Colors.green));
 
-                          // 如果你需要刷新 Dashboard 页面，可以在这里发送通知或调用刷新逻辑
                         }
                       } catch (e) {
                         debugPrint("Upload Error: $e");
@@ -258,7 +246,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
       backgroundColor: const Color(0xFFF5EBE6),
       body: SafeArea(child: pages[selectedIndex]),
 
-      // 🔥 悬浮按钮：仅在 Dashboard (Index 0) 显示
       floatingActionButton: selectedIndex == 0
           ? SizedBox(
         width: 60,

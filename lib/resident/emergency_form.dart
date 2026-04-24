@@ -23,14 +23,14 @@ class _EmergencyFormState extends State<EmergencyForm> {
   // ── State variables ──
   String? selectedType;
   File? evidenceFile;
-  final TextEditingController _descController = TextEditingController(); // 📝 新增：描述控制器
+  final TextEditingController _descController = TextEditingController();
 
   double? latitude;
   double? longitude;
   bool isLocating  = false;
   bool isSubmitting = false;
 
-  bool useHomeAddress = false; // 🏠 新增：是否使用家庭住址
+  bool useHomeAddress = false;
 
   // Emergency type options
   final List<Map<String, dynamic>> emergencyTypes = [
@@ -93,8 +93,6 @@ class _EmergencyFormState extends State<EmergencyForm> {
           backgroundColor: Colors.red));
       return;
     }
-
-    // 🚨 拦截验证：如果不是家庭住址，且没有 GPS，不让提交
     if (!useHomeAddress && (latitude == null || longitude == null)) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text("Please provide your current location or select 'Home Address'."),
@@ -120,11 +118,11 @@ class _EmergencyFormState extends State<EmergencyForm> {
       await supabase.from('emergency').insert({
         'user_id':      userId,
         'type':         selectedType,
-        'status':       'active', // 🔥 已修正：直接变成 active 让保安看到
+        'status':       'active',
         'latitude':     useHomeAddress ? null : latitude,
         'longitude':    useHomeAddress ? null : longitude,
-        'is_home_address': useHomeAddress, // 🏠 记录是否是家庭住址
-        'description':  _descController.text.trim().isEmpty ? null : _descController.text.trim(), // 📝 保存描述
+        'is_home_address': useHomeAddress,
+        'description':  _descController.text.trim().isEmpty ? null : _descController.text.trim(),
         'report_evidence_url': evidenceUrl,
       });
 
@@ -239,7 +237,6 @@ class _EmergencyFormState extends State<EmergencyForm> {
               const Text("Where is the emergency?", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: textDark)),
               const SizedBox(height: 12),
 
-              // 🏠 切换：当前位置 vs 家庭地址
               Row(
                 children: [
                   Expanded(
@@ -279,7 +276,6 @@ class _EmergencyFormState extends State<EmergencyForm> {
               ),
               const SizedBox(height: 12),
 
-              // 根据选择显示不同的内容
               if (useHomeAddress)
                 Container(
                   padding: const EdgeInsets.all(16),
@@ -322,7 +318,6 @@ class _EmergencyFormState extends State<EmergencyForm> {
               const SizedBox(height: 28),
 
               // ── Description (Optional) ──
-              // 📝 新增：选填描述框
               const Text("Additional Details (Optional)", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: textDark)),
               const SizedBox(height: 12),
               Container(

@@ -183,9 +183,9 @@ class _PersonalInformationPageState extends State<PersonalInformationPage> {
                     ),
                     child: DropdownButtonHideUnderline(
                       child: DropdownButton<String>(
+                        icon: const Icon(Icons.bloodtype, color: primaryColor),
                         value: _selectedBloodType,
                         hint: const Text("Blood Type", style: TextStyle(color: Colors.black45, fontSize: 14)),
-                        icon: const Icon(Icons.keyboard_arrow_down_rounded, color: primaryColor),
                         isExpanded: true,
                         dropdownColor: Colors.white,
                         borderRadius: BorderRadius.circular(16),

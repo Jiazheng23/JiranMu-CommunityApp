@@ -3,11 +3,11 @@ import 'package:assignment/chat/CommunityChatsListScreen.dart';
 import 'package:assignment/facility/facility_booking_page.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../event/screen/event_calendar_screen.dart';
-import '../event/model/event_model.dart';
-import '../event/service/event_service.dart';
-import '../resident/emergency_form.dart';
-import '../admin/emergency/location.dart';
+import 'package:assignment/event/screen/event_calendar_screen.dart';
+import 'package:assignment/event/model/event_model.dart';
+import 'package:assignment/event/service/event_service.dart';
+import 'package:assignment/resident/emergency_form.dart';
+import 'package:assignment/admin/emergency/location.dart';
 import 'VisitorPassListScreen.dart';
 import 'announcement_detail_page.dart';
 import 'announcement_list_page.dart';
@@ -289,8 +289,8 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                     width: double.infinity,
                     child: OutlinedButton(
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFF8B5E4A),
-                        side: const BorderSide(color: Color(0xFF8B5E4A)),
+                        foregroundColor: Colors.black,
+                        side: const BorderSide(color: Colors.black),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
                       onPressed: () { resetState(); Navigator.pop(context); },
@@ -817,10 +817,12 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                   children: [
                     Icon(Icons.location_on_outlined, color: primaryColor, size: 18),
                     const SizedBox(width: 6),
-                    Text("BLOCK A",
+                    Text(
+                        _residentSummary?['block'] != null && _residentSummary!['block'].toString().trim().isNotEmpty
+                            ? 'BLOCK ${_residentSummary!['block'].toString().trim().toUpperCase()}'
+                            : 'MY BLOCK',
                         style: TextStyle(fontWeight: FontWeight.w700, color: primaryColor, letterSpacing: 0.5)),
                     const SizedBox(width: 4),
-                    const Icon(Icons.keyboard_arrow_down_rounded),
                   ],
                 ),
               ),

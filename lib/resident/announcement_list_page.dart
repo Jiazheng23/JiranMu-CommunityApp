@@ -16,30 +16,89 @@ class _AnnouncementListPageState extends State<AnnouncementListPage> {
   @override
   void initState() {
     super.initState();
-    _fetchAllAnnouncements();
+    _fetchAnnouncementsAndEvents();
   }
 
-  // 获取所有公告
-  Future<void> _fetchAllAnnouncements() async {
+  // Fetch both announcements and user's joined events
+  Future<void> _fetchAnnouncementsAndEvents() async {
     try {
-      final response = await Supabase.instance.client
-          .from('announcements')
-          .select()
-          .order('created_at', ascending: false);
+      final supabase = Supabase.instance.client;
+      final user = supabase.auth.currentUser;
+
+      List<Map<String, dynamic>> combinedList = [];
+
+      // 1. Fetch Official Announcements (General notices for everyone)
+      final announcementsResponse = await supabase.from('announcements').select();
+      combinedList.addAll(List<Map<String, dynamic>>.from(announcementsResponse));
+
+      if (user != null) {
+        // 2. Fetch JOINED events from 'event_participants'
+        final joinedResponse = await supabase
+            .from('event_participants')
+            .select('joined_at, events(*)')
+            .eq('user_id', user.id);
+
+        for (var row in joinedResponse) {
+          final dynamic eventData = row['events'];
+          final Map<String, dynamic>? event = eventData is List
+              ? (eventData.isNotEmpty ? eventData[0] : null)
+              : eventData;
+
+          if (event != null) {
+            combinedList.add({
+              'id': event['id'],
+              'title': 'Joined: ${event['title']}',
+              'category': 'Joined',
+              'created_at': row['joined_at'],
+              'is_event': true,
+              'content': 'You are registered for this event. See you at ${event['location']}!',
+            });
+          }
+        }
+
+        // 3. Fetch APPROVED & REJECTED status from 'requests'
+        final requestsResponse = await supabase
+            .from('requests')
+            .select()
+            .eq('user_id', user.id)
+            .eq('type', 'booking')
+            .inFilter('status', ['approved', 'rejected']); // Only Approved or Rejected
+
+        for (var req in requestsResponse) {
+          bool isApproved = req['status'] == 'approved';
+
+          combinedList.add({
+            'id': req['request_id'],
+            'title': isApproved
+                ? 'Proposal Approved: ${req['title']}'
+                : 'Proposal Rejected: ${req['title']}',
+            'category': isApproved ? 'Approved' : 'Rejected',
+            'is_urgent': !isApproved,
+            'created_at': req['respond_time'] ?? req['created_at'],
+            'is_status_update': true,
+            'content': isApproved
+                ? 'Your booking for "${req['title']}" was approved and added to the community calendar.'
+                : 'Your booking for "${req['title']}" was rejected.\nReason: ${req['reject_reason'] ?? "No reason provided."}',
+          });
+        }
+      }
+
+      // 4. Sort by newest (based on respond_time or created_at)
+      combinedList.sort((a, b) {
+        final dateA = DateTime.tryParse(a['created_at']?.toString() ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final dateB = DateTime.tryParse(b['created_at']?.toString() ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+        return dateB.compareTo(dateA);
+      });
 
       if (mounted) {
         setState(() {
-          announcements = List<Map<String, dynamic>>.from(response);
+          announcements = combinedList;
           isLoading = false;
         });
       }
     } catch (e) {
-      debugPrint('Error fetching all announcements: $e');
-      if (mounted) {
-        setState(() {
-          isLoading = false;
-        });
-      }
+      debugPrint('Notice Board Error: $e');
+      if (mounted) setState(() => isLoading = false);
     }
   }
 
@@ -53,43 +112,67 @@ class _AnnouncementListPageState extends State<AnnouncementListPage> {
       ];
       return '${date.day} ${months[date.month - 1]}, ${date.year}';
     } catch (e) {
-      return dateStr.substring(0, 10);
+      return dateStr.length >= 10 ? dateStr.substring(0, 10) : dateStr;
     }
   }
 
   @override
+  @override
   Widget build(BuildContext context) {
-    // 🎨 你的核心主题色
-    final Color primaryColor = const Color(0xFF9A4B3C);
-    final Color bgColor = const Color(0xFFF5F1ED);
+    // 🤎 Core Theme Colors
+    const Color primaryColor = Color(0xFF9A4B3C);
+    const Color bgColor = Color(0xFFF5F1ED);
+    const Color eventAccentColor = Color(0xFF4BC0B8); // Accent color for events
 
     return Scaffold(
       backgroundColor: bgColor,
-      // 🔥 统一替换为棕色 AppBar
       appBar: AppBar(
         title: const Text(
-            "All Announcements",
+            "Notice Board",
             style: TextStyle(fontWeight: FontWeight.w600, fontSize: 18)
         ),
         backgroundColor: primaryColor,
-        foregroundColor: Colors.white, // 返回键和文字变白
+        foregroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
       ),
       body: isLoading
-          ? Center(child: CircularProgressIndicator(color: primaryColor))
+          ? const Center(child: CircularProgressIndicator(color: primaryColor))
           : announcements.isEmpty
-          ? const Center(child: Text("No announcements found.", style: TextStyle(color: Colors.black54)))
+          ? const Center(child: Text("No updates found.", style: TextStyle(color: Colors.black54)))
           : ListView.separated(
         padding: const EdgeInsets.all(20),
         itemCount: announcements.length,
         separatorBuilder: (context, index) => const SizedBox(height: 16),
         itemBuilder: (context, index) {
-          final announcement = announcements[index];
-          final title = announcement['title'] ?? 'Notice';
-          final category = announcement['category'] ?? 'General';
-          final isUrgent = announcement['is_urgent'] ?? false;
-          final dateStr = _formatDate(announcement['created_at']);
+          final item = announcements[index];
+          final title = item['title'] ?? 'Notice';
+          final category = item['category'] ?? 'General';
+          final isUrgent = item['is_urgent'] ?? false;
+          final isEvent = item['is_event'] ?? false;
+          final dateStr = _formatDate(item['created_at']);
+
+          // ──────────────────────────────────────────────────────────
+          // 1. DYNAMIC STYLING LOGIC (CHANGE THIS PART)
+          // ──────────────────────────────────────────────────────────
+          Color iconColor = primaryColor;
+          IconData iconData = Icons.campaign_rounded;
+          Color avatarBg = const Color(0xFFEADFD6);
+
+          if (category == 'Approved') {
+            iconColor = Colors.green;
+            iconData = Icons.check_circle_rounded;
+            avatarBg = Colors.green.shade50;
+          } else if (category == 'Rejected' || isUrgent) {
+            iconColor = Colors.redAccent;
+            iconData = isUrgent ? Icons.warning_amber_rounded : Icons.cancel_rounded;
+            avatarBg = Colors.red.shade50;
+          } else if (isEvent || category == 'Joined') {
+            iconColor = eventAccentColor;
+            iconData = Icons.event_available_rounded;
+            avatarBg = eventAccentColor.withOpacity(0.1);
+          }
+          // ──────────────────────────────────────────────────────────
 
           return Container(
             decoration: BoxDecoration(
@@ -103,7 +186,6 @@ class _AnnouncementListPageState extends State<AnnouncementListPage> {
                 ),
               ],
             ),
-            // 🔥 使用 Material 包裹，让点击出现水波纹动画
             child: Material(
               color: Colors.transparent,
               child: InkWell(
@@ -112,7 +194,7 @@ class _AnnouncementListPageState extends State<AnnouncementListPage> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => AnnouncementDetailPage(announcement: announcement),
+                      builder: (context) => AnnouncementDetailPage(announcement: item),
                     ),
                   );
                 },
@@ -122,12 +204,8 @@ class _AnnouncementListPageState extends State<AnnouncementListPage> {
                     children: [
                       CircleAvatar(
                         radius: 22,
-                        backgroundColor: isUrgent ? Colors.red.shade50 : const Color(0xFFEADFD6),
-                        child: Icon(
-                          isUrgent ? Icons.warning_amber_rounded : Icons.campaign_rounded,
-                          size: 22,
-                          color: isUrgent ? Colors.redAccent : primaryColor,
-                        ),
+                        backgroundColor: avatarBg,
+                        child: Icon(iconData, size: 22, color: iconColor),
                       ),
                       const SizedBox(width: 16),
                       Expanded(
@@ -146,15 +224,15 @@ class _AnnouncementListPageState extends State<AnnouncementListPage> {
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFFEADFD6).withOpacity(0.5),
+                                    color: iconColor.withOpacity(0.1),
                                     borderRadius: BorderRadius.circular(4),
                                   ),
                                   child: Text(
                                     category.toUpperCase(),
                                     style: TextStyle(
                                       fontSize: 10,
-                                      fontWeight: FontWeight.w700,
-                                      color: primaryColor,
+                                      fontWeight: FontWeight.w800,
+                                      color: iconColor,
                                       letterSpacing: 0.5,
                                     ),
                                   ),

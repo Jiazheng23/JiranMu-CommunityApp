@@ -2,8 +2,8 @@ import 'dart:io';
 import 'package:assignment/admin/emergency/emergency_list_page.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../AdminVisitorPassScreen.dart';
-import '../request/request_list_page.dart';
+import 'package:assignment/admin/AdminVisitorPassScreen.dart';
+import 'package:assignment/admin/request/request_list_page.dart';
 import 'package:image_picker/image_picker.dart';
 import 'admin_announcement_detail_page.dart';
 import 'admin_announcement_page.dart';
@@ -135,21 +135,33 @@ class _DashboardPageState extends State<DashboardPage>
 
   Future<void> fetchNotificationStatus() async {
     try {
-      final req =
-      await supabase.from('requests').select('type').eq('status', 'pending');
+      // 1. Fetch pending requests from the main 'requests' table
+      final req = await supabase
+          .from('requests')
+          .select('type')
+          .eq('status', 'pending');
+
+      // 2. Fetch unresolved emergencies
       final emg = await supabase
           .from('emergency')
           .select('emergency_id')
           .neq('status', 'solved');
-      if (mounted)
+
+      // 3. Fetch pending visitor passes directly from the 'visitor_passes' table
+      final passes = await supabase
+          .from('visitor_passes')
+          .select('id')
+          .eq('status', 'pending');
+
+      if (mounted) {
         setState(() {
-          hasUserNotif =
-              req.any((r) => r['type'] == 'admin' || r['type'] == 'resident');
+          hasUserNotif = req.any((r) => r['type'] == 'admin' || r['type'] == 'resident');
           hasEventNotif = req.any((r) => r['type'] == 'booking');
           hasFacilityNotif = req.any((r) => r['type'] == 'facility');
-          hasVisitorNotif = req.any((r) => r['type'] == 'visitor');
+          hasVisitorNotif = req.any((r) => r['type'] == 'visitor') || passes.isNotEmpty;
           hasEmergencyNotif = emg.isNotEmpty;
         });
+      }
     } catch (e) {
       debugPrint("Notification error: $e");
     }
@@ -927,7 +939,7 @@ class _DashboardPageState extends State<DashboardPage>
             chartBlue,
                 () => navigateTo("Users"),
             hasNotif: hasUserNotif,
-            subtitle: pendingTotal > 0 ? "$pendingTotal pending" : "Manage",
+            subtitle: "Manage",
           ),
           _accessCard(
             "Events",

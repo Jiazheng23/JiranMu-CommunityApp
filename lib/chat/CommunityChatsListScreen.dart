@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:assignment/chat/user_session.dart';
-import '../resident/ResidentInvitationsWidget.dart';
+import 'package:assignment/resident/ResidentInvitationsWidget.dart';
 import 'CommunityChatScreen.dart';
 
 final supabase = Supabase.instance.client;

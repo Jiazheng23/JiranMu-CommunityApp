@@ -13,7 +13,7 @@ class AdminAnnouncementPage extends StatefulWidget {
 
 class _AdminAnnouncementPageState extends State<AdminAnnouncementPage> {
   final supabase = Supabase.instance.client;
-  final ImagePicker _picker = ImagePicker(); // 图片选择器实例
+  final ImagePicker _picker = ImagePicker();
 
   List announcements = [];
   bool isLoading = true;
@@ -42,7 +42,6 @@ class _AdminAnnouncementPageState extends State<AdminAnnouncementPage> {
     }
   }
 
-  // --- 你提供的 Create Announcement BottomSheet (已适配棕色主题) ---
   void _showCreateAnnouncementSheet(BuildContext context) {
     final titleController = TextEditingController();
     final contentController = TextEditingController();
@@ -64,7 +63,7 @@ class _AdminAnnouncementPageState extends State<AdminAnnouncementPage> {
               left: 20,
               right: 20),
           decoration: const BoxDecoration(
-              color: Colors.white, // 底色保持白色
+              color: Colors.white,
               borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
           child: SingleChildScrollView(
             child: Column(
@@ -77,7 +76,6 @@ class _AdminAnnouncementPageState extends State<AdminAnnouncementPage> {
                 ),
                 const SizedBox(height: 20),
 
-                // 图片选择区域
                 GestureDetector(
                   onTap: () async {
                     final XFile? pickedFile = await _picker.pickImage(
@@ -90,7 +88,7 @@ class _AdminAnnouncementPageState extends State<AdminAnnouncementPage> {
                     height: 160,
                     width: double.infinity,
                     decoration: BoxDecoration(
-                      color: Colors.brown.shade50, // 浅棕色背景
+                      color: Colors.brown.shade50,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(color: Colors.brown.shade200),
                     ),
@@ -111,7 +109,6 @@ class _AdminAnnouncementPageState extends State<AdminAnnouncementPage> {
                 ),
                 const SizedBox(height: 15),
 
-                // 标题输入
                 TextField(
                     controller: titleController,
                     cursorColor: Colors.brown.shade600,
@@ -124,7 +121,6 @@ class _AdminAnnouncementPageState extends State<AdminAnnouncementPage> {
                             borderSide: BorderSide(color: Colors.brown.shade600)))),
                 const SizedBox(height: 15),
 
-                // 内容输入
                 TextField(
                     controller: contentController,
                     maxLines: 4,
@@ -139,7 +135,6 @@ class _AdminAnnouncementPageState extends State<AdminAnnouncementPage> {
                             borderSide: BorderSide(color: Colors.brown.shade600)))),
                 const SizedBox(height: 15),
 
-                // 类别选择
                 DropdownButtonFormField<String>(
                   value: selectedCategory,
                   decoration: InputDecoration(
@@ -157,7 +152,6 @@ class _AdminAnnouncementPageState extends State<AdminAnnouncementPage> {
 
                 const SizedBox(height: 15),
 
-                // 日期与紧急程度
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -168,14 +162,13 @@ class _AdminAnnouncementPageState extends State<AdminAnnouncementPage> {
                           initialDate: DateTime.now(),
                           firstDate: DateTime.now(),
                           lastDate: DateTime(2030),
-                          // 适配棕色主题的日历
                           builder: (context, child) {
                             return Theme(
                               data: Theme.of(context).copyWith(
                                 colorScheme: ColorScheme.light(
-                                  primary: Colors.brown.shade600, // header background color
-                                  onPrimary: Colors.white, // header text color
-                                  onSurface: Colors.brown.shade900, // body text color
+                                  primary: Colors.brown.shade600,
+                                  onPrimary: Colors.white,
+                                  onSurface: Colors.brown.shade900,
                                 ),
                               ),
                               child: child!,
@@ -203,13 +196,12 @@ class _AdminAnnouncementPageState extends State<AdminAnnouncementPage> {
                 ),
                 const SizedBox(height: 20),
 
-                // 发布按钮
                 SizedBox(
                   width: double.infinity,
                   height: 55,
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.brown.shade600, // 按钮主色
+                        backgroundColor: Colors.brown.shade600,
                         elevation: 0,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
                     onPressed: isUploading ? null : () async {
@@ -222,15 +214,13 @@ class _AdminAnnouncementPageState extends State<AdminAnnouncementPage> {
                       setModalState(() => isUploading = true);
                       try {
                         String? imageUrl;
-                        // 1. 如果有图片，先上传到存储桶
                         if (imageFile != null) {
                           final fileName = 'ann_${DateTime.now().millisecondsSinceEpoch}.jpg';
-                          final path = 'public/$fileName'; // 确保存储桶里有 public 文件夹，或者直接传文件名
+                          final path = 'public/$fileName';
                           await supabase.storage.from('announcement_images').upload(path, imageFile!);
                           imageUrl = supabase.storage.from('announcement_images').getPublicUrl(path);
                         }
 
-                        // 2. 写入数据库
                         await supabase.from('announcements').insert({
                           'title': titleController.text.trim(),
                           'content': contentController.text.trim(),
@@ -245,7 +235,6 @@ class _AdminAnnouncementPageState extends State<AdminAnnouncementPage> {
                           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                               content: const Text("Announcement published!"), backgroundColor: Colors.brown.shade800));
 
-                          // 🚨 刷新列表页的数据
                           fetchAnnouncements();
                         }
                       } catch (e) {
@@ -272,7 +261,6 @@ class _AdminAnnouncementPageState extends State<AdminAnnouncementPage> {
     );
   }
 
-  // --- 列表卡片 UI ---
   Widget _buildAnnouncementCard(Map data) {
     bool hasImage = data['image_url'] != null && data['image_url'].toString().isNotEmpty;
     bool isUrgent = data['is_urgent'] == true;
@@ -387,7 +375,6 @@ class _AdminAnnouncementPageState extends State<AdminAnnouncementPage> {
         foregroundColor: Colors.white,
       ),
       floatingActionButton: FloatingActionButton(
-        // 🚨 这里改为调用你新加的 BottomSheet 方法
         onPressed: () => _showCreateAnnouncementSheet(context),
         backgroundColor: Colors.brown.shade600,
         child: const Icon(Icons.add, color: Colors.white),

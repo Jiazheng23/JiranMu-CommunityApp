@@ -52,8 +52,12 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   File? _selectedImage;
   final ImagePicker _picker = ImagePicker();
 
-  final Color cork = const Color(0xFFAD8762);
-  final Color apricot = const Color(0xFFFFB38A);
+  // ── UPDATED THEME COLORS ──────────────────────────────
+  final Color bgColor = const Color(0xFFF5F1ED);
+  final Color primaryColor = const Color(0xFF9A4B3C);
+  final Color accentColor = const Color(0xFFFC9D7E);
+  final Color textDark = const Color(0xFF2B2B2B);
+  // ──────────────────────────────────────────────────────
 
   @override
   void initState() {
@@ -82,7 +86,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   }
 
   // ─────────────────────────────────────────────
-  // VALIDATION LOGIC
+  // VALIDATION LOGIC (Remains Unchanged)
   // ─────────────────────────────────────────────
   Future<void> _validateAvailability() async {
     if (_selectedFacility == null) return;
@@ -93,18 +97,15 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       _availableSuggestions = [];
     });
 
-    // 1. Check Operating Hours FIRST
     if (_isOutsideOperatingHours()) {
       setState(() {
         _isAvailable = false;
         _isCheckingAvailability = false;
-        // You can manually add a suggestion or message here
         _availableSuggestions = ["Note: Venue is closed during this time."];
       });
-      return; // Stop here, don't check database for overlaps
+      return;
     }
 
-    // 2. If hours are okay, check Database for overlaps
     try {
       final formattedDate = DateFormat('yyyy-MM-dd').format(_selectedDate);
       final dbStartTime = _formatTimeForDb(_startTime);
@@ -178,7 +179,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       firstDate: DateTime.now(),
       lastDate: DateTime(2027),
       builder: (context, child) => Theme(
-        data: ThemeData.light().copyWith(colorScheme: ColorScheme.light(primary: cork)),
+        data: ThemeData.light().copyWith(colorScheme: ColorScheme.light(primary: primaryColor)),
         child: child!,
       ),
     );
@@ -221,7 +222,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const Center(child: CircularProgressIndicator()),
+      builder: (context) => Center(child: CircularProgressIndicator(color: accentColor)),
     );
 
     try {
@@ -255,7 +256,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       if (mounted) {
         Navigator.pop(context);
         String msg = widget.userRole == 'admin' ? "Event Published! ✅" : "Proposal Sent! ⏳";
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: cork));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: primaryColor));
 
         if (widget.userRole == 'admin') {
           Navigator.pop(context, true);
@@ -282,17 +283,17 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFFFF8F0),
+      backgroundColor: bgColor,
       appBar: AppBar(
         title: Text(widget.userRole == 'admin' ? 'Create Official Event' : 'Propose Community Event',
             style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
-        backgroundColor: cork,
+        backgroundColor: primaryColor,
         centerTitle: true,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: _isLoadingFacilities
-          ? const Center(child: CircularProgressIndicator())
+          ? Center(child: CircularProgressIndicator(color: accentColor))
           : SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Form(
@@ -315,9 +316,9 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                   child: _selectedImage != null
                       ? ClipRRect(borderRadius: BorderRadius.circular(15), child: Image.file(_selectedImage!, fit: BoxFit.cover))
                       : Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    Icon(Icons.add_a_photo, color: cork, size: 40),
+                    Icon(Icons.add_a_photo, color: primaryColor, size: 40),
                     const SizedBox(height: 10),
-                    Text("Tap to upload photo", style: TextStyle(color: cork)),
+                    Text("Tap to upload photo", style: TextStyle(color: primaryColor)),
                   ]),
                 ),
               ),
@@ -326,6 +327,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
               TextFormField(
                 controller: _titleController,
                 autovalidateMode: AutovalidateMode.onUserInteraction,
+                style: TextStyle(color: textDark),
                 decoration: _inputStyle("e.g. Community Yoga"),
                 validator: (v) => (v == null || v.trim().isEmpty) ? "Please enter an event title" : null,
               ),
@@ -363,6 +365,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
               TextFormField(
                 controller: _capacityController,
                 keyboardType: TextInputType.number,
+                style: TextStyle(color: textDark),
                 autovalidateMode: AutovalidateMode.onUserInteraction,
                 decoration: InputDecoration(
                   hintText: _selectedFacility == null ? "Select venue first" : "Enter amount",
@@ -371,10 +374,10 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                   helperText: _selectedFacility != null
                       ? "The ${_selectedFacility!['name']} can hold up to $_currentMaxAllowed people."
                       : "Choose a venue to see capacity limits.",
-                  helperStyle: TextStyle(color: cork, fontStyle: FontStyle.italic, fontSize: 12),
+                  helperStyle: TextStyle(color: primaryColor, fontStyle: FontStyle.italic, fontSize: 12),
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
                   enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
-                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: cork, width: 2)),
+                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: primaryColor, width: 2)),
                 ),
                 validator: (v) {
                   if (_selectedFacility == null) return "Please select a venue first";
@@ -389,13 +392,13 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
               const SizedBox(height: 20),
 
               Container(
-                decoration: BoxDecoration(color: cork.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+                decoration: BoxDecoration(color: primaryColor.withOpacity(0.08), borderRadius: BorderRadius.circular(10)),
                 child: SwitchListTile(
                   contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-                  title: Text("Private Event", style: TextStyle(color: cork, fontWeight: FontWeight.bold)),
-                  subtitle: const Text("Only visible to you and admins"),
+                  title: Text("Private Event", style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold)),
+                  subtitle: Text("Only visible to you and admins", style: TextStyle(color: textDark.withOpacity(0.6))),
                   value: _isPrivate,
-                  activeColor: apricot,
+                  activeColor: accentColor,
                   onChanged: (val) => setState(() => _isPrivate = val),
                 ),
               ),
@@ -404,6 +407,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
               TextFormField(
                 controller: _descController,
                 maxLines: 3,
+                style: TextStyle(color: textDark),
                 autovalidateMode: AutovalidateMode.onUserInteraction,
                 decoration: _inputStyle("Tell us more about the event..."),
                 validator: (v) => (v == null || v.trim().isEmpty) ? "Please provide a description" : null,
@@ -416,7 +420,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                 child: ElevatedButton(
                   onPressed: (_isAvailable == true && !_isCheckingAvailability) ? _submitForm : null,
                   style: ElevatedButton.styleFrom(
-                      backgroundColor: apricot,
+                      backgroundColor: accentColor,
                       disabledBackgroundColor: Colors.grey.shade300,
                       elevation: 5,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
@@ -436,7 +440,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   }
 
   // ─────────────────────────────────────────────
-  // UPDATED UI WIDGETS (Schedules UI)
+  // UI WIDGETS
   // ─────────────────────────────────────────────
 
   Widget _buildAvailabilityStatus() {
@@ -464,7 +468,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
           Row(
             children: [
               _isCheckingAvailability
-                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                  ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: accentColor))
                   : Icon(
                 _isAvailable == true ? Icons.check_circle : Icons.error_outline,
                 color: _isAvailable == true ? Colors.green : Colors.red,
@@ -486,16 +490,13 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
               ),
             ],
           ),
-          // SHOW SLOTS IF AVAILABLE
           if (_isAvailable == false) ...[
             const SizedBox(height: 12),
             const Divider(height: 1),
             const SizedBox(height: 12),
-            Text(
-              _availableSuggestions.isEmpty
-                  ? "No other free slots found for this day."
-                  : "Available Slots (including 2h buffers):",
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black87),
+            const Text(
+              "No other free slots found for this day.",
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black87),
             ),
             const SizedBox(height: 8),
             Wrap(
@@ -577,11 +578,11 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
         const SizedBox(height: 8),
         Row(
           children: [
-            Icon(Icons.info_outline, size: 14, color: Colors.grey.shade600),
+            Icon(Icons.info_outline, size: 14, color: textDark.withOpacity(0.5)),
             const SizedBox(width: 4),
             Text(
               "Operating hours: ${_selectedFacility!['open_time']} - ${_selectedFacility!['close_time']}",
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontStyle: FontStyle.italic),
+              style: TextStyle(fontSize: 12, color: textDark.withOpacity(0.5), fontStyle: FontStyle.italic),
             ),
           ],
         ),
@@ -590,20 +591,19 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
             margin: const EdgeInsets.only(top: 10),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              // Using your theme's Red but very light
-              color: const Color(0xFF9A4B3C).withOpacity(0.08),
+              color: primaryColor.withOpacity(0.08),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFF9A4B3C).withOpacity(0.2)),
+              border: Border.all(color: primaryColor.withOpacity(0.2)),
             ),
             child: Row(
               children: [
-                const Icon(Icons.history_toggle_off_rounded, color: Color(0xFF9A4B3C), size: 20),
+                Icon(Icons.history_toggle_off_rounded, color: primaryColor, size: 20),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
                     "Venue is CLOSED at this time. Please select a time between ${_selectedFacility!['open_time']} and ${_selectedFacility!['close_time']}.",
-                    style: const TextStyle(
-                        color: Color(0xFF9A4B3C),
+                    style: TextStyle(
+                        color: primaryColor,
                         fontSize: 12,
                         fontWeight: FontWeight.bold
                     ),
@@ -616,7 +616,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     );
   }
 
-  Widget _buildLabel(String label) => Padding(padding: const EdgeInsets.only(bottom: 8), child: Text(label, style: TextStyle(color: cork, fontWeight: FontWeight.bold)));
+  Widget _buildLabel(String label) => Padding(padding: const EdgeInsets.only(bottom: 8), child: Text(label, style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold)));
 
   Widget _buildSelectionBox(String text) => Container(
     padding: const EdgeInsets.all(12),
@@ -629,8 +629,8 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     child: Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(text, style: const TextStyle(fontSize: 16)),
-        Icon(Icons.access_time_rounded, color: cork, size: 20),
+        Text(text, style: TextStyle(fontSize: 16, color: textDark)),
+        Icon(Icons.access_time_rounded, color: primaryColor, size: 20),
       ],
     ),
   );
@@ -641,6 +641,6 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     fillColor: Colors.white,
     border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
     enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
-    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: cork, width: 2)),
+    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: primaryColor, width: 2)),
   );
 }

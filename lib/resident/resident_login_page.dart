@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../admin/admin_login_page.dart';
 import '../forgot_password_page.dart';
+import 'package:assignment/admin/admin_login_page.dart';
 import 'resident_home_page.dart';
 import 'resident_register_page.dart';
 
