@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../admin/admin_login_page.dart';
+import '../forgot_password_page.dart';
 import 'resident_home_page.dart';
 import 'resident_register_page.dart';
 
@@ -320,7 +321,15 @@ class _ResidentLoginPageState extends State<ResidentLoginPage> {
                   alignment: Alignment.centerRight,
                   child: TextButton(
                     onPressed: () {
-                      // TODO: go to forgot password page
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ForgotPasswordPage(
+                            role: AuthRole.resident,
+                            initialEmail: emailController.text.trim(),
+                          ),
+                        ),
+                      );
                     },
                     child: const Text(
                       "Forgot Password?",

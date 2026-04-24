@@ -79,8 +79,6 @@ class _FacilityBookingPageState extends State<FacilityBookingPage> {
           ..showSnackBar(
             const SnackBar(
               content: Text('Booking submitted successfully.'),
-              behavior: SnackBarBehavior.floating,
-              margin: EdgeInsets.fromLTRB(16, 0, 16, 90),
             ),
           );
       });

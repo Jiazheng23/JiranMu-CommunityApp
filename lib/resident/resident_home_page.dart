@@ -308,17 +308,6 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
 
   // ── Helpers ───────────────────────────────────
 
-  String _formatDate(String? dateStr) {
-    if (dateStr == null) return '';
-    try {
-      final DateTime date = DateTime.parse(dateStr).toLocal();
-      const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-      return '${date.day} ${months[date.month - 1]}, ${date.year}';
-    } catch (_) {
-      return dateStr.substring(0, 10);
-    }
-  }
-
   String _accountDisplayValue(dynamic value, {String fallback = '-'}) {
     if (value == null) return fallback;
     final text = value.toString().trim();

@@ -31,11 +31,23 @@ class _FacilityUnavailableSlotsPageState
   TimeOfDay? _startTime;
   TimeOfDay? _endTime;
 
+  TimeOfDay _parseFacilityTime(String time) {
+    final parts = time.split(':');
+    return TimeOfDay(
+      hour: int.parse(parts[0]),
+      minute: int.parse(parts[1]),
+    );
+  }
+
   late Future<List<FacilityUnavailableSlot>> _slotsFuture;
 
   @override
   void initState() {
     super.initState();
+
+    _startTime = _parseFacilityTime(widget.facility.openTime);
+    _endTime = _parseFacilityTime(widget.facility.closeTime);
+
     _slotsFuture = _facilityService.fetchFacilityUnavailableSlots(
       widget.facility.id,
     );
@@ -163,8 +175,8 @@ class _FacilityUnavailableSlotsPageState
       setState(() {
         _hasChanges = true;
         _selectedDate = null;
-        _startTime = null;
-        _endTime = null;
+        _startTime = _parseFacilityTime(widget.facility.openTime);
+        _endTime = _parseFacilityTime(widget.facility.closeTime);
         _reasonController.clear();
       });
 
