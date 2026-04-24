@@ -135,21 +135,33 @@ class _DashboardPageState extends State<DashboardPage>
 
   Future<void> fetchNotificationStatus() async {
     try {
-      final req =
-      await supabase.from('requests').select('type').eq('status', 'pending');
+      // 1. Fetch pending requests from the main 'requests' table
+      final req = await supabase
+          .from('requests')
+          .select('type')
+          .eq('status', 'pending');
+
+      // 2. Fetch unresolved emergencies
       final emg = await supabase
           .from('emergency')
           .select('emergency_id')
           .neq('status', 'solved');
-      if (mounted)
+
+      // 3. Fetch pending visitor passes directly from the 'visitor_passes' table
+      final passes = await supabase
+          .from('visitor_passes')
+          .select('id')
+          .eq('status', 'pending');
+
+      if (mounted) {
         setState(() {
-          hasUserNotif =
-              req.any((r) => r['type'] == 'admin' || r['type'] == 'resident');
+          hasUserNotif = req.any((r) => r['type'] == 'admin' || r['type'] == 'resident');
           hasEventNotif = req.any((r) => r['type'] == 'booking');
           hasFacilityNotif = req.any((r) => r['type'] == 'facility');
-          hasVisitorNotif = req.any((r) => r['type'] == 'visitor');
+          hasVisitorNotif = req.any((r) => r['type'] == 'visitor') || passes.isNotEmpty;
           hasEmergencyNotif = emg.isNotEmpty;
         });
+      }
     } catch (e) {
       debugPrint("Notification error: $e");
     }
