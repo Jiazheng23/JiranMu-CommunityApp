@@ -22,11 +22,9 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
     _fetchNotifications();
   }
 
-  // 🚨 核心修改：同时从 requests 和 emergency 表抓取数据并合并
   Future<void> _fetchNotifications() async {
     setState(() => isLoading = true);
     try {
-      // 1. 获取 requests 表的待处理请求
       final requestsResponse = await supabase
           .from('requests')
           .select('*')
@@ -34,8 +32,6 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
           .order('created_at', ascending: false)
           .limit(20);
 
-      // 2. 获取 emergency 表的待处理请求
-      // (假设你的 emergency 表也有 status 字段。如果没有，请去掉 .eq 这行)
       final emergencyResponse = await supabase
           .from('emergency')
           .select('*')
@@ -43,34 +39,27 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
           .order('created_at', ascending: false)
           .limit(20);
 
-      // 3. 把两边的数据合并到一个列表里，并统一格式
       List<dynamic> combinedList = [];
-
-      // 加入 requests 数据
       combinedList.addAll(requestsResponse);
 
-      // 加入 emergency 数据（给它强行加上 type、title 等字段，以适配 UI）
       for (var emg in emergencyResponse) {
         combinedList.add({
-          // 灵活获取 emergency 的数据，避免报错
           'id': emg['id'] ?? emg['emergency_id'],
           'type': 'emergency',
           'title': '🚨 EMERGENCY SOS!',
           'description': emg['description'] ?? emg['reason'] ?? 'Immediate attention required.',
           'created_at': emg['created_at'],
           'status': emg['status'] ?? 'pending',
-          'original_data': emg, // 保留原始数据备用
+          'original_data': emg,
         });
       }
 
-      // 4. 按照时间 (created_at) 将合并后的列表从新到旧排序
       combinedList.sort((a, b) {
         final dateA = DateTime.tryParse(a['created_at']?.toString() ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
         final dateB = DateTime.tryParse(b['created_at']?.toString() ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
-        return dateB.compareTo(dateA); // 倒序
+        return dateB.compareTo(dateA);
       });
 
-      // 5. 截取最新的 20 条显示
       if (combinedList.length > 20) {
         combinedList = combinedList.sublist(0, 20);
       }
@@ -85,11 +74,10 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
     }
   }
 
-  // 根据类型获取图标 (🚨 新增了 emergency 图标)
   IconData _getIconForType(String type) {
     switch (type.toLowerCase()) {
       case 'emergency':
-        return Icons.emergency; // SOS 十字图标
+        return Icons.emergency;
       case 'resident':
         return Icons.person_add_alt_1;
       case 'visitor':
@@ -104,11 +92,10 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
     }
   }
 
-  // 根据类型获取图标颜色 (🚨 新增了 emergency 专属大红色)
   Color _getColorForType(String type) {
     switch (type.toLowerCase()) {
       case 'emergency':
-        return Colors.red; // 紧急情况用正红色
+        return Colors.red;
       case 'resident':
         return Colors.blue;
       case 'visitor':
@@ -156,7 +143,6 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
             final desc = item['description'] ?? '';
             final rawDate = item['created_at'];
 
-            // 格式化时间 (例如: "2 hours ago")
             String timeText = '';
             if (rawDate != null) {
               try {
@@ -171,7 +157,6 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(16),
-                // 🚨 如果是 emergency，给整个卡片加一个淡淡的红色描边，更显眼
                 border: type.toLowerCase() == 'emergency'
                     ? Border.all(color: Colors.red.shade200, width: 1.5)
                     : null,
@@ -201,7 +186,6 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
                   style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 15,
-                      // 🚨 emergency 的标题也变成红色
                       color: type.toLowerCase() == 'emergency' ? Colors.red.shade800 : Colors.black87
                   ),
                 ),
@@ -250,7 +234,7 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
                     case 'visitor':
                       targetPageType = "Visitor";
                       break;
-                    case 'emergency': // 🚨 emergency 和 complaint 都会跳到专门的紧急页面
+                    case 'emergency':
                       emergencyPage = const EmergencyListPage();
                       break;
                     default:

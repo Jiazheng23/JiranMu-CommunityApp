@@ -289,8 +289,8 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                     width: double.infinity,
                     child: OutlinedButton(
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFF8B5E4A),
-                        side: const BorderSide(color: Color(0xFF8B5E4A)),
+                        foregroundColor: Colors.black,
+                        side: const BorderSide(color: Colors.black),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
                       onPressed: () { resetState(); Navigator.pop(context); },
@@ -828,10 +828,12 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                   children: [
                     Icon(Icons.location_on_outlined, color: primaryColor, size: 18),
                     const SizedBox(width: 6),
-                    Text("BLOCK A",
+                    Text(
+                        _residentSummary?['block'] != null && _residentSummary!['block'].toString().trim().isNotEmpty
+                            ? 'BLOCK ${_residentSummary!['block'].toString().trim().toUpperCase()}'
+                            : 'MY BLOCK',
                         style: TextStyle(fontWeight: FontWeight.w700, color: primaryColor, letterSpacing: 0.5)),
                     const SizedBox(width: 4),
-                    const Icon(Icons.keyboard_arrow_down_rounded),
                   ],
                 ),
               ),

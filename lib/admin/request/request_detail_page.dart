@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../AdminVisitorPassScreen.dart'; // 确认你的路径是否正确
+import '../AdminVisitorPassScreen.dart';
 
 class RequestDetailPage extends StatefulWidget {
   final Map data;
@@ -15,7 +15,6 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
   final supabase = Supabase.instance.client;
   final TextEditingController reasonController = TextEditingController();
 
-  // 🤎 统一定义棕色主题色
   static const Color _bg = Color(0xFFF5EBE6);
   static const Color _brown = Color(0xFF8B5E4A);
   static const Color _darkText = Color(0xFF2B2B2B);
@@ -281,12 +280,12 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
     else if (type == 'facility') details = extractSubData(data['facility_requests']);
 
     return Scaffold(
-      backgroundColor: _bg, // 🤎 背景改成棕色主题
+      backgroundColor: _bg,
       appBar: AppBar(
         title: Text("Review Request",
             style: TextStyle(fontWeight: FontWeight.bold, color: _darkText)),
         centerTitle: true,
-        backgroundColor: _bg, // 🤎 AppBar 跟随背景色
+        backgroundColor: _bg,
         foregroundColor: _darkText,
         elevation: 0,
       ),
@@ -298,13 +297,13 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
             const SizedBox(height: 30),
             if (details != null) ...[
               const Row(children: [
-                Icon(Icons.assignment_outlined, size: 18, color: _brown), // 🤎 图标变棕色
+                Icon(Icons.assignment_outlined, size: 18, color: _brown),
                 SizedBox(width: 8),
                 Text("SPECIFIC DETAILS",
                     style: TextStyle(
                         fontWeight: FontWeight.w900,
                         fontSize: 12,
-                        color: _brown, // 🤎 标题变棕色
+                        color: _brown,
                         letterSpacing: 1.2)),
               ]),
               const Divider(height: 24),
@@ -314,7 +313,7 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
                 decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.brown.shade100)), // 🤎 边框变浅棕色
+                    border: Border.all(color: Colors.brown.shade100)),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: details.entries
@@ -352,10 +351,10 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
       decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Colors.brown.shade50), // 🤎 加上极浅的棕色边框
+          border: Border.all(color: Colors.brown.shade50),
           boxShadow: [
             BoxShadow(
-                color: Colors.brown.withOpacity(0.05), blurRadius: 20) // 🤎 棕色微弱阴影
+                color: Colors.brown.withOpacity(0.05), blurRadius: 20)
           ]),
       child: Column(children: [
         Chip(
@@ -363,8 +362,8 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
               style: const TextStyle(
                   fontSize: 10,
                   fontWeight: FontWeight.bold,
-                  color: Colors.white)), // 🤎 标签文字变白
-          backgroundColor: _brown, // 🤎 标签底色变主题棕
+                  color: Colors.white)),
+          backgroundColor: _brown,
           side: BorderSide.none,
         ),
         const SizedBox(height: 12),
@@ -372,7 +371,7 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
             style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: _darkText)),
         const SizedBox(height: 8),
         Text(data['description'] ?? "No description",
-            style: TextStyle(color: Colors.brown.shade600, height: 1.4), // 🤎 描述文字变浅棕
+            style: TextStyle(color: Colors.brown.shade600, height: 1.4),
             textAlign: TextAlign.center),
       ]),
     );
@@ -406,13 +405,12 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
       );
     }
 
-    // 🤎 处于 pending 状态时，只显示两个按钮，不显示输入框了
     return Row(children: [
       Expanded(
         child: ElevatedButton(
           onPressed: approve,
           style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF4CAF50), // 略微柔和的绿色
+              backgroundColor: const Color(0xFF4CAF50),
               padding: const EdgeInsets.all(16),
               elevation: 0,
               shape: RoundedRectangleBorder(
@@ -424,9 +422,9 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
       const SizedBox(width: 10),
       Expanded(
         child: ElevatedButton(
-          onPressed: _showRejectDialog, // 🚨 这里改成了调用弹窗方法
+          onPressed: _showRejectDialog,
           style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFE53935), // 略微柔和的红色
+              backgroundColor: const Color(0xFFE53935),
               padding: const EdgeInsets.all(16),
               elevation: 0,
               shape: RoundedRectangleBorder(
@@ -438,7 +436,6 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
     ]);
   }
 
-  // 🤎 拒绝时弹出的对话框
   void _showRejectDialog() {
     showDialog(
       context: context,
@@ -463,10 +460,10 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
                   hintText: "Reason (optional)",
                   hintStyle: TextStyle(color: Colors.brown.shade300),
                   filled: true,
-                  fillColor: const Color(0xFFF5EBE6), // 浅棕色背景
+                  fillColor: const Color(0xFFF5EBE6),
                   border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none), // 去掉默认边框
+                      borderSide: BorderSide.none),
                   focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide: const BorderSide(color: Color(0xFF8B5E4A), width: 1.5)),
@@ -476,14 +473,14 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(dialogContext), // 点击取消，关闭弹窗
+              onPressed: () => Navigator.pop(dialogContext),
               style: TextButton.styleFrom(foregroundColor: Colors.grey.shade500),
               child: const Text("CANCEL", style: TextStyle(fontWeight: FontWeight.bold)),
             ),
             ElevatedButton(
               onPressed: () {
-                Navigator.pop(dialogContext); // 先关闭弹窗
-                reject(); // 然后执行真正的拒绝并退出页面的操作
+                Navigator.pop(dialogContext);
+                reject();
               },
               style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFFE53935),
