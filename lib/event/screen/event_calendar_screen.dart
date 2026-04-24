@@ -7,6 +7,7 @@ import 'resident_event_history_screen.dart';
 import 'my_joined_events_screen.dart';
 import 'event_details_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // 1. Added Import
 
 class EventCalendarScreen extends StatefulWidget {
   final String? highlightEventId;
@@ -17,7 +18,7 @@ class EventCalendarScreen extends StatefulWidget {
 }
 
 class _EventCalendarScreenState extends State<EventCalendarScreen> {
-  // ── NEW THEME COLORS ──────────────────────────────
+  // ── THEME COLORS ──────────────────────────────
   final Color bgColor = const Color(0xFFF5F1ED);
   final Color primaryColor = const Color(0xFF9A4B3C);
   final Color accentColor = const Color(0xFFFC9D7E);
@@ -50,6 +51,78 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
     _selectedDay = _focusedDay;
     _initializeUserSession();
   }
+
+  // ── NEW NOTIFICATION LOGIC METHODS ──────────────────────────────
+
+  Future<bool> _hasNewRequestUpdate() async {
+    final prefs = await SharedPreferences.getInstance();
+    final List<String> seenIds = prefs.getStringList('seen_request_ids') ?? [];
+    try {
+      final supabase = Supabase.instance.client;
+      final response = await supabase
+          .from('requests')
+          .select('request_id, status')
+          .eq('user_id', currentUserId)
+          .eq('type', 'booking')
+          .neq('status', 'pending');
+
+      for (var req in response) {
+        if (!seenIds.contains(req['request_id'].toString())) return true;
+      }
+    } catch (e) {
+      debugPrint("Error checking request dots: $e");
+    }
+    return false;
+  }
+
+  Future<bool> _hasNewJoinedNotification() async {
+    final prefs = await SharedPreferences.getInstance();
+    final List<String> seenIds = prefs.getStringList('seen_joined_event_ids') ?? [];
+    try {
+      final supabase = Supabase.instance.client;
+      final response = await supabase
+          .from('event_participants')
+          .select('event_id')
+          .eq('user_id', currentUserId);
+
+      for (var entry in response) {
+        if (!seenIds.contains(entry['event_id'].toString())) return true;
+      }
+    } catch (e) {
+      debugPrint("Error checking joined dots: $e");
+    }
+    return false;
+  }
+
+  Future<void> _markItemsAsSeen(String key, List<String> ids) async {
+    final prefs = await SharedPreferences.getInstance();
+    List<String> seenIds = prefs.getStringList(key) ?? [];
+    seenIds.addAll(ids);
+    await prefs.setStringList(key, seenIds.toSet().toList());
+    if (mounted) setState(() {});
+  }
+
+  Widget _buildBadgeIconButton({required IconData icon, required bool showDot, required VoidCallback onPressed, String tooltip = ''}) {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        IconButton(icon: Icon(icon, color: Colors.white), onPressed: onPressed, tooltip: tooltip),
+        if (showDot)
+          Positioned(
+            right: 12, top: 12,
+            child: Container(
+              width: 10, height: 10,
+              decoration: BoxDecoration(
+                color: Colors.redAccent, shape: BoxShape.circle,
+                border: Border.all(color: primaryColor, width: 1.5),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  // ── REMAINING FUNCTIONS (UNCHANGED) ──────────────────────────────
 
   Future<void> _initializeUserSession() async {
     final supabase = Supabase.instance.client;
@@ -204,22 +277,58 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              IconButton(
-                icon: const Icon(Icons.history, color: Colors.white),
-                tooltip: 'Event History',
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => ResidentEventHistoryScreen(currentUserId: currentUserId, currentUserName: currentName)),
-                ).then((_) => _refreshEvents()),
+              // --- HISTORY ICON WITH RED DOT ---
+              StreamBuilder(
+                stream: Supabase.instance.client.from('requests').stream(primaryKey: ['request_id']).eq('user_id', currentUserId),
+                builder: (context, snapshot) {
+                  return FutureBuilder<bool>(
+                    future: _hasNewRequestUpdate(),
+                    builder: (context, dotSnapshot) {
+                      return _buildBadgeIconButton(
+                        icon: Icons.history,
+                        tooltip: 'Event History',
+                        showDot: dotSnapshot.data ?? false,
+                        onPressed: () async {
+                          if (snapshot.hasData) {
+                            final ids = snapshot.data!.map((e) => e['request_id'].toString()).toList();
+                            await _markItemsAsSeen('seen_request_ids', ids);
+                          }
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => ResidentEventHistoryScreen(currentUserId: currentUserId, currentUserName: currentName)),
+                          ).then((_) => _refreshEvents());
+                        },
+                      );
+                    },
+                  );
+                },
               ),
               const SizedBox(width: 40),
-              IconButton(
-                icon: const Icon(Icons.assignment_turned_in_rounded, color: Colors.white),
-                tooltip: 'My Joined Events',
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => MyJoinedEventsScreen(currentUserId: currentUserId, currentRole: currentRole)),
-                ).then((_) => _refreshEvents()),
+              // --- JOINED ICON WITH RED DOT ---
+              StreamBuilder(
+                stream: Supabase.instance.client.from('event_participants').stream(primaryKey: ['event_id']).eq('user_id', currentUserId),
+                builder: (context, snapshot) {
+                  return FutureBuilder<bool>(
+                    future: _hasNewJoinedNotification(),
+                    builder: (context, dotSnapshot) {
+                      return _buildBadgeIconButton(
+                        icon: Icons.assignment_turned_in_rounded,
+                        tooltip: 'My Joined Events',
+                        showDot: dotSnapshot.data ?? false,
+                        onPressed: () async {
+                          if (snapshot.hasData) {
+                            final ids = snapshot.data!.map((e) => e['event_id'].toString()).toList();
+                            await _markItemsAsSeen('seen_joined_event_ids', ids);
+                          }
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => MyJoinedEventsScreen(currentUserId: currentUserId, currentRole: currentRole)),
+                          ).then((_) => _refreshEvents());
+                        },
+                      );
+                    },
+                  );
+                },
               ),
             ],
           ),
@@ -326,6 +435,8 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
     );
   }
 
+  // ── BUILD HELPERS (UNCHANGED) ──────────────────────────────
+
   Widget _legendItem(Color color, String label, {bool glow = false}) {
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -372,8 +483,6 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
     );
   }
 
-  // ── REFACTORED EVENT CARD WITH DUAL BADGES ──────────────────
-
   Widget _buildEventCard(CommunityEvent event) {
     final int participantCount = event.participants ?? 0;
     final double occupancy = event.maxCapacity > 0 ? participantCount / event.maxCapacity : 0;
@@ -401,8 +510,6 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
                       ? Image.network(event.imageUrl!, height: 150, width: double.infinity, fit: BoxFit.cover)
                       : Container(height: 150, width: double.infinity, color: primaryColor.withOpacity(0.1), child: Icon(Icons.image, color: primaryColor, size: 50)),
                 ),
-
-                // LEFT SIDE BADGES (Side-by-side using Wrap)
                 Positioned(
                   top: 10,
                   left: 12,
@@ -413,14 +520,11 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
                         _buildStickyBadge('Your Event', _createdEventDot, Icons.star_rounded),
                       if (!isMyEvent && hasJoined)
                         _buildStickyBadge('Joined', _joinedEventDot, Icons.check_circle_rounded),
-                      // Explains why the "Community" dot exists for "Your Event"
                       if (!event.isPrivate && event.status == 'approved')
                         _buildStickyBadge('Community Event', accentColor, Icons.groups_rounded),
                     ],
                   ),
                 ),
-
-                // RIGHT SIDE PRIVATE BADGE
                 if (event.isPrivate)
                   Positioned(
                     top: 10,
@@ -458,8 +562,6 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
       ),
     );
   }
-
-  // ── HELPER FOR STICKY BADGES ──────────────────────────────
 
   Widget _buildStickyBadge(String text, Color color, IconData icon) {
     return Container(

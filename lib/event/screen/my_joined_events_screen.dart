@@ -1,13 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // 1. Added Import
 import 'package:assignment/event/model/event_model.dart';
 import 'package:assignment/event/service/event_service.dart';
 import 'event_details_screen.dart';
-
-// ─────────────────────────────────────────────
-// MyJoinedEventsScreen
-// Updated with New Theme Colors
-// ─────────────────────────────────────────────
 
 class MyJoinedEventsScreen extends StatefulWidget {
   final String currentUserId;
@@ -24,26 +20,41 @@ class MyJoinedEventsScreen extends StatefulWidget {
 }
 
 class _MyJoinedEventsScreenState extends State<MyJoinedEventsScreen> {
-  // ── NEW THEME COLORS ──────────────────────────────
+  // ── THEME COLORS ──────────────────────────────
   final Color primaryRed = const Color(0xFF9A4B3C); // Deep Red/Brown
   final Color accentPeach = const Color(0xFFFC9D7E); // Apricot/Peach
   final Color bgColor = const Color(0xFFF5F1ED);    // Beige Background
 
   final EventService _eventService = EventService();
+  List<String> _seenJoinedIds = []; // 2. Track seen IDs locally
 
   // Filter: 'all', 'upcoming', 'past'
   String _filter = 'all';
 
   @override
+  void initState() {
+    super.initState();
+    _loadSeenIds();
+  }
+
+  // 3. Load the list of IDs the user has already acknowledged
+  Future<void> _loadSeenIds() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _seenJoinedIds = prefs.getStringList('seen_joined_event_ids') ?? [];
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: bgColor, // Updated background
+      backgroundColor: bgColor,
       appBar: AppBar(
         title: const Text(
           "My Joined Events",
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
-        backgroundColor: primaryRed, // Updated AppBar
+        backgroundColor: primaryRed,
         iconTheme: const IconThemeData(color: Colors.white),
         centerTitle: true,
         elevation: 0,
@@ -94,9 +105,13 @@ class _MyJoinedEventsScreenState extends State<MyJoinedEventsScreen> {
                   padding: const EdgeInsets.all(16),
                   itemCount: filtered.length,
                   itemBuilder: (context, index) {
+                    final event = filtered[index];
+                    // 4. Check if this specific joined event is "NEW"
+                    final bool isNew = !_seenJoinedIds.contains(event.id);
+
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 12),
-                      child: _buildEventCard(filtered[index]),
+                      child: _buildEventCard(event, isNew),
                     );
                   },
                 ),
@@ -107,6 +122,8 @@ class _MyJoinedEventsScreenState extends State<MyJoinedEventsScreen> {
       ),
     );
   }
+
+  // --- UI COMPONENTS (UNCHANGED) ---
 
   Widget _buildFilterBar(List<CommunityEvent> allEvents, DateTime now) {
     final upcomingCount =
@@ -181,7 +198,8 @@ class _MyJoinedEventsScreenState extends State<MyJoinedEventsScreen> {
     );
   }
 
-  Widget _buildEventCard(CommunityEvent event) {
+  // 5. Updated buildEventCard to accept the isNew boolean
+  Widget _buildEventCard(CommunityEvent event, bool isNew) {
     final now = DateTime.now();
     final isPast = event.eventDate.isBefore(now);
     final isToday = event.eventDate.year == now.year &&
@@ -276,6 +294,20 @@ class _MyJoinedEventsScreenState extends State<MyJoinedEventsScreen> {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                        // 6. Added NEW Badge if newly joined
+                        if (isNew && !isPast)
+                          Container(
+                            margin: const EdgeInsets.only(left: 6),
+                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.redAccent,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text(
+                              "NEW",
+                              style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold),
+                            ),
+                          ),
                         const SizedBox(width: 6),
                         Container(
                           padding: const EdgeInsets.symmetric(
@@ -397,6 +429,7 @@ class _MyJoinedEventsScreenState extends State<MyJoinedEventsScreen> {
     );
   }
 
+  // --- REMAINING FUNCTIONS (UNCHANGED) ---
 
   void _confirmLeave(CommunityEvent event) {
     showDialog(

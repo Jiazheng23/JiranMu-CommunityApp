@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // 1. Added Import
 import '../model/event_model.dart';
 import '../service/event_service.dart';
 import 'share_event_sheet.dart';
@@ -22,31 +23,47 @@ class ResidentEventHistoryScreen extends StatefulWidget {
 class _ResidentEventHistoryScreenState
     extends State<ResidentEventHistoryScreen> {
   final EventService _eventService = EventService();
+  List<String> _seenRequestIds = []; // 2. Track seen IDs locally
 
-  // ── NEW THEME COLORS ──────────────────────────────
+  // ── THEME COLORS ──────────────────────────────
   final Color primaryRed = const Color(0xFF9A4B3C); // Deep Red/Brown
   final Color accentPeach = const Color(0xFFFC9D7E); // Apricot/Peach
   final Color bgColor = const Color(0xFFF5F1ED);    // Beige/Off-white
 
   @override
+  void initState() {
+    super.initState();
+    _loadSeenIds();
+  }
+
+  // 3. Load the list of IDs the user has already "seen"
+  Future<void> _loadSeenIds() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _seenRequestIds = prefs.getStringList('seen_request_ids') ?? [];
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: bgColor, // Updated background
+      backgroundColor: bgColor,
       appBar: AppBar(
         title: const Text(
           "My Event History",
           style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
         ),
-        backgroundColor: primaryRed, // Updated AppBar
+        backgroundColor: primaryRed,
         centerTitle: true,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: RefreshIndicator(
         onRefresh: () async {
+          await _loadSeenIds();
           setState(() {});
         },
-        color: accentPeach, // Updated indicator
+        color: accentPeach,
         child: FutureBuilder<List<CommunityEvent>>(
           future: _eventService.fetchUserRequests(),
           builder: (context, snapshot) {
@@ -88,7 +105,11 @@ class _ResidentEventHistoryScreenState
               physics: const AlwaysScrollableScrollPhysics(),
               itemBuilder: (context, index) {
                 final event = requests[index];
-                return _buildHistoryCard(event);
+                // 4. Determine if this specific card should show a "NEW" badge
+                final bool isNewUpdate = !_seenRequestIds.contains(event.id) &&
+                    event.status.toLowerCase() != 'pending';
+
+                return _buildHistoryCard(event, isNewUpdate);
               },
             );
           },
@@ -113,7 +134,8 @@ class _ResidentEventHistoryScreenState
     );
   }
 
-  Widget _buildHistoryCard(CommunityEvent event) {
+  // 5. Updated buildHistoryCard to accept the isNewUpdate boolean
+  Widget _buildHistoryCard(CommunityEvent event, bool isNewUpdate) {
     final bool isApproved = event.status.toLowerCase() == 'approved';
     final bool isRejected = event.status.toLowerCase() == 'rejected';
     final bool isPrivate = event.isPrivate;
@@ -136,13 +158,37 @@ class _ResidentEventHistoryScreenState
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        event.title,
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: primaryRed, // Updated text color
-                        ),
+                      // 6. Added NEW Badge next to title
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              event.title,
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: primaryRed,
+                              ),
+                            ),
+                          ),
+                          if (isNewUpdate)
+                            Container(
+                              margin: const EdgeInsets.only(left: 8),
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.redAccent,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Text(
+                                "NEW",
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                       const SizedBox(height: 4),
                       Container(
@@ -312,10 +358,12 @@ class _ResidentEventHistoryScreenState
     );
   }
 
+  // --- HELPER METHODS REMAIN UNCHANGED ---
+
   Widget _buildIconInfo(IconData icon, String text) {
     return Row(
       children: [
-        Icon(icon, size: 18, color: accentPeach), // Updated icon color
+        Icon(icon, size: 18, color: accentPeach),
         const SizedBox(width: 10),
         Text(
           text,
@@ -360,10 +408,7 @@ class _ResidentEventHistoryScreenState
     );
   }
 
-  Widget _buildFeedbackBox(
-      {required String title,
-        required String message,
-        required Color baseColor}) {
+  Widget _buildFeedbackBox({required String title, required String message, required Color baseColor}) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
