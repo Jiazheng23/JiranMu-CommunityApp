@@ -4,9 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../event/screen/event_calendar_screen.dart';
-import '../event/screen/event_details_screen.dart';
+import 'package:assignment/event/screen/event_details_screen.dart';
 import '../event/model/event_model.dart';
-import '../event/service/event_service.dart';
+import 'package:assignment/event/service/event_service.dart';
 
 // ─────────────────────────────────────────────
 // Poll Models

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:timeago/timeago.dart' as timeago;
-import '../emergency/emergency_list_page.dart';
-import '../request/request_list_page.dart';
+import 'package:assignment/admin/emergency/emergency_list_page.dart';
+import 'package:assignment/admin/request/request_list_page.dart';
 
 class AdminNotificationsPage extends StatefulWidget {
   const AdminNotificationsPage({super.key});

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../AdminVisitorPassScreen.dart';
+import 'package:assignment/admin/AdminVisitorPassScreen.dart';
 import 'request_detail_page.dart';
 import 'request_list_page.dart';
 

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../AdminVisitorPassScreen.dart';
+import 'package:assignment/admin/AdminVisitorPassScreen.dart';
 
 class RequestDetailPage extends StatefulWidget {
   final Map data;

@@ -2,11 +2,11 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
-import '../../chat/CommunityChatsListScreen.dart';
-import '../AdminCreateChatScreen.dart';
+import 'package:assignment/chat/CommunityChatsListScreen.dart';
+import 'package:assignment/admin/AdminCreateChatScreen.dart';
 import 'create_facility_page.dart';
 import 'dashboard_page.dart';
-import '../profile/admin_profile_page.dart';
+import 'package:assignment/admin/profile/admin_profile_page.dart';
 
 const Color primaryColor = Color(0xFF9A4B3C);
 const Color textDark = Color(0xFF2B2B2B);

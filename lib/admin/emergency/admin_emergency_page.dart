@@ -5,7 +5,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
-import '../emergency/location.dart';
+import 'package:assignment/admin/emergency/location.dart';
 
 class AdminEmergencyPage extends StatefulWidget {
   final Map<String, dynamic> emergency;
