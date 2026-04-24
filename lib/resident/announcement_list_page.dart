@@ -27,51 +27,67 @@ class _AnnouncementListPageState extends State<AnnouncementListPage> {
 
       List<Map<String, dynamic>> combinedList = [];
 
-      // 1. Fetch official announcements
-      final announcementsResponse = await supabase
-          .from('announcements')
-          .select();
-
+      // 1. Fetch Official Announcements (General notices for everyone)
+      final announcementsResponse = await supabase.from('announcements').select();
       combinedList.addAll(List<Map<String, dynamic>>.from(announcementsResponse));
 
-      // 2. Fetch joined events if a user is logged in
       if (user != null) {
-        final eventsResponse = await supabase
+        // 2. Fetch JOINED events from 'event_participants'
+        final joinedResponse = await supabase
             .from('event_participants')
             .select('joined_at, events(*)')
             .eq('user_id', user.id);
 
-        for (var row in eventsResponse) {
-          // Supabase might return singular objects or lists depending on the foreign key setup
+        for (var row in joinedResponse) {
           final dynamic eventData = row['events'];
           final Map<String, dynamic>? event = eventData is List
               ? (eventData.isNotEmpty ? eventData[0] : null)
               : eventData;
 
           if (event != null) {
-            // Map the event into an "announcement" format
             combinedList.add({
               'id': event['id'],
-              'title': 'Event Reminder: ${event['title']}',
-              'category': 'Event',
-              'is_urgent': false,
-              'created_at': row['joined_at'], // Sort by when they joined
-              'is_event': true, // Custom flag to identify events
-              // Map event details to "content" so AnnouncementDetailPage can display it
-              'content': '${event['description'] ?? "No additional details."}\n\n'
-                  '📍 Location: ${event['location']}\n'
-                  '📅 Date: ${event['event_date']}\n'
-                  '⏰ Time: ${event['start_time']} - ${event['end_time']}',
+              'title': 'Joined: ${event['title']}',
+              'category': 'Joined',
+              'created_at': row['joined_at'],
+              'is_event': true,
+              'content': 'You are registered for this event. See you at ${event['location']}!',
             });
           }
         }
+
+        // 3. Fetch APPROVED & REJECTED status from 'requests'
+        final requestsResponse = await supabase
+            .from('requests')
+            .select()
+            .eq('user_id', user.id)
+            .eq('type', 'booking')
+            .inFilter('status', ['approved', 'rejected']); // Only Approved or Rejected
+
+        for (var req in requestsResponse) {
+          bool isApproved = req['status'] == 'approved';
+
+          combinedList.add({
+            'id': req['request_id'],
+            'title': isApproved
+                ? 'Proposal Approved: ${req['title']}'
+                : 'Proposal Rejected: ${req['title']}',
+            'category': isApproved ? 'Approved' : 'Rejected',
+            'is_urgent': !isApproved,
+            'created_at': req['respond_time'] ?? req['created_at'],
+            'is_status_update': true,
+            'content': isApproved
+                ? 'Your booking for "${req['title']}" was approved and added to the community calendar.'
+                : 'Your booking for "${req['title']}" was rejected.\nReason: ${req['reject_reason'] ?? "No reason provided."}',
+          });
+        }
       }
 
-      // 3. Sort the combined list by 'created_at' descending (newest first)
+      // 4. Sort by newest (based on respond_time or created_at)
       combinedList.sort((a, b) {
         final dateA = DateTime.tryParse(a['created_at']?.toString() ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
         final dateB = DateTime.tryParse(b['created_at']?.toString() ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
-        return dateB.compareTo(dateA); // Descending
+        return dateB.compareTo(dateA);
       });
 
       if (mounted) {
@@ -81,10 +97,8 @@ class _AnnouncementListPageState extends State<AnnouncementListPage> {
         });
       }
     } catch (e) {
-      debugPrint('Error fetching data: $e');
-      if (mounted) {
-        setState(() => isLoading = false);
-      }
+      debugPrint('Notice Board Error: $e');
+      if (mounted) setState(() => isLoading = false);
     }
   }
 
@@ -102,6 +116,7 @@ class _AnnouncementListPageState extends State<AnnouncementListPage> {
     }
   }
 
+  @override
   @override
   Widget build(BuildContext context) {
     // 🤎 Core Theme Colors
@@ -137,18 +152,27 @@ class _AnnouncementListPageState extends State<AnnouncementListPage> {
           final isEvent = item['is_event'] ?? false;
           final dateStr = _formatDate(item['created_at']);
 
-          // Determine styling based on type (Urgent, Event, or General)
-          Color avatarBg = isUrgent
-              ? Colors.red.shade50
-              : (isEvent ? eventAccentColor.withOpacity(0.1) : const Color(0xFFEADFD6));
+          // ──────────────────────────────────────────────────────────
+          // 1. DYNAMIC STYLING LOGIC (CHANGE THIS PART)
+          // ──────────────────────────────────────────────────────────
+          Color iconColor = primaryColor;
+          IconData iconData = Icons.campaign_rounded;
+          Color avatarBg = const Color(0xFFEADFD6);
 
-          Color iconColor = isUrgent
-              ? Colors.redAccent
-              : (isEvent ? eventAccentColor : primaryColor);
-
-          IconData iconData = isUrgent
-              ? Icons.warning_amber_rounded
-              : (isEvent ? Icons.event_available_rounded : Icons.campaign_rounded);
+          if (category == 'Approved') {
+            iconColor = Colors.green;
+            iconData = Icons.check_circle_rounded;
+            avatarBg = Colors.green.shade50;
+          } else if (category == 'Rejected' || isUrgent) {
+            iconColor = Colors.redAccent;
+            iconData = isUrgent ? Icons.warning_amber_rounded : Icons.cancel_rounded;
+            avatarBg = Colors.red.shade50;
+          } else if (isEvent || category == 'Joined') {
+            iconColor = eventAccentColor;
+            iconData = Icons.event_available_rounded;
+            avatarBg = eventAccentColor.withOpacity(0.1);
+          }
+          // ──────────────────────────────────────────────────────────
 
           return Container(
             decoration: BoxDecoration(
