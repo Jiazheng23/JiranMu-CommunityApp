@@ -3,6 +3,7 @@ import 'package:assignment/admin/admin_login_page.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../chat/user_session.dart';
 import '../AdminQRScannerScreen.dart';
 import 'personal_information_page.dart';
 
@@ -87,6 +88,7 @@ class _AdminProfilePageState extends State<AdminProfilePage> {
         builder: (context) => const Center(child: CircularProgressIndicator()),
       );
 
+      UserSession.clear();
       await Supabase.instance.client.auth.signOut();
 
       if (context.mounted) {

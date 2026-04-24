@@ -2,6 +2,8 @@ import 'package:assignment/resident/resident_login_page.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'chat/NotificationService.dart';
+
 const supabaseUrl = 'https://xgttjcpvjweueoaeufac.supabase.co';
 const supabaseKey = 'sb_publishable_jO5Lkks7maYrgqJp3IA-3g_04wY0JRb';
 
@@ -12,6 +14,8 @@ void main() async {
     url: supabaseUrl,
     anonKey: supabaseKey,
   );
+
+  // await NotificationService.init();
 
   runApp(const MyApp());
 }

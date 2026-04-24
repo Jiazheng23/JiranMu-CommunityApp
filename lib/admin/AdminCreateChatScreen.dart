@@ -170,18 +170,6 @@ class _AdminCreateChatScreenState extends State<AdminCreateChatScreen> {
         }
       }
 
-      for (final name in newlyAdded) {
-        final firstName = name.trim().split(' ').first;
-        await supabase.from('messages').insert({
-          'id': const Uuid().v4(),
-          'room_id': roomId,
-          'sender': 'System',
-          'content': '👋 Welcome to the group, $firstName! We\'re glad to have you here.',
-          'created_at': DateTime.now().toIso8601String(),
-          'is_announcement': false,
-        });
-      }
-
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

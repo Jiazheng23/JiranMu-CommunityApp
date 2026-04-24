@@ -5,10 +5,18 @@ class UserSession {
   static String? email;
   static String role = 'resident';
 
-  static Future<void> init() async {
-    final supabase = Supabase.instance.client;
+  static void clear() {
+    uid = null;
+    email = null;
+    role = 'resident';
+  }
 
+  static Future<void> init() async {
+    clear();
+
+    final supabase = Supabase.instance.client;
     final user = supabase.auth.currentUser;
+
     uid = user?.id;
     email = user?.email;
 
@@ -26,7 +34,7 @@ class UserSession {
       return;
     }
 
-    // CHECK RESIDENT TABLE (optional but safer)
+    // CHECK RESIDENT TABLE
     final resident = await supabase
         .from('resident')
         .select('id')

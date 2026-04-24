@@ -46,7 +46,7 @@ dependencies:
   qr_flutter: ^4.1.0
   mobile_scanner: ^7.2.0
   timeago: ^3.7.1
-  fl_chart: ^1.2.0
+  flutter_local_notifications: ^21.0.0
   shared_preferences: ^2.5.5
 
 dev_dependencies:

@@ -76,7 +76,7 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
   Future<void> _approvePass(Map<String, dynamic> pass) async {
     try {
       // Generate a unique QR token when approving
-      final qrToken = '${pass['id']}_${DateTime.now().millisecondsSinceEpoch}';
+      final qrToken = pass['id'].toString();
 
       await _client
           .from('visitor_passes')
@@ -270,18 +270,18 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Text(label),
-          if (count > 0) ...[
-            const SizedBox(width: 6),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-              decoration: BoxDecoration(
-                  color: badgeColor,
-                  borderRadius: BorderRadius.circular(10)),
-              child: Text('$count',
-                  style: const TextStyle(
-                      fontSize: 11, fontWeight: FontWeight.bold)),
-            ),
-          ],
+          // if (count > 0) ...[
+          //   const SizedBox(width: 4),
+          //   Container(
+          //     padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+          //     decoration: BoxDecoration(
+          //         color: badgeColor,
+          //         borderRadius: BorderRadius.circular(10)),
+          //     child: Text('$count',
+          //         style: const TextStyle(
+          //             fontSize: 11, fontWeight: FontWeight.bold)),
+          //   ),
+          // ],
         ],
       ),
     );
@@ -297,10 +297,10 @@ class _AdminVisitorPassScreenState extends State<AdminVisitorPassScreen>
         backgroundColor: primary,
         foregroundColor: Colors.white,
         elevation: 0,
-        actions: [
-          IconButton(
-              icon: const Icon(Icons.refresh), onPressed: _loadPasses),
-        ],
+        // actions: [
+        //   IconButton(
+        //       icon: const Icon(Icons.refresh), onPressed: _loadPasses),
+        // ],
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: Colors.white,

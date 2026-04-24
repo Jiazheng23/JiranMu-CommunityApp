@@ -3,12 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../chat/CommunityChatsListScreen.dart';
+import '../../chat/user_session.dart';
 import '../AdminCreateChatScreen.dart';
 import 'create_facility_page.dart';
 import 'dashboard_page.dart';
 import '../profile/admin_profile_page.dart';
 
-// 定义全局颜色常量 (确保风格统一)
 const Color primaryColor = Color(0xFF9A4B3C);
 const Color textDark = Color(0xFF2B2B2B);
 const Color softBrown = Color(0xFFEADFD6);
@@ -24,16 +24,14 @@ class AdminDashboard extends StatefulWidget {
 
 class _AdminDashboardState extends State<AdminDashboard> {
   int selectedIndex = 0;
+  bool _sessionReady = false;
+
+  // Keep a GlobalKey so we can call refresh() on the chat screen.
+  final GlobalKey<CommunityChatsListScreenState> _chatKey =
+  GlobalKey<CommunityChatsListScreenState>();
+
   final ImagePicker _picker = ImagePicker();
   final supabase = Supabase.instance.client;
-
-  // 使用 getter 初始化页面
-  List<Widget> get pages => [
-    const DashboardPage(),
-    const CreateFacilityPage(),
-    const CommunityChatsListScreen(),
-    AdminProfilePage(user: widget.user),
-  ];
 
   final List<Map<String, dynamic>> navItems = [
     {'icon': Icons.home_outlined, 'label': 'Dashboard'},
@@ -42,7 +40,33 @@ class _AdminDashboardState extends State<AdminDashboard> {
     {'icon': Icons.person_outline, 'label': 'Profile'},
   ];
 
-  // 🔥 核心功能：创建公告的弹出层
+  @override
+  void initState() {
+    super.initState();
+    _ensureSession();
+  }
+
+  Future<void> _ensureSession() async {
+    await UserSession.init();
+    if (mounted) setState(() => _sessionReady = true);
+  }
+
+  List<Widget> get pages => [
+    const DashboardPage(),
+    const CreateFacilityPage(),
+    // Use the GlobalKey so we can call refresh() on it.
+    CommunityChatsListScreen(key: _chatKey),
+    AdminProfilePage(user: widget.user),
+  ];
+
+  void _onNavTap(int index) {
+    // If switching TO the chat tab, trigger a refresh.
+    if (index == 2 && selectedIndex != 2) {
+      _chatKey.currentState?.refresh();
+    }
+    setState(() => selectedIndex = index);
+  }
+
   void showCreateAnnouncementSheet(BuildContext context) {
     final titleController = TextEditingController();
     final contentController = TextEditingController();
@@ -73,11 +97,13 @@ class _AdminDashboardState extends State<AdminDashboard> {
               children: [
                 const Center(
                   child: Text("Create Announcement",
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textDark)),
+                      style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: textDark)),
                 ),
                 const SizedBox(height: 20),
 
-                // 图片选择区域
                 GestureDetector(
                   onTap: () async {
                     final XFile? pickedFile = await _picker.pickImage(
@@ -98,32 +124,36 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         ? Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.add_photo_alternate_outlined, color: Colors.grey.shade400, size: 45),
+                        Icon(Icons.add_photo_alternate_outlined,
+                            color: Colors.grey.shade400, size: 45),
                         const SizedBox(height: 8),
-                        const Text("Add Cover Photo", style: TextStyle(color: Colors.grey, fontSize: 13)),
+                        const Text("Add Cover Photo",
+                            style: TextStyle(
+                                color: Colors.grey, fontSize: 13)),
                       ],
                     )
                         : ClipRRect(
                       borderRadius: BorderRadius.circular(16),
-                      child: Image.file(imageFile!, fit: BoxFit.cover, width: double.infinity),
+                      child: Image.file(imageFile!,
+                          fit: BoxFit.cover, width: double.infinity),
                     ),
                   ),
                 ),
                 const SizedBox(height: 15),
 
-                // 标题输入
                 TextField(
                     controller: titleController,
                     decoration: InputDecoration(
                         labelText: "Title",
                         labelStyle: const TextStyle(color: Colors.grey),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12)),
                         focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(color: primaryColor)))),
+                            borderSide:
+                            const BorderSide(color: primaryColor)))),
                 const SizedBox(height: 15),
 
-                // 内容输入
                 TextField(
                     controller: contentController,
                     maxLines: 4,
@@ -131,27 +161,29 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         labelText: "Message",
                         alignLabelWithHint: true,
                         labelStyle: const TextStyle(color: Colors.grey),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12)),
                         focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(color: primaryColor)))),
+                            borderSide:
+                            const BorderSide(color: primaryColor)))),
                 const SizedBox(height: 15),
 
-                // 类别选择
                 DropdownButtonFormField<String>(
                   value: selectedCategory,
                   decoration: InputDecoration(
                       labelText: "Category",
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12))),
                   items: ['Notice', 'Maintenance', 'Event', 'General']
-                      .map((v) => DropdownMenuItem<String>(value: v, child: Text(v)))
+                      .map((v) =>
+                      DropdownMenuItem<String>(value: v, child: Text(v)))
                       .toList(),
-                  onChanged: (val) => setModalState(() => selectedCategory = val!),
+                  onChanged: (val) =>
+                      setModalState(() => selectedCategory = val!),
                 ),
-
                 const SizedBox(height: 15),
 
-                // 日期与紧急程度
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -162,28 +194,35 @@ class _AdminDashboardState extends State<AdminDashboard> {
                             initialDate: DateTime.now(),
                             firstDate: DateTime.now(),
                             lastDate: DateTime(2030));
-                        if (picked != null) setModalState(() => selectedDate = picked);
+                        if (picked != null)
+                          setModalState(() => selectedDate = picked);
                       },
-                      icon: const Icon(Icons.calendar_month, color: primaryColor),
+                      icon: const Icon(Icons.calendar_month,
+                          color: primaryColor),
                       label: Text(
                         selectedDate == null
                             ? "Set Event Date"
                             : "${selectedDate!.day}/${selectedDate!.month}/${selectedDate!.year}",
-                        style: const TextStyle(color: primaryColor, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                            color: primaryColor,
+                            fontWeight: FontWeight.bold),
                       ),
                     ),
                     Row(children: [
-                      const Text("Urgent", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                      const Text("Urgent",
+                          style: TextStyle(
+                              color: Colors.red,
+                              fontWeight: FontWeight.bold)),
                       Switch(
                           value: isUrgent,
                           activeColor: Colors.red,
-                          onChanged: (val) => setModalState(() => isUrgent = val)),
+                          onChanged: (val) =>
+                              setModalState(() => isUrgent = val)),
                     ]),
                   ],
                 ),
                 const SizedBox(height: 20),
 
-                // 发布按钮
                 SizedBox(
                   width: double.infinity,
                   height: 55,
@@ -191,55 +230,77 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     style: ElevatedButton.styleFrom(
                         backgroundColor: primaryColor,
                         elevation: 0,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
-                    onPressed: isUploading ? null : () async {
-                      if (titleController.text.trim().isEmpty || contentController.text.trim().isEmpty) {
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14))),
+                    onPressed: isUploading
+                        ? null
+                        : () async {
+                      if (titleController.text.trim().isEmpty ||
+                          contentController.text.trim().isEmpty) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text("Please fill in Title and Message")));
+                            const SnackBar(
+                                content: Text(
+                                    "Please fill in Title and Message")));
                         return;
                       }
 
                       setModalState(() => isUploading = true);
                       try {
                         String? imageUrl;
-                        // 1. 如果有图片，先上传到存储桶
                         if (imageFile != null) {
-                          final fileName = 'ann_${DateTime.now().millisecondsSinceEpoch}.jpg';
+                          final fileName =
+                              'ann_${DateTime.now().millisecondsSinceEpoch}.jpg';
                           final path = 'public/$fileName';
-                          await supabase.storage.from('announcement_images').upload(path, imageFile!);
-                          imageUrl = supabase.storage.from('announcement_images').getPublicUrl(path);
+                          await supabase.storage
+                              .from('announcement_images')
+                              .upload(path, imageFile!);
+                          imageUrl = supabase.storage
+                              .from('announcement_images')
+                              .getPublicUrl(path);
                         }
 
-                        // 2. 写入数据库
                         await supabase.from('announcements').insert({
                           'title': titleController.text.trim(),
                           'content': contentController.text.trim(),
                           'category': selectedCategory,
-                          'event_date': selectedDate?.toIso8601String(),
+                          'event_date':
+                          selectedDate?.toIso8601String(),
                           'is_urgent': isUrgent,
                           if (imageUrl != null) 'image_url': imageUrl,
                         });
 
                         if (context.mounted) {
                           Navigator.pop(context);
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                              content: Text("Announcement published!"), backgroundColor: Colors.green));
-
-                          // 如果你需要刷新 Dashboard 页面，可以在这里发送通知或调用刷新逻辑
+                          ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content:
+                                  Text("Announcement published!"),
+                                  backgroundColor: Colors.green));
                         }
                       } catch (e) {
                         debugPrint("Upload Error: $e");
                         if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                              content: Text("Failed to publish. Check your connection."), backgroundColor: Colors.red));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text(
+                                      "Failed to publish. Check your connection."),
+                                  backgroundColor: Colors.red));
                         }
                       } finally {
                         setModalState(() => isUploading = false);
                       }
                     },
                     child: isUploading
-                        ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                        : const Text("Publish Now", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                        ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                            color: Colors.white, strokeWidth: 2))
+                        : const Text("Publish Now",
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16)),
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -256,9 +317,17 @@ class _AdminDashboardState extends State<AdminDashboard> {
     return Scaffold(
       extendBody: true,
       backgroundColor: const Color(0xFFF5EBE6),
-      body: SafeArea(child: pages[selectedIndex]),
+      body: SafeArea(
+        child: !_sessionReady
+            ? const Center(
+          child: CircularProgressIndicator(color: primaryColor),
+        )
+            : IndexedStack(
+          index: selectedIndex,
+          children: pages,
+        ),
+      ),
 
-      // 🔥 悬浮按钮：仅在 Dashboard (Index 0) 显示
       floatingActionButton: selectedIndex == 0
           ? SizedBox(
         width: 60,
@@ -266,9 +335,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
         child: FloatingActionButton(
           onPressed: () => showCreateAnnouncementSheet(context),
           backgroundColor: primaryColor,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18)),
           elevation: 4,
-          child: const Icon(Icons.add, size: 30, color: Colors.white),
+          child:
+          const Icon(Icons.add, size: 30, color: Colors.white),
         ),
       )
           : selectedIndex == 1
@@ -279,15 +350,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
           onPressed: () => Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => const CreateFacilityPage(),
-            ),
+                builder: (_) => const CreateFacilityPage()),
           ),
           backgroundColor: const Color(0xFF9A4B3C),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(60),
-          ),
+              borderRadius: BorderRadius.circular(60)),
           elevation: 4,
-          child: const Icon(Icons.add, size: 30, color: Colors.white),
+          child: const Icon(Icons.add,
+              size: 30, color: Colors.white),
         ),
       )
           : selectedIndex == 2
@@ -298,15 +368,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
           onPressed: () => Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => const AdminCreateChatScreen(),
-            ),
+                builder: (_) =>
+                const AdminCreateChatScreen()),
           ),
           backgroundColor: const Color(0xFF9A4B3C),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(60),
-          ),
+              borderRadius: BorderRadius.circular(60)),
           elevation: 4,
-          child: const Icon(Icons.add, size: 30, color: Colors.white),
+          child: const Icon(Icons.add,
+              size: 30, color: Colors.white),
         ),
       )
           : null,
@@ -331,13 +401,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: List.generate(navItems.length, (index) {
-                return _buildNavItem(
+              children: List.generate(
+                navItems.length,
+                    (index) => _buildNavItem(
                   navItems[index]['icon'],
                   navItems[index]['label'],
                   index,
-                );
-              }),
+                ),
+              ),
             ),
           ),
         ),
@@ -346,25 +417,36 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   Widget _buildNavItem(IconData icon, String label, int index) {
-    bool isSelected = selectedIndex == index;
+    final isSelected = selectedIndex == index;
     return GestureDetector(
-      onTap: () => setState(() => selectedIndex = index),
+      onTap: () => _onNavTap(index), // ← use _onNavTap instead of setState
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeOutCubic,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding:
+        const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF8B5E4A) : Colors.transparent,
+          color: isSelected
+              ? const Color(0xFF8B5E4A)
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(25),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: isSelected ? Colors.white : Colors.grey.shade400, size: 26),
+            Icon(icon,
+                color: isSelected
+                    ? Colors.white
+                    : Colors.grey.shade400,
+                size: 26),
             if (isSelected)
               Padding(
                 padding: const EdgeInsets.only(left: 8.0),
-                child: Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                child: Text(label,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13)),
               ),
           ],
         ),
