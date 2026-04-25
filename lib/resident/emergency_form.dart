@@ -23,10 +23,10 @@ class _EmergencyFormState extends State<EmergencyForm> with SingleTickerProvider
   late double targetLng;
 
   // ── User Data variables ──
-  String? homeUnitNumber; // 存储从数据库拉取的门牌号
+  String? homeUnitNumber;
   bool _isLoadingUserData = true;
 
-  // ── Tab Controller (去掉 late，改为可空类型，彻底避免红屏报错) ──
+  // ── Tab Controller
   TabController? _tabController;
 
   // ── Design tokens ──
@@ -64,9 +64,8 @@ class _EmergencyFormState extends State<EmergencyForm> with SingleTickerProvider
   @override
   void initState() {
     super.initState();
-    // 初始化 TabController
     _tabController = TabController(length: 2, vsync: this);
-    _fetchHistory(); // 页面加载时获取历史记录
+    _fetchHistory();
     _fetchUserData();
   }
 
@@ -82,7 +81,6 @@ class _EmergencyFormState extends State<EmergencyForm> with SingleTickerProvider
       final userId = supabase.auth.currentUser?.id;
       if (userId == null) return;
 
-      // ⚠️ 注意：这里的 'users' 和 'unit_number' 请替换为你数据库里实际的表名和列名
       final response = await supabase
           .from('resident')
           .select('unit_number')
@@ -91,7 +89,7 @@ class _EmergencyFormState extends State<EmergencyForm> with SingleTickerProvider
 
       if (mounted) {
         setState(() {
-          homeUnitNumber = response['unit_number']; // 如果没有填，这里可能是 null
+          homeUnitNumber = response['unit_number'];
           _isLoadingUserData = false;
         });
       }
@@ -112,7 +110,7 @@ class _EmergencyFormState extends State<EmergencyForm> with SingleTickerProvider
           .from('emergency')
           .select()
           .eq('user_id', userId)
-          .order('created_at', ascending: false); // 最新记录排前面
+          .order('created_at', ascending: false);
 
       if (mounted) {
         setState(() {
@@ -163,50 +161,42 @@ class _EmergencyFormState extends State<EmergencyForm> with SingleTickerProvider
     if (file != null) setState(() => evidenceFile = File(file.path));
   }
 
-  // ── Submit to Supabase ──
-  // ── 完整的提交逻辑 ──
   Future<void> _submit() async {
-    // 1. 基础校验：必须选择紧急类型
     if (selectedType == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text("请选择紧急事件类型 (Please select an emergency type)."),
+          content: Text("Please select an emergency type."),
           backgroundColor: Colors.red));
       return;
     }
 
-    // 2. 位置校验：
-    // 如果勾选了“家庭住址”，检查是否真的有地址数据
     if (useHomeAddress) {
       if (homeUnitNumber == null || homeUnitNumber!.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text("您的个人资料中未登记地址，请使用当前定位或更新资料。"),
+            content: Text("Your profile does not include an address. Please use your current location or update your information."),
             backgroundColor: Colors.orange));
         return;
       }
     }
-    // 如果没勾选“家庭住址”，检查是否获取了 GPS 定位
     else if (latitude == null || longitude == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text("请先获取您的当前位置 (Please capture your GPS location)."),
+          content: Text("Please capture your GPS location."),
           backgroundColor: Colors.orange));
       return;
     }
 
-    // 3. 开始提交状态
     setState(() => isSubmitting = true);
 
     try {
       final userId = supabase.auth.currentUser?.id;
-      if (userId == null) throw "用户未登录 (User not logged in)";
+      if (userId == null) throw "User not logged in";
 
       String? evidenceUrl;
 
-      // 4. 图片上传逻辑 (如果有拍照/选图)
       if (evidenceFile != null) {
-        // 生成唯一文件名防止覆盖
+
         final fileExt = evidenceFile!.path.split('.').last;
         final fileName = 'emergency_${DateTime.now().millisecondsSinceEpoch}.$fileExt';
-        final filePath = '$userId/$fileName'; // 存储在用户ID命名的文件夹下
+        final filePath = '$userId/$fileName';
 
         await supabase.storage.from('emergency_evidence').upload(
           filePath,
@@ -214,11 +204,9 @@ class _EmergencyFormState extends State<EmergencyForm> with SingleTickerProvider
           fileOptions: const FileOptions(cacheControl: '3600', upsert: false),
         );
 
-        // 获取图片的公开访问链接
         evidenceUrl = supabase.storage.from('emergency_evidence').getPublicUrl(filePath);
       }
 
-      // 5. 插入数据到 Supabase 'emergency' 表
       await supabase.from('emergency').insert({
         'user_id': userId,
         'type': selectedType,
@@ -228,18 +216,15 @@ class _EmergencyFormState extends State<EmergencyForm> with SingleTickerProvider
         'is_home_address': useHomeAddress,
         'description': _descController.text.trim().isEmpty ? null : _descController.text.trim(),
         'report_evidence_url': evidenceUrl,
-        'created_at': DateTime.now().toUtc().toIso8601String(), // 🔥 新增这行：强制存入标准的 UTC 时间
+        'created_at': DateTime.now().toUtc().toIso8601String(),
       });
 
-      // 6. 成功后的处理
       if (mounted) {
-        // A. 弹出成功提示
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text("🚨 紧急警报已发送！帮助正在路上。"),
+            content: Text("An emergency alert has been sent! Help is on its way."),
             backgroundColor: Colors.green,
             duration: Duration(seconds: 3)));
 
-        // B. 重置表单状态
         setState(() {
           selectedType = null;
           evidenceFile = null;
@@ -249,22 +234,18 @@ class _EmergencyFormState extends State<EmergencyForm> with SingleTickerProvider
           useHomeAddress = false;
         });
 
-        // C. 刷新历史记录列表
         await _fetchHistory();
 
-        // D. 自动跳转到“History”标签页 (索引为 1)
         _tabController?.animateTo(1);
       }
     } catch (e) {
-      // 7. 错误处理
-      debugPrint("提交失败 Error: $e");
+      debugPrint("Submission failed Error: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text("提交失败: $e"),
+            content: Text("Submission failed: $e"),
             backgroundColor: Colors.red));
       }
     } finally {
-      // 8. 结束提交状态
       if (mounted) {
         setState(() => isSubmitting = false);
       }
@@ -273,9 +254,6 @@ class _EmergencyFormState extends State<EmergencyForm> with SingleTickerProvider
 
   @override
   Widget build(BuildContext context) {
-    // 🔥 已经帮你移除了刚才错误粘贴的 widget.emergency... 逻辑
-
-    // 防止 Controller 未初始化时的构建错误
     if (_tabController == null) {
       return const Scaffold(
         backgroundColor: bgColor,
@@ -323,7 +301,7 @@ class _EmergencyFormState extends State<EmergencyForm> with SingleTickerProvider
   }
 
   // ==============================================================
-  // UI: Report Form Tab (包含家庭住址检查)
+  // UI: Report Form Tab
   // ==============================================================
   Widget _buildReportForm() {
     return SafeArea(
@@ -573,7 +551,7 @@ class _EmergencyFormState extends State<EmergencyForm> with SingleTickerProvider
   }
 
   // ==============================================================
-  // UI: History List Tab (包含点击跳转详情页功能)
+  // UI: History List Tab
   // ==============================================================
   Widget _buildHistoryTab() {
     if (_isLoadingHistory) {

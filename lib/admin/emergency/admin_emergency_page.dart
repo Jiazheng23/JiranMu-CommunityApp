@@ -45,11 +45,9 @@ class _AdminEmergencyPageState extends State<AdminEmergencyPage> {
     bool isHomeAddress = widget.emergency['is_home_address'] == true;
 
     if (isHomeAddress) {
-      // 如果是在家求救，地图直接定位到公寓大楼
       targetLat = CONDO_LAT;
       targetLng = CONDO_LNG;
     } else {
-      // 如果是 GPS 定位，解析数据库坐标，如果解析失败则 fallback 到公寓坐标
       targetLat = double.tryParse(widget.emergency['latitude']?.toString() ?? '$CONDO_LAT') ?? CONDO_LAT;
       targetLng = double.tryParse(widget.emergency['longitude']?.toString() ?? '$CONDO_LNG') ?? CONDO_LNG;
     }
@@ -226,7 +224,6 @@ class _AdminEmergencyPageState extends State<AdminEmergencyPage> {
         builder: (context) => const Center(child: CircularProgressIndicator()),
       );
 
-      // 1. 获取当前保安的真实姓名
       final adminId = supabase.auth.currentUser!.id;
       final adminData = await supabase.from('profiles').select('full_name').eq('id', adminId).single();
       final String realName = adminData['full_name'] ?? 'Security Officer';
@@ -235,46 +232,40 @@ class _AdminEmergencyPageState extends State<AdminEmergencyPage> {
       final String fileName = 'resolution_$emergencyId\_${DateTime.now().millisecondsSinceEpoch}.jpg';
       final String filePath = 'records/$fileName';
 
-      // 2. 上传处理照片到 storage
       await supabase.storage.from('emergency_evidence').upload(
         filePath,
         _evidencePhoto!,
         fileOptions: const FileOptions(cacheControl: '3600', upsert: false),
       );
 
-      // 3. 获取公开 URL
       final String publicUrl = supabase.storage.from('emergency_evidence').getPublicUrl(filePath);
 
-      // 🔥 记录当前的 UTC 时间存入数据库
       final String nowUtc = DateTime.now().toUtc().toIso8601String();
 
-      // 4. 更新数据库 (🚨 使用 realName 代替原本的 Email)
       await supabase.from('emergency').update({
         'status': 'solved',
         'admin_resolution_url': publicUrl,
         'solved_at': nowUtc,
-        'solved_by': realName, // 🔥 这里现在真正存入的是名字了！
+        'solved_by': realName,
       }).eq('emergency_id', emergencyId);
 
       if (mounted) {
         setState(() {
           currentStatus = 'solved';
-          // 更新本地数据，以便页面立刻显示
           widget.emergency['admin_resolution_url'] = publicUrl;
-          widget.emergency['solved_by'] = realName; // 🔥 这里也同步改用名字
+          widget.emergency['solved_by'] = realName;
           widget.emergency['solved_at'] = nowUtc;
         });
-        Navigator.pop(context); // 关闭加载圈圈
+        Navigator.pop(context);
 
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Case successfully solved!"), backgroundColor: Colors.green),
         );
 
-        // 返回上一页并带上 true 通知列表刷新
         Navigator.pop(context, true);
       }
     } catch (e) {
-      if (mounted) Navigator.pop(context); // 关闭加载圈圈
+      if (mounted) Navigator.pop(context);
       print("Upload/Update Error: $e");
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red),

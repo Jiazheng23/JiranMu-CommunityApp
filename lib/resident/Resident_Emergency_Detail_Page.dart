@@ -11,7 +11,6 @@ class ResidentEmergencyDetailPage extends StatefulWidget {
 }
 
 class _ResidentEmergencyDetailPageState extends State<ResidentEmergencyDetailPage> {
-  // 同样设定公寓固定坐标 (请确保替换为你的实际坐标)
   static const double CONDO_LAT = 3.1578;
   static const double CONDO_LNG = 101.7118;
 
@@ -22,7 +21,6 @@ class _ResidentEmergencyDetailPageState extends State<ResidentEmergencyDetailPag
   void initState() {
     super.initState();
 
-    // 解析是家地址还是 GPS 地址，并设定目标坐标
     bool isHomeAddress = widget.emergency['is_home_address'] == true;
 
     if (isHomeAddress) {
@@ -34,12 +32,10 @@ class _ResidentEmergencyDetailPageState extends State<ResidentEmergencyDetailPag
     }
   }
 
-  // 格式化时间的辅助方法
   String _formatDate(String? isoString) {
     if (isoString == null || isoString.isEmpty) return 'N/A';
     try {
       final date = DateTime.parse(isoString).toLocal();
-      // 输出格式类似: 2024-05-12 14:30
       return "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}";
     } catch (e) {
       return isoString.substring(0, 16).replaceFirst('T', ' ');
@@ -58,7 +54,7 @@ class _ResidentEmergencyDetailPageState extends State<ResidentEmergencyDetailPag
     final description = widget.emergency['description']?.toString() ?? "No additional details provided.";
 
     return Scaffold(
-      backgroundColor: Colors.grey[50], // 给背景一点很浅的灰色，让卡片凸显出来
+      backgroundColor: Colors.grey[50],
       appBar: AppBar(
         title: const Text("Report Details", style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: isSolved ? Colors.green[600] : const Color(0xFFFF5A5A),
@@ -68,7 +64,6 @@ class _ResidentEmergencyDetailPageState extends State<ResidentEmergencyDetailPag
       body: SingleChildScrollView(
         child: Column(
           children: [
-            // ── 1. 顶部地图区域 ──
             SizedBox(
               height: 250,
               child: GoogleMap(
@@ -85,7 +80,6 @@ class _ResidentEmergencyDetailPageState extends State<ResidentEmergencyDetailPag
               ),
             ),
 
-            // ── 2. 详情内容区 (往上偏移一点制造层次感) ──
             Transform.translate(
               offset: const Offset(0, -20),
               child: Padding(
@@ -94,7 +88,7 @@ class _ResidentEmergencyDetailPageState extends State<ResidentEmergencyDetailPag
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
 
-                    // 👉 卡片 1：案件基本信息
+
                     Container(
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
@@ -137,7 +131,6 @@ class _ResidentEmergencyDetailPageState extends State<ResidentEmergencyDetailPag
                     ),
                     const SizedBox(height: 16),
 
-                    // 👉 卡片 2：居民自己上传的证据照片
                     if (widget.emergency['report_evidence_url'] != null) ...[
                       const Padding(
                         padding: EdgeInsets.only(left: 8, bottom: 10),
@@ -147,7 +140,7 @@ class _ResidentEmergencyDetailPageState extends State<ResidentEmergencyDetailPag
                         borderRadius: BorderRadius.circular(16),
                         child: Image.network(
                           widget.emergency['report_evidence_url'],
-                          height: 300, // 🔥 照片调大
+                          height: 300,
                           width: double.infinity,
                           fit: BoxFit.cover,
                           errorBuilder: (context, error, stackTrace) => Container(
@@ -158,7 +151,6 @@ class _ResidentEmergencyDetailPageState extends State<ResidentEmergencyDetailPag
                       const SizedBox(height: 24),
                     ],
 
-                    // 👉 卡片 3：处理结果 (如果已解决)
                     if (isSolved && widget.emergency['admin_resolution_url'] != null) ...[
                       const Padding(
                         padding: EdgeInsets.only(left: 8, bottom: 10),
@@ -167,7 +159,7 @@ class _ResidentEmergencyDetailPageState extends State<ResidentEmergencyDetailPag
                       Container(
                         padding: const EdgeInsets.all(20),
                         decoration: BoxDecoration(
-                          color: Colors.green[50], // 浅绿色背景强调已解决
+                          color: Colors.green[50],
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(color: Colors.green[200]!),
                         ),
@@ -179,12 +171,11 @@ class _ResidentEmergencyDetailPageState extends State<ResidentEmergencyDetailPag
                             _buildInfoRow(Icons.check_circle_outline_rounded, "Solved At", solvedAt, iconColor: Colors.green),
                             const SizedBox(height: 20),
 
-                            // 保安上传的处理照片
                             ClipRRect(
                               borderRadius: BorderRadius.circular(12),
                               child: Image.network(
                                 widget.emergency['admin_resolution_url'],
-                                height: 300, // 🔥 照片调大
+                                height: 300,
                                 width: double.infinity,
                                 fit: BoxFit.cover,
                                 errorBuilder: (context, error, stackTrace) => Container(
@@ -195,7 +186,7 @@ class _ResidentEmergencyDetailPageState extends State<ResidentEmergencyDetailPag
                           ],
                         ),
                       ),
-                      const SizedBox(height: 40), // 底部留白
+                      const SizedBox(height: 40),
                     ],
                   ],
                 ),
@@ -207,7 +198,6 @@ class _ResidentEmergencyDetailPageState extends State<ResidentEmergencyDetailPag
     );
   }
 
-  // 提取一个生成信息行的小组件，让代码更干净
   Widget _buildInfoRow(IconData icon, String title, String value, {Color iconColor = Colors.black45}) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
