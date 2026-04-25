@@ -2,12 +2,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
-import '../../chat/CommunityChatsListScreen.dart';
-import '../../chat/user_session.dart';
-import '../AdminCreateChatScreen.dart';
+import 'package:assignment/chat/CommunityChatsListScreen.dart';
+import 'package:assignment/admin/AdminCreateChatScreen.dart';
+import 'package:assignment/chat/user_session.dart';
 import 'create_facility_page.dart';
 import 'dashboard_page.dart';
-import '../profile/admin_profile_page.dart';
+import 'package:assignment/admin/profile/admin_profile_page.dart';
 
 const Color primaryColor = Color(0xFF9A4B3C);
 const Color textDark = Color(0xFF2B2B2B);
@@ -26,7 +26,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
   int selectedIndex = 0;
   bool _sessionReady = false;
 
-  // Keep a GlobalKey so we can call refresh() on the chat screen.
+  // GlobalKey so we can call refresh() on the chat screen when switching to it
   final GlobalKey<CommunityChatsListScreenState> _chatKey =
   GlobalKey<CommunityChatsListScreenState>();
 
@@ -51,16 +51,16 @@ class _AdminDashboardState extends State<AdminDashboard> {
     if (mounted) setState(() => _sessionReady = true);
   }
 
+  // IndexedStack keeps each page alive so tabs preserve scroll position
   List<Widget> get pages => [
     const DashboardPage(),
     const CreateFacilityPage(),
-    // Use the GlobalKey so we can call refresh() on it.
     CommunityChatsListScreen(key: _chatKey),
     AdminProfilePage(user: widget.user),
   ];
 
   void _onNavTap(int index) {
-    // If switching TO the chat tab, trigger a refresh.
+    // Refresh chat list whenever the user switches to the message tab
     if (index == 2 && selectedIndex != 2) {
       _chatKey.currentState?.refresh();
     }
@@ -194,8 +194,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
                             initialDate: DateTime.now(),
                             firstDate: DateTime.now(),
                             lastDate: DateTime(2030));
-                        if (picked != null)
+                        if (picked != null) {
                           setModalState(() => selectedDate = picked);
+                        }
                       },
                       icon: const Icon(Icons.calendar_month,
                           color: primaryColor),
@@ -320,8 +321,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
       body: SafeArea(
         child: !_sessionReady
             ? const Center(
-          child: CircularProgressIndicator(color: primaryColor),
-        )
+            child: CircularProgressIndicator(color: primaryColor))
             : IndexedStack(
           index: selectedIndex,
           children: pages,
@@ -352,7 +352,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
             MaterialPageRoute(
                 builder: (_) => const CreateFacilityPage()),
           ),
-          backgroundColor: const Color(0xFF9A4B3C),
+          backgroundColor: primaryColor,
           shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(60)),
           elevation: 4,
@@ -371,7 +371,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 builder: (_) =>
                 const AdminCreateChatScreen()),
           ),
-          backgroundColor: const Color(0xFF9A4B3C),
+          backgroundColor: primaryColor,
           shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(60)),
           elevation: 4,
@@ -419,7 +419,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
   Widget _buildNavItem(IconData icon, String label, int index) {
     final isSelected = selectedIndex == index;
     return GestureDetector(
-      onTap: () => _onNavTap(index), // ← use _onNavTap instead of setState
+      onTap: () => _onNavTap(index),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeOutCubic,

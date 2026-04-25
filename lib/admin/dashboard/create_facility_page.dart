@@ -34,14 +34,12 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
   late final TextEditingController _imageUrlController;
   late final TextEditingController _locationController;
   late final TextEditingController _capacityController;
-  late final TextEditingController _slotDurationController;
   late final TextEditingController _maxDurationController;
 
   String _bookingMode = 'instant';
   String _usageType = 'facility';
 
   bool _isActive = true;
-  bool _purposeRequired = false;
   bool _isShared = false;
   bool _isSaving = false;
 
@@ -63,9 +61,6 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
     _capacityController = TextEditingController(
       text: facility != null ? facility.capacity.toString() : '1',
     );
-    _slotDurationController = TextEditingController(
-      text: facility != null ? facility.slotDurationMinutes.toString() : '60',
-    );
     _maxDurationController = TextEditingController(
       text: facility?.maxDurationMinutes?.toString() ?? '',
     );
@@ -73,7 +68,6 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
     _bookingMode = facility?.bookingMode ?? 'instant';
     _usageType = facility?.usageType ?? 'facility';
     _isActive = facility?.isActive ?? true;
-    _purposeRequired = facility?.purposeRequired ?? false;
     _isShared = facility?.isShared ?? false;
 
     _openTime = _parseTime(facility?.openTime);
@@ -87,7 +81,6 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
     _imageUrlController.dispose();
     _locationController.dispose();
     _capacityController.dispose();
-    _slotDurationController.dispose();
     _maxDurationController.dispose();
     super.dispose();
   }
@@ -147,6 +140,14 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
       focusedBorder: const OutlineInputBorder(
         borderRadius: BorderRadius.all(Radius.circular(16)),
         borderSide: BorderSide(color: primaryColor, width: 1.5),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: Colors.redAccent),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: Colors.redAccent, width: 1.5),
       ),
     );
   }
@@ -262,14 +263,12 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
     _imageUrlController.clear();
     _locationController.clear();
     _capacityController.text = '1';
-    _slotDurationController.text = '60';
     _maxDurationController.clear();
 
     setState(() {
       _bookingMode = 'instant';
       _usageType = 'facility';
       _isActive = true;
-      _purposeRequired = false;
       _isShared = false;
       _openTime = null;
       _closeTime = null;
@@ -295,18 +294,13 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
     }
 
     final capacity = int.parse(_capacityController.text.trim());
-    final slotDuration = int.parse(_slotDurationController.text.trim());
     final maxDuration = _maxDurationController.text.trim().isEmpty
         ? null
         : int.parse(_maxDurationController.text.trim());
 
-    if (maxDuration != null && maxDuration < slotDuration) {
+    if (maxDuration != null && maxDuration <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Max duration must be greater than or equal to slot duration',
-          ),
-        ),
+        const SnackBar(content: Text('Maximum duration must be more than 0')),
       );
       return;
     }
@@ -329,6 +323,8 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
         finalImageUrl = uploadedUrl;
       }
 
+      final effectiveIsShared = _usageType == 'event' ? false : _isShared;
+
       if (widget.isEditMode) {
         await _facilityService.updateFacility(
           id: widget.facility!.id,
@@ -342,10 +338,8 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
           bookingMode: _bookingMode,
           usageType: _usageType,
           isActive: _isActive,
-          slotDurationMinutes: slotDuration,
           maxDurationMinutes: maxDuration,
-          purposeRequired: _purposeRequired,
-          isShared: _isShared,
+          isShared: effectiveIsShared,
         );
 
         if (!mounted) return;
@@ -362,10 +356,8 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
           bookingMode: _bookingMode,
           usageType: _usageType,
           isActive: _isActive,
-          slotDurationMinutes: slotDuration,
           maxDurationMinutes: maxDuration,
-          purposeRequired: _purposeRequired,
-          isShared: _isShared,
+          isShared: effectiveIsShared,
         );
 
         if (!mounted) return;
@@ -533,8 +525,37 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
     );
   }
 
+  Widget _buildDropdownCard({
+    required String label,
+    required Widget child,
+  }) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFF7A6258),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          child,
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isEventUsage = _usageType == 'event';
+
     return Scaffold(
       backgroundColor: bgColor,
       appBar: AppBar(
@@ -555,6 +576,7 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
       ),
       body: Form(
         key: _formKey,
+        autovalidateMode: AutovalidateMode.onUserInteraction,
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
           children: [
@@ -573,6 +595,9 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
               validator: (value) {
                 if (value == null || value.trim().isEmpty) {
                   return 'Please enter facility name';
+                }
+                if (value.trim().length < 2) {
+                  return 'Facility name is too short';
                 }
                 return null;
               },
@@ -595,95 +620,93 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
               },
             ),
             const SizedBox(height: 12),
-
-            Row(
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    controller: _capacityController,
-                    keyboardType: TextInputType.number,
-                    decoration: _inputDecoration('Capacity'),
-                    validator: (value) {
-                      final number = int.tryParse(value ?? '');
-                      if (number == null || number <= 0) {
-                        return 'Invalid';
-                      }
-                      return null;
-                    },
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    value: _usageType,
-                    decoration: _inputDecoration('Type'),
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'facility',
-                        child: Text('Facility'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'event',
-                        child: Text('Event'),
-                      ),
-                    ],
-                    onChanged: (value) {
-                      if (value == null) return;
-                      setState(() {
-                        _usageType = value;
-                      });
-                    },
-                  ),
-                ),
-              ],
+            TextFormField(
+              controller: _capacityController,
+              keyboardType: TextInputType.number,
+              decoration: _inputDecoration('Capacity'),
+              validator: (value) {
+                final parsed = int.tryParse(value?.trim() ?? '');
+                if (parsed == null) {
+                  return 'Please enter a valid number';
+                }
+                if (parsed < 1) {
+                  return 'Capacity must be at least 1';
+                }
+                return null;
+              },
             ),
-
             const SizedBox(height: 12),
+            TextFormField(
+              controller: _maxDurationController,
+              keyboardType: TextInputType.number,
+              decoration: _inputDecoration(
+                'Maximum Duration (minutes, optional)',
+              ),
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) return null;
 
-            Row(
-              children: [
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    value: _bookingMode,
-                    decoration: _inputDecoration('Booking Mode'),
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'instant',
-                        child: Text('Instant'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'approval',
-                        child: Text('Approval'),
-                      ),
-                    ],
-                    onChanged: (value) {
-                      if (value == null) return;
-                      setState(() {
-                        _bookingMode = value;
-                      });
-                    },
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextFormField(
-                    controller: _slotDurationController,
-                    keyboardType: TextInputType.number,
-                    decoration: _inputDecoration('Slot Duration (minutes)'),
-                    validator: (value) {
-                      final number = int.tryParse(value ?? '');
-                      if (number == null || number <= 0) {
-                        return 'Invalid';
-                      }
-                      return null;
-                    },
-                  ),
-                ),
-              ],
+                final parsed = int.tryParse(value.trim());
+                if (parsed == null) {
+                  return 'Please enter a valid number';
+                }
+                if (parsed <= 0) {
+                  return 'Duration must be more than 0';
+                }
+                return null;
+              },
             ),
-
             const SizedBox(height: 12),
-
+            _buildDropdownCard(
+              label: 'Usage Type',
+              child: DropdownButtonFormField<String>(
+                value: _usageType,
+                decoration: const InputDecoration(border: InputBorder.none),
+                items: const [
+                  DropdownMenuItem(
+                    value: 'facility',
+                    child: Text('Facility'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'event',
+                    child: Text('Event Venue'),
+                  ),
+                ],
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() {
+                    _usageType = value;
+                    if (_usageType == 'event') {
+                      _isShared = false;
+                    }
+                  });
+                },
+              ),
+            ),
+            const SizedBox(height: 12),
+            _buildDropdownCard(
+              label: 'Booking Mode',
+              child: DropdownButtonFormField<String>(
+                value: _bookingMode,
+                decoration: const InputDecoration(border: InputBorder.none),
+                items: const [
+                  DropdownMenuItem(
+                    value: 'instant',
+                    child: Text('Instant'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'approval',
+                    child: Text('Approval'),
+                  ),
+                ],
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() {
+                    _bookingMode = value;
+                  });
+                },
+              ),
+            ),
+            const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
@@ -703,43 +726,25 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
                 ),
               ],
             ),
-
-            const SizedBox(height: 12),
-
-            TextFormField(
-              controller: _maxDurationController,
-              keyboardType: TextInputType.number,
-              decoration: _inputDecoration('Max Duration (optional)'),
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) return null;
-                final number = int.tryParse(value);
-                if (number == null || number <= 0) {
-                  return 'Invalid';
-                }
-                return null;
-              },
-            ),
-
-            const SizedBox(height: 12),
-
+            const SizedBox(height: 14),
             Container(
               decoration: BoxDecoration(
                 color: cardColor,
                 borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: Colors.grey.shade300),
               ),
               child: Column(
                 children: [
                   SwitchListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                    value: _isActive,
                     activeColor: primaryColor,
                     title: const Text(
-                      'Facility is active',
+                      'Available',
                       style: TextStyle(
                         color: textDark,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    value: _isActive,
                     onChanged: (value) {
                       setState(() {
                         _isActive = value;
@@ -748,39 +753,24 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
                   ),
                   const Divider(height: 1),
                   SwitchListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                    value: isEventUsage ? false : _isShared,
                     activeColor: primaryColor,
                     title: const Text(
-                      'Purpose required',
+                      'Shared Capacity',
                       style: TextStyle(
                         color: textDark,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    value: _purposeRequired,
-                    onChanged: (value) {
-                      setState(() {
-                        _purposeRequired = value;
-                      });
-                    },
-                  ),
-                  const Divider(height: 1),
-                  SwitchListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-                    activeColor: primaryColor,
-                    title: const Text(
-                      'Shared facility',
-                      style: TextStyle(
-                        color: textDark,
-                        fontWeight: FontWeight.w600,
-                      ),
+                    subtitle: Text(
+                      isEventUsage
+                          ? 'Event venue is not shared in facility booking.'
+                          : 'Turn on only if multiple residents can share the same time range.',
+                      style: TextStyle(color: Colors.grey.shade700),
                     ),
-                    subtitle: const Text(
-                      'Example: gym / swimming pool',
-                      style: TextStyle(color: Color(0xFF7A6258)),
-                    ),
-                    value: _isShared,
-                    onChanged: (value) {
+                    onChanged: isEventUsage
+                        ? null
+                        : (value) {
                       setState(() {
                         _isShared = value;
                       });
@@ -789,9 +779,7 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
                 ],
               ),
             ),
-
-            const SizedBox(height: 20),
-
+            const SizedBox(height: 22),
             SizedBox(
               height: 52,
               child: ElevatedButton(
@@ -799,6 +787,7 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: primaryColor,
                   foregroundColor: Colors.white,
+                  disabledBackgroundColor: Colors.grey.shade300,
                   elevation: 0,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),
@@ -806,17 +795,15 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
                 ),
                 child: _isSaving
                     ? const SizedBox(
-                  width: 22,
                   height: 22,
+                  width: 22,
                   child: CircularProgressIndicator(
-                    strokeWidth: 2.5,
+                    strokeWidth: 2.2,
                     color: Colors.white,
                   ),
                 )
                     : Text(
-                  widget.isEditMode
-                      ? 'Update Facility'
-                      : 'Create Facility',
+                  widget.isEditMode ? 'Save Changes' : 'Create Facility',
                   style: const TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w700,

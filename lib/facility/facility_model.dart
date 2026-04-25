@@ -11,9 +11,7 @@ class FacilityModel {
     required this.bookingMode,
     required this.usageType,
     required this.isActive,
-    required this.slotDurationMinutes,
     required this.maxDurationMinutes,
-    required this.purposeRequired,
     required this.isShared,
   });
 
@@ -28,9 +26,7 @@ class FacilityModel {
   final String bookingMode;
   final String usageType;
   final bool isActive;
-  final int slotDurationMinutes;
   final int? maxDurationMinutes;
-  final bool purposeRequired;
   final bool isShared;
 
   bool get isInstantBooking => bookingMode == 'instant';
@@ -52,10 +48,7 @@ class FacilityModel {
       bookingMode: map['booking_mode']?.toString() ?? 'instant',
       usageType: map['usage_type']?.toString() ?? 'facility',
       isActive: map['is_active'] ?? true,
-      slotDurationMinutes:
-      (map['slot_duration_minutes'] as num?)?.toInt() ?? 60,
       maxDurationMinutes: (map['max_duration_minutes'] as num?)?.toInt(),
-      purposeRequired: map['purpose_required'] ?? false,
       isShared: map['is_shared'] ?? false,
     );
   }
@@ -73,9 +66,7 @@ class FacilityModel {
       'booking_mode': bookingMode,
       'usage_type': usageType,
       'is_active': isActive,
-      'slot_duration_minutes': slotDurationMinutes,
       'max_duration_minutes': maxDurationMinutes,
-      'purpose_required': purposeRequired,
       'is_shared': isShared,
     };
   }

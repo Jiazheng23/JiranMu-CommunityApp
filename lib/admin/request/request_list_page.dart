@@ -54,7 +54,7 @@ class _RequestListPageState extends State<RequestListPage> {
       } else if (uiType == 'facilities' || uiType == 'facility') {
         query = supabase
             .from('requests')
-            .select('*, facility_requests(*)')
+            .select('*, facility_bookings(*)')
             .eq('type', 'facility');
       } else if (uiType == 'visitor' || uiType == 'visitors') {
         query = supabase
@@ -129,7 +129,7 @@ class _RequestListPageState extends State<RequestListPage> {
         final eventData = extractSubData(data['event_requests']);
         return eventData?['event_title'] ?? "Event: ${data['title'] ?? 'Untitled'}";
       case 'facility':
-        final facilityData = extractSubData(data['facility_requests']);
+        final facilityData = extractSubData(data['facility_bookings']);
         return facilityData?['facility_name'] ?? 'Facility Booking';
       default:
         return data['title'] ?? 'Request Detail';
@@ -151,7 +151,7 @@ class _RequestListPageState extends State<RequestListPage> {
       case 'booking':
         return extractSubData(data['event_requests'])?['location'] ?? 'Event';
       case 'facility':
-        return extractSubData(data['facility_requests'])?['booking_date'] ?? 'Facility';
+        return extractSubData(data['facility_bookings'])?['booking_date'] ?? 'Facility';
       default:
         return '';
     }

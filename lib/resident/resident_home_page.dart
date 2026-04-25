@@ -136,16 +136,17 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     if (mounted) setState(() => _sessionReady = true);
   }
 
-  // ── Unread message count ───────────────────────
-  // FIX: Only count messages where sender != current user's email.
-  // This prevents self-sent messages from ever inflating the badge.
+  // ── Unread message count ──────────────────────────────────────────────────
+  // Only counts messages where sender != current user email so self-sent
+  // messages never inflate the badge.
+
   Future<void> _loadUnreadMessageCount() async {
     try {
       final userId = Supabase.instance.client.auth.currentUser?.id;
       final email = Supabase.instance.client.auth.currentUser?.email;
       if (userId == null || email == null) return;
 
-      // Collect all DM room IDs for this user
+      // DM rooms
       final roomsU1 = await Supabase.instance.client
           .from('chat_rooms')
           .select('room_id')
@@ -160,7 +161,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
         ...(roomsU2 as List).map((r) => r['room_id'] as String),
       ];
 
-      // Collect all group room IDs this user has accepted
+      // Group rooms this user has accepted
       final invitations = await Supabase.instance.client
           .from('group_chat_invitations')
           .select('group_chat_id')
@@ -185,13 +186,11 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
 
       int total = 0;
       for (final roomId in allRoomIds) {
-        // KEY FIX: Filter by sender != current user email so we never count
-        // messages we sent ourselves.
         final res = await Supabase.instance.client
             .from('messages')
             .select('id')
             .eq('room_id', roomId)
-            .neq('sender', email)   // ← exclude messages sent by me
+            .neq('sender', email) // exclude messages I sent
             .eq('is_read', false);
         total += (res as List).length;
       }
@@ -202,17 +201,15 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     }
   }
 
-  // ── Load unified notification items ───────────
-  // FIX: Message items are only added when unreadCount > 0, meaning there are
-  // actual unread messages from OTHER people in that room. Self-sent rooms
-  // are completely excluded from the notification sheet.
+  // ── Unified notification items ────────────────────────────────────────────
+  // Message items are only added when unreadCount > 0 from OTHER people.
+
   Future<List<_NotifItem>> _loadNotifItems() async {
     final items = <_NotifItem>[];
-
     final userId = Supabase.instance.client.auth.currentUser?.id;
     final email = Supabase.instance.client.auth.currentUser?.email;
 
-    // ── Announcements ──────────────────────────
+    // ── Announcements ────────────────────────────────────────────────────
     try {
       final anns = await Supabase.instance.client
           .from('announcements')
@@ -226,11 +223,11 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
       debugPrint('Error loading announcements for notif sheet: $e');
     }
 
-    // ── Messages ───────────────────────────────
     if (userId == null || email == null) return items;
 
+    // ── Messages ─────────────────────────────────────────────────────────
     try {
-      // ── DM rooms ──────────────────────────────
+      // DM rooms
       final roomsU1 = await Supabase.instance.client
           .from('chat_rooms')
           .select('room_id, user1_id, user2_id')
@@ -251,20 +248,15 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
             ? room['user2_id'] as String
             : room['user1_id'] as String;
 
-        // KEY FIX: Count unread messages from others FIRST.
-        // Only proceed if there are actually unread messages from someone else.
         final unreadRes = await Supabase.instance.client
             .from('messages')
             .select('id')
             .eq('room_id', roomId)
-            .neq('sender', email)   // ← exclude my own messages
+            .neq('sender', email) // exclude my own
             .eq('is_read', false);
         final unreadCount = (unreadRes as List).length;
+        if (unreadCount == 0) continue; // nothing to show
 
-        // Skip this room entirely — no unread messages from others
-        if (unreadCount == 0) continue;
-
-        // Resolve neighbour display name
         String neighbourName = 'Neighbour';
         try {
           final profile = await Supabase.instance.client
@@ -273,17 +265,16 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
               .eq('id', otherId)
               .maybeSingle();
           if (profile != null) {
-            neighbourName = profile['full_name']?.toString() ?? neighbourName;
+            neighbourName =
+                profile['full_name']?.toString() ?? neighbourName;
           }
         } catch (_) {}
 
-        // Get the latest message (which must be from the other person since
-        // unreadCount > 0 and we filtered by neq sender above).
         final msgs = await Supabase.instance.client
             .from('messages')
             .select('content, created_at, sender')
             .eq('room_id', roomId)
-            .neq('sender', email)   // ← only show previews of messages from others
+            .neq('sender', email)
             .eq('is_read', false)
             .order('created_at', ascending: false)
             .limit(1);
@@ -291,21 +282,19 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
         final msgList = msgs as List;
         if (msgList.isEmpty) continue;
 
-        final lastMsg = msgList[0]['content'] as String? ?? '';
-        final lastTime = DateTime.parse(msgList[0]['created_at'] as String);
-
         items.add(_NotifItem.message(
           roomId: roomId,
           chatName: neighbourName,
-          lastMessage: lastMsg,
-          senderName: neighbourName,   // sender is always the neighbour here
+          lastMessage: msgList[0]['content'] as String? ?? '',
+          senderName: neighbourName,
           unreadCount: unreadCount,
-          lastTime: lastTime,
+          lastTime:
+          DateTime.parse(msgList[0]['created_at'] as String),
           isGroup: false,
         ));
       }
 
-      // ── Group chat rooms ───────────────────────
+      // Group rooms
       final invitations = await Supabase.instance.client
           .from('group_chat_invitations')
           .select('group_chat_id')
@@ -321,27 +310,23 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
         if (groupData == null) continue;
 
         final roomId = groupData['room_id'] as String;
-        final groupName = groupData['name'] as String? ??
-            'Block ${groupData['block']}';
+        final groupName =
+            groupData['name'] as String? ?? 'Block ${groupData['block']}';
 
-        // KEY FIX: Count unread from others first, skip if zero.
         final unreadRes = await Supabase.instance.client
             .from('messages')
             .select('id')
             .eq('room_id', roomId)
-            .neq('sender', email)   // ← exclude my own messages
+            .neq('sender', email)
             .eq('is_read', false);
         final unreadCount = (unreadRes as List).length;
-
-        // Skip — no unread messages from others in this group
         if (unreadCount == 0) continue;
 
-        // Fetch the latest unread message from someone else for the preview
         final msgs = await Supabase.instance.client
             .from('messages')
             .select('content, created_at, sender')
             .eq('room_id', roomId)
-            .neq('sender', email)   // ← only preview messages from others
+            .neq('sender', email)
             .eq('is_read', false)
             .order('created_at', ascending: false)
             .limit(1);
@@ -349,11 +334,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
         final msgList = msgs as List;
         if (msgList.isEmpty) continue;
 
-        final lastMsg = msgList[0]['content'] as String? ?? '';
-        final lastTime = DateTime.parse(msgList[0]['created_at'] as String);
         final senderEmail = msgList[0]['sender'] as String? ?? '';
-
-        // Resolve sender display name for group preview
         String senderName = senderEmail;
         try {
           final profile = await Supabase.instance.client
@@ -362,17 +343,19 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
               .eq('email', senderEmail)
               .maybeSingle();
           if (profile != null) {
-            senderName = profile['full_name']?.toString() ?? senderEmail;
+            senderName =
+                profile['full_name']?.toString() ?? senderEmail;
           }
         } catch (_) {}
 
         items.add(_NotifItem.message(
           roomId: roomId,
           chatName: groupName,
-          lastMessage: lastMsg,
-          senderName: senderName,   // never "You" — we filtered out self
+          lastMessage: msgList[0]['content'] as String? ?? '',
+          senderName: senderName,
           unreadCount: unreadCount,
-          lastTime: lastTime,
+          lastTime:
+          DateTime.parse(msgList[0]['created_at'] as String),
           isGroup: true,
         ));
       }
@@ -380,7 +363,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
       debugPrint('Error loading message notif items: $e');
     }
 
-    // Sort: announcements at top, then messages by time descending
+    // Announcements first, then messages sorted by time desc
     final annItems =
     items.where((i) => i.type == _NotifType.announcement).toList();
     final msgItems = items
@@ -392,7 +375,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     return [...annItems, ...msgItems];
   }
 
-  // ── Events ────────────────────────────────────
+  // ── Events ────────────────────────────────────────────────────────────────
 
   Future<void> _loadUpcomingEvents() async {
     try {
@@ -402,7 +385,8 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
           .where((e) =>
       e.status == 'approved' &&
           !e.isPrivate &&
-          !e.eventDate.isBefore(DateTime(now.year, now.month, now.day)))
+          !e.eventDate.isBefore(
+              DateTime(now.year, now.month, now.day)))
           .toList()
         ..sort((a, b) => a.eventDate.compareTo(b.eventDate));
 
@@ -418,7 +402,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     }
   }
 
-  // ── Announcements ─────────────────────────────
+  // ── Announcements ─────────────────────────────────────────────────────────
 
   Future<void> _fetchLatestAnnouncements() async {
     try {
@@ -430,7 +414,8 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
 
       if (mounted) {
         setState(() {
-          latestAnnouncements = List<Map<String, dynamic>>.from(response);
+          latestAnnouncements =
+          List<Map<String, dynamic>>.from(response);
           isLoadingAnnouncement = false;
         });
       }
@@ -450,15 +435,18 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
           .maybeSingle();
 
       if (response != null && response['created_at'] != null) {
-        final DateTime latestDbDate = DateTime.parse(response['created_at']);
+        final DateTime latestDbDate =
+        DateTime.parse(response['created_at']);
         final prefs = await SharedPreferences.getInstance();
-        final String? lastReadStr = prefs.getString('last_read_announcements');
+        final String? lastReadStr =
+        prefs.getString('last_read_announcements');
 
         if (mounted) {
           setState(() {
             _hasUnreadAnnouncements = lastReadStr == null
                 ? true
-                : latestDbDate.isAfter(DateTime.parse(lastReadStr));
+                : latestDbDate
+                .isAfter(DateTime.parse(lastReadStr));
           });
         }
       }
@@ -467,14 +455,21 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     }
   }
 
-  // ── Resident summary ──────────────────────────
+  // ── Resident summary ──────────────────────────────────────────────────────
 
   Future<void> _loadResidentSummary() async {
     try {
       final currentUser = Supabase.instance.client.auth.currentUser;
-      if (currentUser == null) throw Exception('No active user session found.');
+      if (currentUser == null) {
+        throw Exception('No active user session found.');
+      }
 
-      if (mounted) setState(() { _accountLoading = true; _accountError = null; });
+      if (mounted) {
+        setState(() {
+          _accountLoading = true;
+          _accountError = null;
+        });
+      }
 
       final resident = await Supabase.instance.client
           .from('resident')
@@ -486,7 +481,8 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
       setState(() {
         _residentSummary = resident == null
             ? {
-          'full_name': currentUser.email?.split('@').first ?? 'Resident',
+          'full_name':
+          currentUser.email?.split('@').first ?? 'Resident',
           'email': currentUser.email,
           'status': 'active',
           'resident_type': 'resident',
@@ -498,14 +494,14 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
       });
     } catch (e) {
       if (!mounted) return;
-      setState(
-              () => _accountError = e.toString().replaceFirst('Exception: ', ''));
+      setState(() =>
+      _accountError = e.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _accountLoading = false);
     }
   }
 
-  // ── Auth ──────────────────────────────────────
+  // ── Auth ──────────────────────────────────────────────────────────────────
 
   Future<void> logout() async {
     UserSession.clear();
@@ -517,7 +513,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     );
   }
 
-  // ── Emergency ─────────────────────────────────
+  // ── Emergency ─────────────────────────────────────────────────────────────
 
   void resetState() {
     _timer?.cancel();
@@ -553,7 +549,8 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
           });
           if (mounted) Navigator.of(context, rootNavigator: true).pop();
 
-          final userId = Supabase.instance.client.auth.currentUser?.id;
+          final userId =
+              Supabase.instance.client.auth.currentUser?.id;
           if (userId != null) {
             try {
               final position = await getCurrentLocation();
@@ -584,8 +581,8 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
         barrierDismissible: false,
         builder: (context) => AlertDialog(
           backgroundColor: Colors.white,
-          shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20)),
           content: StatefulBuilder(
             builder: (context, setStepState) {
               dialogSetState = setStepState;
@@ -614,7 +611,8 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                           value: countdown / 10,
                           strokeWidth: 6,
                           backgroundColor: Colors.grey.shade200,
-                          valueColor: const AlwaysStoppedAnimation<Color>(
+                          valueColor:
+                          const AlwaysStoppedAnimation<Color>(
                               Colors.red),
                         ),
                       ),
@@ -630,10 +628,11 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                     width: double.infinity,
                     child: OutlinedButton(
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFF8B5E4A),
-                        side: const BorderSide(color: Color(0xFF8B5E4A)),
+                        foregroundColor: Colors.black,
+                        side: const BorderSide(color: Colors.black),
                         shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
+                            borderRadius:
+                            BorderRadius.circular(12)),
                       ),
                       onPressed: () {
                         resetState();
@@ -651,7 +650,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     }
   }
 
-  // ── Helpers ───────────────────────────────────
+  // ── Helpers ───────────────────────────────────────────────────────────────
 
   String _formatDate(String? dateStr) {
     if (dateStr == null) return '';
@@ -665,15 +664,6 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     } catch (_) {
       return dateStr.substring(0, 10);
     }
-  }
-
-  String _formatTimeAgo(DateTime dt) {
-    final diff = DateTime.now().difference(dt);
-    if (diff.inMinutes < 1) return 'just now';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-    if (diff.inHours < 24) return '${diff.inHours}h ago';
-    if (diff.inDays == 1) return 'yesterday';
-    return '${diff.inDays}d ago';
   }
 
   String _accountDisplayValue(dynamic value, {String fallback = '-'}) {
@@ -729,7 +719,8 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
 
     if (userData['id'] == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Unable to open personal details.')),
+        const SnackBar(
+            content: Text('Unable to open personal details.')),
       );
       return;
     }
@@ -737,13 +728,14 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     final updated = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
-          builder: (_) => ResidentPersonalInformationPage(user: userData)),
+          builder: (_) =>
+              ResidentPersonalInformationPage(user: userData)),
     );
 
     if (updated == true) await _loadResidentSummary();
   }
 
-  // ── Unified notification bottom sheet ─────────
+  // ── Unified notification bottom sheet ─────────────────────────────────────
 
   void _showNotificationSheet() {
     showModalBottomSheet(
@@ -759,19 +751,23 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
           setState(() => _hasUnreadAnnouncements = false);
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString(
-              'last_read_announcements', DateTime.now().toIso8601String());
+              'last_read_announcements',
+              DateTime.now().toIso8601String());
           if (mounted) {
             Navigator.push(
               context,
               MaterialPageRoute(
-                  builder: (_) =>
-                      AnnouncementDetailPage(announcement: announcement)),
+                builder: (_) =>
+                    AnnouncementDetailPage(announcement: announcement),
+              ),
             ).then((_) => _checkUnreadAnnouncements());
           }
         },
         onMessageTap: (item) {
-          final userId = Supabase.instance.client.auth.currentUser?.id ?? '';
-          final email = Supabase.instance.client.auth.currentUser?.email ?? '';
+          final userId =
+              Supabase.instance.client.auth.currentUser?.id ?? '';
+          final email =
+              Supabase.instance.client.auth.currentUser?.email ?? '';
           Navigator.push(
             context,
             MaterialPageRoute(
@@ -795,7 +791,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     });
   }
 
-  // ── Shared widgets ────────────────────────────
+  // ── Shared widgets ────────────────────────────────────────────────────────
 
   Widget buildServiceItem({
     required IconData icon,
@@ -855,7 +851,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     );
   }
 
-  // ── Announcement slider ───────────────────────
+  // ── Announcement slider ───────────────────────────────────────────────────
 
   Widget buildAnnouncementSlider() {
     if (isLoadingAnnouncement) {
@@ -863,9 +859,11 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
         width: double.infinity,
         height: 140,
         decoration: BoxDecoration(
-            color: Colors.white, borderRadius: BorderRadius.circular(22)),
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(22)),
         child: Center(
-            child: CircularProgressIndicator(color: Colors.brown.shade400)),
+            child:
+            CircularProgressIndicator(color: Colors.brown.shade400)),
       );
     }
 
@@ -874,7 +872,8 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
         width: double.infinity,
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-            color: Colors.white, borderRadius: BorderRadius.circular(22)),
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(22)),
         child: Center(
           child: Text("No announcements at the moment.",
               style: TextStyle(color: Colors.brown.shade400)),
@@ -893,8 +892,10 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
           final title = announcement['title'] ?? 'Notice';
           final content = announcement['content'] ?? '';
           final isUrgent = announcement['is_urgent'] ?? false;
-          final imageUrl = announcement['image_url']?.toString() ?? '';
-          final hasImage = imageUrl.isNotEmpty && imageUrl.startsWith('http');
+          final imageUrl =
+              announcement['image_url']?.toString() ?? '';
+          final hasImage =
+              imageUrl.isNotEmpty && imageUrl.startsWith('http');
 
           return Container(
             width: MediaQuery.of(context).size.width * 0.75,
@@ -917,8 +918,8 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) =>
-                          AnnouncementDetailPage(announcement: announcement),
+                      builder: (_) => AnnouncementDetailPage(
+                          announcement: announcement),
                     ),
                   ).then((_) => _checkUnreadAnnouncements());
                 },
@@ -932,12 +933,11 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                         borderRadius: const BorderRadius.only(
                             topLeft: Radius.circular(22),
                             topRight: Radius.circular(22)),
-                        child: Image.network(
-                          imageUrl,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
-                              _buildColorBlockFallback(isUrgent),
-                        ),
+                        child: Image.network(imageUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) =>
+                                _buildColorBlockFallback(
+                                    isUrgent)),
                       ),
                     )
                         : _buildColorBlockFallback(isUrgent),
@@ -953,10 +953,12 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                                   Container(
                                     padding: const EdgeInsets.symmetric(
                                         horizontal: 8, vertical: 4),
-                                    margin: const EdgeInsets.only(right: 8),
+                                    margin: const EdgeInsets.only(
+                                        right: 8),
                                     decoration: BoxDecoration(
                                       color: Colors.red.shade50,
-                                      borderRadius: BorderRadius.circular(6),
+                                      borderRadius:
+                                      BorderRadius.circular(6),
                                       border: Border.all(
                                           color: Colors.red.shade200),
                                     ),
@@ -974,7 +976,8 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                                       style: TextStyle(
                                           fontSize: 16,
                                           fontWeight: FontWeight.bold,
-                                          color: Colors.brown.shade900)),
+                                          color:
+                                          Colors.brown.shade900)),
                                 ),
                               ],
                             ),
@@ -1006,13 +1009,18 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     return Container(
       height: 100,
       decoration: BoxDecoration(
-        color: isUrgent ? const Color(0xFFFFC1AC) : Colors.amber.shade400,
+        color: isUrgent
+            ? const Color(0xFFFFC1AC)
+            : Colors.amber.shade400,
         borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(22), topRight: Radius.circular(22)),
+            topLeft: Radius.circular(22),
+            topRight: Radius.circular(22)),
       ),
       child: Center(
         child: Icon(
-          isUrgent ? Icons.warning_amber_rounded : Icons.campaign_rounded,
+          isUrgent
+              ? Icons.warning_amber_rounded
+              : Icons.campaign_rounded,
           size: 50,
           color: Colors.white.withOpacity(0.6),
         ),
@@ -1020,14 +1028,14 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     );
   }
 
-  // ── Upcoming events ───────────────────────────
+  // ── Upcoming events ───────────────────────────────────────────────────────
 
   Widget buildUpcomingEventsSection() {
     if (_eventsLoading) {
       return SizedBox(
         height: 200,
-        child:
-        Center(child: CircularProgressIndicator(color: primaryColor)),
+        child: Center(
+            child: CircularProgressIndicator(color: primaryColor)),
       );
     }
 
@@ -1051,7 +1059,8 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                 size: 44, color: primaryColor.withOpacity(0.3)),
             const SizedBox(height: 10),
             Text("No upcoming events",
-                style: TextStyle(color: primaryColor.withOpacity(0.5))),
+                style: TextStyle(
+                    color: primaryColor.withOpacity(0.5))),
           ],
         ),
       );
@@ -1064,7 +1073,8 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
         padding: const EdgeInsets.only(right: 4),
         itemCount: _upcomingEvents.length,
         separatorBuilder: (_, __) => const SizedBox(width: 14),
-        itemBuilder: (_, index) => _buildEventCard(_upcomingEvents[index]),
+        itemBuilder: (_, index) =>
+            _buildEventCard(_upcomingEvents[index]),
       ),
     );
   }
@@ -1076,13 +1086,15 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     ];
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     final d = event.eventDate;
-    final dateLabel = '${days[d.weekday - 1]}, ${d.day} ${months[d.month - 1]}';
+    final dateLabel =
+        '${days[d.weekday - 1]}, ${d.day} ${months[d.month - 1]}';
 
     return GestureDetector(
       onTap: () => Navigator.push(
         context,
         MaterialPageRoute(
-            builder: (_) => EventCalendarScreen(highlightEventId: event.id)),
+            builder: (_) =>
+                EventCalendarScreen(highlightEventId: event.id)),
       ).then((_) => _loadUpcomingEvents()),
       child: Container(
         width: 200,
@@ -1102,7 +1114,8 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
             ClipRRect(
               borderRadius:
               const BorderRadius.vertical(top: Radius.circular(22)),
-              child: event.imageUrl != null && event.imageUrl!.isNotEmpty
+              child: event.imageUrl != null &&
+                  event.imageUrl!.isNotEmpty
                   ? Image.network(event.imageUrl!,
                   height: 120,
                   width: double.infinity,
@@ -1170,7 +1183,8 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                                fontSize: 11, color: Colors.black45)),
+                                fontSize: 11,
+                                color: Colors.black45)),
                       ),
                     ],
                   ),
@@ -1183,14 +1197,16 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     );
   }
 
-  // ── Account tab widgets ───────────────────────
+  // ── Account tab widgets ───────────────────────────────────────────────────
 
   Widget _buildAccountSectionTitle(String title) {
     return Padding(
       padding: const EdgeInsets.only(left: 6, bottom: 10),
       child: Text(title,
           style: TextStyle(
-              fontSize: 16, fontWeight: FontWeight.bold, color: textDark)),
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: textDark)),
     );
   }
 
@@ -1238,7 +1254,8 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
           subtitle: Padding(
             padding: const EdgeInsets.only(top: 4),
             child: Text(subtitle,
-                style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                style: const TextStyle(
+                    fontSize: 12, color: Colors.black54)),
           ),
           trailing: Icon(Icons.arrow_forward_ios_rounded,
               size: 16, color: primaryColor),
@@ -1256,7 +1273,8 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     required String value,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      padding:
+      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.78),
         borderRadius: BorderRadius.circular(18),
@@ -1307,23 +1325,26 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
       ),
       child: Row(
         children: [
-          const Icon(Icons.info_outline_rounded, color: Color(0xFFC67B75)),
+          const Icon(Icons.info_outline_rounded,
+              color: Color(0xFFC67B75)),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-                _accountError ?? 'Unable to load resident profile.',
+                _accountError ??
+                    'Unable to load resident profile.',
                 style: const TextStyle(fontSize: 13)),
           ),
           TextButton(
             onPressed: _loadResidentSummary,
-            child: Text('Retry', style: TextStyle(color: primaryColor)),
+            child:
+            Text('Retry', style: TextStyle(color: primaryColor)),
           ),
         ],
       ),
     );
   }
 
-  // ── Tabs ──────────────────────────────────────
+  // ── Tabs ──────────────────────────────────────────────────────────────────
 
   Widget buildHomeTab() {
     return SingleChildScrollView(
@@ -1331,13 +1352,13 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Top bar ─────────────────────────────
+          // Top bar: block chip + notification bell
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Container(
-                padding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(18),
@@ -1354,18 +1375,26 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                     Icon(Icons.location_on_outlined,
                         color: primaryColor, size: 18),
                     const SizedBox(width: 6),
-                    Text("BLOCK A",
-                        style: TextStyle(
-                            fontWeight: FontWeight.w700,
-                            color: primaryColor,
-                            letterSpacing: 0.5)),
+                    // Block from DB (current version improvement)
+                    Text(
+                      _residentSummary?['block'] != null &&
+                          _residentSummary!['block']
+                              .toString()
+                              .trim()
+                              .isNotEmpty
+                          ? 'BLOCK ${_residentSummary!['block'].toString().trim().toUpperCase()}'
+                          : 'MY BLOCK',
+                      style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: primaryColor,
+                          letterSpacing: 0.5),
+                    ),
                     const SizedBox(width: 4),
-                    const Icon(Icons.keyboard_arrow_down_rounded),
                   ],
                 ),
               ),
 
-              // ── Unified notification bell ──────────
+              // ── Unified notification bell ──────────────────────────────
               GestureDetector(
                 onTap: _showNotificationSheet,
                 child: Container(
@@ -1385,7 +1414,8 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                     children: [
                       Icon(Icons.notifications_none_rounded,
                           color: primaryColor, size: 24),
-                      if (_hasUnreadAnnouncements || _unreadMessageCount > 0)
+                      if (_hasUnreadAnnouncements ||
+                          _unreadMessageCount > 0)
                         Positioned(
                           top: -3,
                           right: -3,
@@ -1395,14 +1425,16 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                                 horizontal: 4, vertical: 1)
                                 : EdgeInsets.zero,
                             constraints: BoxConstraints(
-                              minWidth: _unreadMessageCount > 0 ? 16 : 8,
-                              minHeight: _unreadMessageCount > 0 ? 16 : 8,
+                              minWidth:
+                              _unreadMessageCount > 0 ? 16 : 8,
+                              minHeight:
+                              _unreadMessageCount > 0 ? 16 : 8,
                             ),
                             decoration: BoxDecoration(
                               color: Colors.red.shade500,
                               borderRadius: BorderRadius.circular(10),
-                              border:
-                              Border.all(color: Colors.white, width: 1.5),
+                              border: Border.all(
+                                  color: Colors.white, width: 1.5),
                             ),
                             child: _unreadMessageCount > 0
                                 ? Text(
@@ -1434,8 +1466,8 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
           const SizedBox(height: 6),
           const Text(
             "Manage your community services and stay informed.",
-            style:
-            TextStyle(fontSize: 14, color: Colors.black54, height: 1.5),
+            style: TextStyle(
+                fontSize: 14, color: Colors.black54, height: 1.5),
           ),
           const SizedBox(height: 22),
 
@@ -1443,7 +1475,8 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
             width: double.infinity,
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
-                color: softYellow, borderRadius: BorderRadius.circular(26)),
+                color: softYellow,
+                borderRadius: BorderRadius.circular(26)),
             child: Row(
               children: [
                 Expanded(
@@ -1463,8 +1496,8 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                   decoration: BoxDecoration(
                       color: Colors.white.withOpacity(0.85),
                       borderRadius: BorderRadius.circular(18)),
-                  child:
-                  Icon(Icons.groups_rounded, color: primaryColor, size: 28),
+                  child: Icon(Icons.groups_rounded,
+                      color: primaryColor, size: 28),
                 ),
               ],
             ),
@@ -1478,32 +1511,39 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                 icon: Icons.badge_outlined,
                 color: const Color(0xFFE96B9E),
                 label: "Visitors",
-                onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Visitors clicked"))),
+                onTap: () => ScaffoldMessenger.of(context)
+                    .showSnackBar(const SnackBar(
+                    content: Text("Visitors clicked"))),
               ),
               const SizedBox(width: 10),
               buildServiceItem(
                 icon: Icons.fitness_center,
                 color: const Color(0xFF4BC0B8),
                 label: "Facility",
-                onTap: () => Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => FacilityBookingPage())),
+                onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => FacilityBookingPage())),
               ),
               const SizedBox(width: 10),
               buildServiceItem(
                 icon: Icons.event_note_outlined,
                 color: const Color(0xFF758BFD),
                 label: "Events",
-                onTap: () => Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => EventCalendarScreen())),
+                onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => EventCalendarScreen())),
               ),
               const SizedBox(width: 10),
               buildServiceItem(
                 icon: Icons.sos_outlined,
                 color: const Color(0xFFFF5A5A),
                 label: "SOS",
-                onTap: () => Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => EmergencyForm())),
+                onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => EmergencyForm())),
               ),
             ],
           ),
@@ -1513,7 +1553,8 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
               onSeeAll: () => Navigator.push(
                   context,
                   MaterialPageRoute(
-                      builder: (_) => const AnnouncementListPage()))),
+                      builder: (_) =>
+                      const AnnouncementListPage()))),
           buildAnnouncementSlider(),
 
           const SizedBox(height: 28),
@@ -1529,7 +1570,8 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     );
   }
 
-  Widget buildMyFacilityTab() => const FacilityBookingPage(showBackButton: false);
+  Widget buildMyFacilityTab() =>
+      const FacilityBookingPage(showBackButton: false);
 
   Widget buildAccountTab() {
     final resident = _residentSummary;
@@ -1541,7 +1583,8 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
         resident?['email'] ?? currentUser?.email,
         fallback: 'No email address');
     final residentType =
-    _accountDisplayValue(resident?['resident_type'], fallback: 'resident')
+    _accountDisplayValue(resident?['resident_type'],
+        fallback: 'resident')
         .toUpperCase();
     final status =
     _accountDisplayValue(resident?['status'], fallback: 'active')
@@ -1596,7 +1639,8 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                     radius: 44,
                     backgroundColor: const Color(0xFFEADFD6),
                     child: Text(
-                      _accountInitials(resident?['full_name']?.toString()),
+                      _accountInitials(
+                          resident?['full_name']?.toString()),
                       style: TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.bold,
@@ -1614,8 +1658,8 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                 const SizedBox(height: 6),
                 Text(email,
                     textAlign: TextAlign.center,
-                    style:
-                    const TextStyle(fontSize: 13, color: Colors.black54)),
+                    style: const TextStyle(
+                        fontSize: 13, color: Colors.black54)),
                 const SizedBox(height: 14),
                 Wrap(
                   alignment: WrapAlignment.center,
@@ -1655,15 +1699,16 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                       child: _buildAccountInfoPill(
                           icon: Icons.apartment_rounded,
                           label: 'Block',
-                          value: _accountDisplayValue(resident?['block'])),
+                          value: _accountDisplayValue(
+                              resident?['block'])),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: _buildAccountInfoPill(
                           icon: Icons.home_rounded,
                           label: 'Unit',
-                          value:
-                          _accountDisplayValue(resident?['unit_number'])),
+                          value: _accountDisplayValue(
+                              resident?['unit_number'])),
                     ),
                   ],
                 ),
@@ -1690,12 +1735,14 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
             _buildAccountListTile(
               icon: Icons.history_rounded,
               title: 'Booking History',
-              subtitle: 'View pending, approved, and past facility bookings',
+              subtitle:
+              'View pending, approved, and past facility bookings',
               iconColor: const Color(0xFFD49A6A),
               onTap: () => Navigator.push(
                   context,
                   MaterialPageRoute(
-                      builder: (_) => const ResidentBookingHistoryPage())),
+                      builder: (_) =>
+                      const ResidentBookingHistoryPage())),
               showDivider: false,
             ),
           ]),
@@ -1706,12 +1753,14 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
             _buildAccountListTile(
               icon: Icons.badge_outlined,
               title: 'Visitor Pass',
-              subtitle: 'Create and manage visitor QR passes for your guests',
+              subtitle:
+              'Create and manage visitor QR passes for your guests',
               iconColor: const Color(0xFF6B8E6B),
               onTap: () => Navigator.push(
                   context,
                   MaterialPageRoute(
-                      builder: (_) => const VisitorPassListScreen())),
+                      builder: (_) =>
+                      const VisitorPassListScreen())),
               showDivider: false,
             ),
           ]),
@@ -1742,7 +1791,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     );
   }
 
-  // ── Build ─────────────────────────────────────
+  // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -1750,7 +1799,8 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
       backgroundColor: bgColor,
       body: SafeArea(
         child: !_sessionReady
-            ? Center(child: CircularProgressIndicator(color: primaryColor))
+            ? Center(
+            child: CircularProgressIndicator(color: primaryColor))
             : IndexedStack(
           index: currentIndex,
           children: [
@@ -1770,8 +1820,8 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
           backgroundColor: isEmergency
               ? Colors.red
               : (isWaiting ? Colors.orange : Colors.red),
-          shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(60)),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(60)),
           elevation: 6,
           child: Icon(
             isEmergency
@@ -1811,11 +1861,14 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
               BottomNavigationBarItem(
                   icon: Icon(Icons.home_rounded), label: "Home"),
               BottomNavigationBarItem(
-                  icon: Icon(Icons.fitness_center_rounded), label: "Facility"),
+                  icon: Icon(Icons.fitness_center_rounded),
+                  label: "Facility"),
               BottomNavigationBarItem(
-                  icon: Icon(Icons.chat_bubble_outline_rounded), label: "Chats"),
+                  icon: Icon(Icons.chat_bubble_outline_rounded),
+                  label: "Chats"),
               BottomNavigationBarItem(
-                  icon: Icon(Icons.person_outline_rounded), label: "Account"),
+                  icon: Icon(Icons.person_outline_rounded),
+                  label: "Account"),
             ],
           ),
         ),
@@ -1825,7 +1878,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// _NotificationSheet
+// _NotificationSheet  — with All / Announcements / Messages filter tabs
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _NotificationSheet extends StatefulWidget {
@@ -1852,6 +1905,7 @@ class _NotificationSheet extends StatefulWidget {
 class _NotificationSheetState extends State<_NotificationSheet> {
   List<_NotifItem>? _items;
   bool _loading = true;
+  String _filter = 'all'; // 'all' | 'announcements' | 'messages'
 
   @override
   void initState() {
@@ -1884,6 +1938,22 @@ class _NotificationSheetState extends State<_NotificationSheet> {
     }
   }
 
+  List<_NotifItem> get _filteredItems {
+    if (_items == null) return [];
+    switch (_filter) {
+      case 'announcements':
+        return _items!
+            .where((i) => i.type == _NotifType.announcement)
+            .toList();
+      case 'messages':
+        return _items!
+            .where((i) => i.type == _NotifType.message)
+            .toList();
+      default:
+        return _items!;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final total = _items?.length ?? 0;
@@ -1896,10 +1966,12 @@ class _NotificationSheetState extends State<_NotificationSheet> {
       builder: (_, scrollController) => Container(
         decoration: const BoxDecoration(
           color: Color(0xFFF5F1ED),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          borderRadius:
+          BorderRadius.vertical(top: Radius.circular(28)),
         ),
         child: Column(
           children: [
+            // ── Handle + title ──────────────────────────────────────
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
               child: Column(
@@ -1928,7 +2000,8 @@ class _NotificationSheetState extends State<_NotificationSheet> {
                               horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
                               color: widget.primaryColor,
-                              borderRadius: BorderRadius.circular(10)),
+                              borderRadius:
+                              BorderRadius.circular(10)),
                           child: Text('$total',
                               style: const TextStyle(
                                   color: Colors.white,
@@ -1937,41 +2010,53 @@ class _NotificationSheetState extends State<_NotificationSheet> {
                         ),
                     ],
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 12),
+
+                  // ── Filter chips ──────────────────────────────────
+                  if (!_loading && _items != null)
+                    _buildFilterBar(),
+
+                  const SizedBox(height: 2),
                 ],
               ),
             ),
 
+            // ── Content ─────────────────────────────────────────────
             Expanded(
               child: _loading
                   ? Center(
                   child: CircularProgressIndicator(
                       color: widget.primaryColor))
-                  : _items == null || _items!.isEmpty
+                  : _filteredItems.isEmpty
                   ? Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.notifications_none_rounded,
+                    Icon(
+                        Icons.notifications_none_rounded,
                         size: 48,
-                        color:
-                        widget.primaryColor.withOpacity(0.3)),
+                        color: widget.primaryColor
+                            .withOpacity(0.3)),
                     const SizedBox(height: 12),
                     const Text('No notifications',
-                        style: TextStyle(color: Colors.black45)),
+                        style: TextStyle(
+                            color: Colors.black45)),
                   ],
                 ),
               )
                   : ListView.separated(
                 controller: scrollController,
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
-                itemCount: _items!.length,
+                padding: const EdgeInsets.fromLTRB(
+                    20, 8, 20, 32),
+                itemCount: _filteredItems.length,
                 separatorBuilder: (_, __) =>
                 const SizedBox(height: 10),
                 itemBuilder: (_, i) {
-                  final item = _items![i];
-                  return item.type == _NotifType.announcement
-                      ? _buildAnnouncementTile(item.announcement!)
+                  final item = _filteredItems[i];
+                  return item.type ==
+                      _NotifType.announcement
+                      ? _buildAnnouncementTile(
+                      item.announcement!)
                       : _buildMessageTile(item);
                 },
               ),
@@ -1981,6 +2066,95 @@ class _NotificationSheetState extends State<_NotificationSheet> {
       ),
     );
   }
+
+  // ── Filter bar ────────────────────────────────────────────────────────────
+
+  Widget _buildFilterBar() {
+    final items = _items!;
+    final annCount =
+        items.where((i) => i.type == _NotifType.announcement).length;
+    final msgCount =
+        items.where((i) => i.type == _NotifType.message).length;
+    final totalCount = items.length;
+
+    const filters = [
+      ('all', 'All'),
+      ('announcements', 'Announcements'),
+      ('messages', 'Messages'),
+    ];
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: filters.map((f) {
+          final isSelected = _filter == f.$1;
+          int count = 0;
+          switch (f.$1) {
+            case 'all':
+              count = totalCount;
+            case 'announcements':
+              count = annCount;
+            case 'messages':
+              count = msgCount;
+          }
+
+          return Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: GestureDetector(
+              onTap: () => setState(() => _filter = f.$1),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 7),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? widget.primaryColor
+                      : Colors.grey.shade200,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      f.$2,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: isSelected
+                            ? Colors.white
+                            : Colors.black54,
+                      ),
+                    ),
+                    // Count badge hidden when chip is selected
+                    if (count > 0 && !isSelected) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 5, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: widget.primaryColor,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '$count',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  // ── Tiles ─────────────────────────────────────────────────────────────────
 
   Widget _buildAnnouncementTile(Map<String, dynamic> ann) {
     final title = ann['title']?.toString() ?? 'Notice';
@@ -2021,7 +2195,9 @@ class _NotificationSheetState extends State<_NotificationSheet> {
                 isUrgent
                     ? Icons.warning_amber_rounded
                     : Icons.campaign_rounded,
-                color: isUrgent ? Colors.redAccent : widget.primaryColor,
+                color: isUrgent
+                    ? Colors.redAccent
+                    : widget.primaryColor,
                 size: 22,
               ),
             ),
@@ -2040,7 +2216,8 @@ class _NotificationSheetState extends State<_NotificationSheet> {
                           decoration: BoxDecoration(
                             color: Colors.red.shade50,
                             borderRadius: BorderRadius.circular(4),
-                            border: Border.all(color: Colors.red.shade200),
+                            border: Border.all(
+                                color: Colors.red.shade200),
                           ),
                           child: const Text('URGENT',
                               style: TextStyle(
@@ -2064,7 +2241,9 @@ class _NotificationSheetState extends State<_NotificationSheet> {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                          fontSize: 12, color: Colors.black54, height: 1.4)),
+                          fontSize: 12,
+                          color: Colors.black54,
+                          height: 1.4)),
                   const SizedBox(height: 6),
                   Text(dateStr,
                       style: const TextStyle(
@@ -2073,7 +2252,7 @@ class _NotificationSheetState extends State<_NotificationSheet> {
               ),
             ),
             const SizedBox(width: 6),
-            Icon(Icons.arrow_forward_ios_rounded,
+            const Icon(Icons.arrow_forward_ios_rounded,
                 size: 13, color: Colors.black26),
           ],
         ),
@@ -2082,7 +2261,6 @@ class _NotificationSheetState extends State<_NotificationSheet> {
   }
 
   Widget _buildMessageTile(_NotifItem item) {
-    // At this point item.unreadCount is always > 0 (filtered upstream)
     return GestureDetector(
       onTap: () {
         Navigator.pop(context);
@@ -2106,7 +2284,8 @@ class _NotificationSheetState extends State<_NotificationSheet> {
               width: 44,
               height: 44,
               decoration: BoxDecoration(
-                color: const Color(0xFF4BC0B8).withOpacity(0.15),
+                color:
+                const Color(0xFF4BC0B8).withOpacity(0.15),
                 borderRadius: BorderRadius.circular(14),
               ),
               child: Icon(
@@ -2137,12 +2316,14 @@ class _NotificationSheetState extends State<_NotificationSheet> {
                         TextSpan(
                           text: '${item.senderName}: ',
                           style: TextStyle(
-                              color: widget.primaryColor.withOpacity(0.8),
+                              color: widget.primaryColor
+                                  .withOpacity(0.8),
                               fontWeight: FontWeight.w600),
                         ),
                         TextSpan(
                           text: item.lastMessage ?? '',
-                          style: const TextStyle(color: Colors.black87),
+                          style: const TextStyle(
+                              color: Colors.black87),
                         ),
                       ],
                     ),
@@ -2158,17 +2339,20 @@ class _NotificationSheetState extends State<_NotificationSheet> {
                   item.lastTime != null
                       ? _formatTimeAgo(item.lastTime!)
                       : '',
-                  style: const TextStyle(fontSize: 10, color: Colors.black38),
+                  style: const TextStyle(
+                      fontSize: 10, color: Colors.black38),
                 ),
                 const SizedBox(height: 4),
                 Container(
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
                       color: widget.primaryColor,
                       borderRadius: BorderRadius.circular(10)),
                   child: Text(
-                    item.unreadCount > 99 ? '99+' : '${item.unreadCount}',
+                    item.unreadCount > 99
+                        ? '99+'
+                        : '${item.unreadCount}',
                     style: const TextStyle(
                         color: Colors.white,
                         fontSize: 10,

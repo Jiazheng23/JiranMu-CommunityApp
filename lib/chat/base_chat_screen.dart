@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:assignment/chat/shared/chat_utils.dart';
 import 'package:assignment/chat/shared/chat_widgets.dart';
@@ -10,36 +11,8 @@ import 'package:assignment/event/service/event_service.dart';
 
 import 'model/message.dart';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// BaseChatScreenState  —  shared mixin
-//
-// Contains EVERY piece of state and every method that is identical between
-// AdminChatScreen and ResidentChatScreen:
-//
-//   • Supabase client reference
-//   • All state fields (messages, polls, pinned, mentions, search …)
-//   • _fetchMessages / _sendMessage / _markMessagesAsRead
-//   • Real-time subscription (_setupRealtime)
-//   • Poll data loading & vote toggling
-//   • Scroll helpers
-//   • Display-name resolution cache
-//   • All BUILD widgets:
-//       - AppBar shell (actions injected by subclass via buildAppBarActions)
-//       - Pinned strip
-//       - Reply preview
-//       - Message list (chat bubbles, event invites, poll bubbles)
-//       - Search bar
-//       - Mention suggestions
-//       - Input bar
-//
-// Subclasses (AdminChatScreenState / ResidentChatScreenState) only add:
-//   • Their own settings/dialog methods
-//   • Override buildAppBarActions() to supply the correct action buttons
-// ─────────────────────────────────────────────────────────────────────────────
-
 final supabase = Supabase.instance.client;
 
-// ignore: must_be_immutable — mixin is not a Widget itself
 mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
   // ── Widget fields — subclass must expose these as getters ─────────────────
   String get roomId;
@@ -49,19 +22,19 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
   bool get isAdmin;
 
   // ── Colors ────────────────────────────────────────────────────────────────
-  static const Color primary       = Color(0xFF9A4B3C);
-  static const Color bubbleMe      = Color(0xFF9A4B3C);
-  static const Color bubbleOther   = Color(0xFFF0F0F5);
-  static const Color bgPage        = Color(0xFFF5F1ED);
-  static const Color appBarBg      = Colors.white;
-  static const Color adminBadge    = Color(0xFF9A4B3C);
-  static const Color pinAccent     = Color(0xFF9A4B3C);
-  static const Color pinBg         = Color(0xFFFAF7F5);
+  static const Color primary     = Color(0xFF9A4B3C);
+  static const Color bubbleMe    = Color(0xFF9A4B3C);
+  static const Color bubbleOther = Color(0xFFF0F0F5);
+  static const Color bgPage      = Color(0xFFF5F1ED);
+  static const Color appBarBg    = Colors.white;
+  static const Color adminBadge  = Color(0xFF9A4B3C);
+  static const Color pinAccent   = Color(0xFF9A4B3C);
+  static const Color pinBg       = Color(0xFFFAF7F5);
 
   // ── State fields ──────────────────────────────────────────────────────────
-  final TextEditingController controller    = TextEditingController();
-  final ScrollController    scrollController = ScrollController();
-  final FocusNode           inputFocusNode  = FocusNode();
+  final TextEditingController controller       = TextEditingController();
+  final ScrollController      scrollController = ScrollController();
+  final FocusNode             inputFocusNode   = FocusNode();
   final TextEditingController searchController = TextEditingController();
 
   final Map<String, String> senderNameCache = {};
@@ -70,25 +43,35 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
   List<Message> messages = [];
   RealtimeChannel? subscription;
 
+  // ── Timers ────────────────────────────────────────────────────────────────
+  Timer? _keepAliveTimer;
+  Timer? _pollingTimer;
+
+  // FIX: track heartbeat channel to properly unsubscribe
+  RealtimeChannel? _heartbeatChannel;
+
+  // FIX: track last seen message timestamp to skip unnecessary full fetches
+  DateTime? _lastMessageTimestamp;
+
   Message? replyingTo;
 
   List<Message> pinnedAnnouncements = [];
-  int pinnedIndex = 0;
+  int  pinnedIndex  = 0;
   bool pinDismissed = true;
 
-  final Map<String, Poll>               pollCache      = {};
-  final Map<String, Set<String>>        myVotes        = {};
-  final Map<String, int>                voteCounts     = {};
+  final Map<String, Poll>                      pollCache      = {};
+  final Map<String, Set<String>>               myVotes        = {};
+  final Map<String, int>                       voteCounts     = {};
   final Map<String, Map<String, List<String>>> pollVoterNames = {};
 
   List<String> mentionSuggestions = [];
-  bool showMentions = false;
-  List<String> roomMembers = [];
+  bool         showMentions       = false;
+  List<String> roomMembers        = [];
 
   bool isDM = false;
 
-  String searchQuery = '';
-  bool showChatSearch = false;
+  String searchQuery    = '';
+  bool   showChatSearch = false;
 
   int unreadMentions = 0;
 
@@ -104,12 +87,13 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
         .toList();
   }
 
-  // ── Lifecycle helpers (call from initState / dispose) ─────────────────────
+  // ── Lifecycle helpers ─────────────────────────────────────────────────────
 
   void baseInitState() {
     _loadMyDisplayName().then((_) {
       _fetchMessages();
       _setupRealtime();
+      _startPolling();
       _markMessagesAsRead();
     });
     _detectRoomType();
@@ -118,12 +102,51 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
   }
 
   void baseDispose() {
+    _keepAliveTimer?.cancel();
+    _pollingTimer?.cancel();
+    // FIX: properly unsubscribe heartbeat channel
+    _heartbeatChannel?.unsubscribe();
     subscription?.unsubscribe();
     controller.removeListener(_onTextChanged);
     controller.dispose();
     scrollController.dispose();
     inputFocusNode.dispose();
     searchController.dispose();
+  }
+
+  // ── Polling fallback ──────────────────────────────────────────────────────
+
+  // FIX: Poll every 1s but only do a full fetch when a new message is detected.
+  // This avoids the old 3-second hard delay while keeping DB load low.
+  void _startPolling() {
+    _pollingTimer?.cancel();
+    _pollingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) _fetchMessagesIfNeeded();
+    });
+  }
+
+  Future<void> _fetchMessagesIfNeeded() async {
+    try {
+      final latest = await supabase
+          .from('messages')
+          .select('created_at')
+          .eq('room_id', roomId)
+          .order('created_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
+
+      if (latest == null) return;
+
+      final ts = DateTime.parse(latest['created_at'] as String);
+
+      // Only do the expensive full fetch when there's actually something new
+      if (_lastMessageTimestamp == null || ts.isAfter(_lastMessageTimestamp!)) {
+        _lastMessageTimestamp = ts;
+        await _fetchMessages();
+      }
+    } catch (e) {
+      debugPrint('Polling check error: $e');
+    }
   }
 
   // ── Room type detection ───────────────────────────────────────────────────
@@ -202,12 +225,13 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
     final before = text.substring(0, cursor);
     final match  = RegExp(r'@(\w*)$').firstMatch(before);
     if (match != null) {
-      final query = match.group(1)!.toLowerCase();
-      final suggestions =
-      roomMembers.where((n) => n.toLowerCase().contains(query)).toList();
+      final query       = match.group(1)!.toLowerCase();
+      final suggestions = roomMembers
+          .where((n) => n.toLowerCase().contains(query))
+          .toList();
       setState(() {
         mentionSuggestions = suggestions;
-        showMentions        = suggestions.isNotEmpty;
+        showMentions       = suggestions.isNotEmpty;
       });
     } else {
       setState(() => showMentions = false);
@@ -215,12 +239,11 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
   }
 
   void insertMention(String name) {
-    final text   = controller.text;
-    final cursor = controller.selection.baseOffset;
-    final before = text.substring(0, cursor);
-    final after  = text.substring(cursor);
-    final replaced =
-    before.replaceAllMapped(RegExp(r'@\w*$'), (_) => '@$name ');
+    final text     = controller.text;
+    final cursor   = controller.selection.baseOffset;
+    final before   = text.substring(0, cursor);
+    final after    = text.substring(cursor);
+    final replaced = before.replaceAllMapped(RegExp(r'@\w*$'), (_) => '@$name ');
     controller.value = TextEditingValue(
       text:      replaced + after,
       selection: TextSelection.collapsed(offset: replaced.length),
@@ -279,8 +302,8 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
       int mentionCount = 0;
 
       for (final msg in (data as List<dynamic>)) {
-        final rawSender     = msg['sender'] as String;
-        final displayName   = await resolveDisplayName(rawSender);
+        final rawSender   = msg['sender'] as String;
+        final displayName = await resolveDisplayName(rawSender);
         String? replyToDisplay;
         final rawReply = msg['reply_to_sender'] as String?;
         if (rawReply != null) replyToDisplay = await resolveDisplayName(rawReply);
@@ -327,19 +350,35 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
       }
 
       final pins = result.where((m) => m.isAnnouncement).toList();
+
+      // Check if user is already at the bottom before updating state
+      final wasAtBottom = scrollController.hasClients &&
+          scrollController.position.pixels >=
+              scrollController.position.maxScrollExtent - 100;
+
+      // Check for genuinely new messages (not in current list)
+      final currentIds = messages.map((m) => m.id).toSet();
+      final hasNewMsgs = result.any((m) => !currentIds.contains(m.id));
+
       setState(() {
         messages            = result;
         pinnedAnnouncements = pins;
         pinnedIndex         = pins.isEmpty ? 0 : pins.length - 1;
-        pinDismissed        = pins.isEmpty;
+        pinDismissed        = pins.isEmpty ? true : pinDismissed;
         unreadMentions      = mentionCount;
       });
 
-      for (final msg
-      in result.where((m) => m.isPoll && m.pollId != null)) {
+      // FIX: update the timestamp tracker after every successful fetch
+      if (result.isNotEmpty) {
+        _lastMessageTimestamp = result.last.timestamp;
+      }
+
+      for (final msg in result.where((m) => m.isPoll && m.pollId != null)) {
         await loadPollData(msg.pollId!, msg.id);
       }
-      scrollToBottom();
+
+      // Only scroll to bottom if user was already there OR new messages arrived
+      if (wasAtBottom || hasNewMsgs) scrollToBottom();
     } catch (e) {
       debugPrint('Error fetching messages: $e');
     }
@@ -385,9 +424,9 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
           .select('option_id, user_id')
           .eq('poll_id', pollId);
 
-      final Map<String, int>         counts         = {};
-      final Set<String>              myVotedOptions = {};
-      final Map<String, List<String>> voterNames    = {};
+      final Map<String, int>          counts         = {};
+      final Set<String>               myVotedOptions = {};
+      final Map<String, List<String>> voterNames     = {};
 
       final voterUserIds = (votesRes as List)
           .map((v) => v['user_id'] as String)
@@ -415,10 +454,10 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
       }
 
       setState(() {
-        pollCache[messageId]      = poll;
-        myVotes[pollId]           = myVotedOptions;
+        pollCache[messageId]   = poll;
+        myVotes[pollId]        = myVotedOptions;
         voteCounts.addAll(counts);
-        pollVoterNames[pollId]    = voterNames;
+        pollVoterNames[pollId] = voterNames;
       });
     } catch (e) {
       debugPrint('Error loading poll $pollId: $e');
@@ -428,21 +467,24 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
   // ── Real-time subscription ────────────────────────────────────────────────
 
   void _setupRealtime() {
+    subscription?.unsubscribe();
+    _keepAliveTimer?.cancel();
+    // FIX: also unsubscribe any previous heartbeat channel
+    _heartbeatChannel?.unsubscribe();
+
     subscription = supabase
-        .channel('room_$roomId')
+        .channel('room_${roomId}_${DateTime.now().millisecondsSinceEpoch}')
         .onPostgresChanges(
-      event:    PostgresChangeEvent.insert,
-      schema:   'public',
-      table:    'messages',
+      event:  PostgresChangeEvent.insert,
+      schema: 'public',
+      table:  'messages',
       callback: (payload) async {
         final msg = payload.newRecord;
-        if (msg['room_id'] != roomId) return;
+        debugPrint('🔥 REALTIME FIRED: $msg');
 
-        final senderEmail = msg['sender'] as String? ?? '';
-        if (senderEmail == currentUser) return;
-        // NotificationService.showNotification('New Message', msg['content'] ?? '');
+        final rawSender = msg['sender'] as String? ?? '';
+        if (rawSender == currentUser) return;
 
-        final rawSender   = msg['sender'] as String;
         final displayName = await resolveDisplayName(rawSender);
         String? replyToDisplay;
         final rawReply = msg['reply_to_sender'] as String?;
@@ -462,7 +504,7 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
           senderRaw:      rawSender,
           text:           msg['content'] as String,
           timestamp:      DateTime.parse(msg['created_at'] as String),
-          isMe:           rawSender == currentUser,
+          isMe:           false,
           isAnnouncement: msg['is_announcement'] == true,
           isPoll:         msg['is_poll'] as bool? ?? false,
           pollId:         msg['poll_id'] as String?,
@@ -473,17 +515,9 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
           mentionedUsers: mentionedUsers,
         );
 
+        if (!mounted) return;
         setState(() {
-          final alreadyExists = messages.any((m) =>
-          m.id == newMessage.id ||
-              (m.text == newMessage.text &&
-                  m.senderRaw == newMessage.senderRaw &&
-                  m.timestamp
-                      .difference(newMessage.timestamp)
-                      .inSeconds
-                      .abs() <
-                      2));
-          if (!alreadyExists) {
+          if (!messages.any((m) => m.id == newMessage.id)) {
             messages.add(newMessage);
             messages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
             if (newMessage.isAnnouncement) {
@@ -491,15 +525,19 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
               pinnedIndex = pinnedAnnouncements.length - 1;
               showPin();
             }
-            if (!newMessage.isMe &&
-                newMessage.mentions(myDisplayName.isNotEmpty
-                    ? myDisplayName
-                    : currentUser)) {
+            if (newMessage.mentions(
+                myDisplayName.isNotEmpty ? myDisplayName : currentUser)) {
               unreadMentions++;
               showMentionBanner(newMessage);
             }
+            // FIX: keep timestamp tracker in sync when realtime fires
+            if (_lastMessageTimestamp == null ||
+                newMessage.timestamp.isAfter(_lastMessageTimestamp!)) {
+              _lastMessageTimestamp = newMessage.timestamp;
+            }
           }
         });
+
         if (!newMessage.isAnnouncement) scrollToBottom();
         if (newMessage.isPoll && newMessage.pollId != null) {
           await loadPollData(newMessage.pollId!, newMessage.id);
@@ -507,14 +545,17 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
       },
     )
         .onPostgresChanges(
-      event:    PostgresChangeEvent.insert,
-      schema:   'public',
-      table:    'poll_votes',
+      event:  PostgresChangeEvent.insert,
+      schema: 'public',
+      table:  'poll_votes',
       callback: (payload) async {
         final v      = payload.newRecord;
         final optId  = v['option_id'] as String;
         final pollId = v['poll_id'] as String;
         final userId = v['user_id'] as String;
+
+        if (!pollCache.values.any((p) => p.id == pollId)) return;
+
         String voterName = 'Unknown';
         try {
           final profile = await supabase
@@ -524,6 +565,8 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
               .single();
           voterName = profile['full_name'] as String;
         } catch (_) {}
+
+        if (!mounted) return;
         setState(() {
           voteCounts[optId] = (voteCounts[optId] ?? 0) + 1;
           if (userId == currentUserId) {
@@ -537,7 +580,31 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
         });
       },
     )
-        .subscribe();
+        .subscribe((status, [error]) {
+      debugPrint('🔴 Realtime status: $status | error: $error');
+      // FIX: add 500ms delay before refetching so the network can stabilise
+      if (status == RealtimeSubscribeStatus.closed ||
+          status == RealtimeSubscribeStatus.channelError) {
+        if (mounted) {
+          Future.delayed(const Duration(milliseconds: 500), () {
+            if (mounted) _fetchMessages();
+          });
+        }
+      }
+    });
+
+    // FIX: heartbeat now properly tracks and unsubscribes the previous channel
+    // before creating a new one, preventing channel leaks that destabilise
+    // the realtime connection.
+    _keepAliveTimer = Timer.periodic(const Duration(seconds: 25), (_) {
+      if (mounted) {
+        _heartbeatChannel?.unsubscribe();
+        _heartbeatChannel = supabase
+            .channel(
+            'heartbeat_${roomId}_${DateTime.now().millisecondsSinceEpoch}')
+            .subscribe();
+      }
+    });
   }
 
   // ── Mention banner ────────────────────────────────────────────────────────
@@ -547,10 +614,10 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
     ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        behavior:         SnackBarBehavior.floating,
-        backgroundColor:  Colors.transparent,
-        elevation:        0,
-        duration:         const Duration(seconds: 4),
+        behavior:        SnackBarBehavior.floating,
+        backgroundColor: Colors.transparent,
+        elevation:       0,
+        duration:        const Duration(seconds: 4),
         content: GestureDetector(
           onTap: () {
             ScaffoldMessenger.of(context).clearSnackBars();
@@ -614,7 +681,7 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
                           maxLines:  1,
                           overflow:  TextOverflow.ellipsis,
                           style: const TextStyle(
-                              color:    Colors.white70, fontSize: 12)),
+                              color: Colors.white70, fontSize: 12)),
                     ]),
               ),
               const Icon(Icons.keyboard_arrow_down_rounded,
@@ -637,16 +704,16 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
 
     setState(() {
       if (alreadyVoted) {
-        myVotes[pollId]       = currentVotes.difference({optionId});
-        voteCounts[optionId]  = (voteCounts[optionId] ?? 1) - 1;
-        final cur             = pollVoterNames[pollId] ?? {};
-        final updatedList     = List<String>.from(cur[optionId] ?? [])
+        myVotes[pollId]      = currentVotes.difference({optionId});
+        voteCounts[optionId] = (voteCounts[optionId] ?? 1) - 1;
+        final cur            = pollVoterNames[pollId] ?? {};
+        final updatedList    = List<String>.from(cur[optionId] ?? [])
           ..remove(myName);
         pollVoterNames[pollId] = {...cur, optionId: updatedList};
       } else {
-        myVotes[pollId]       = {...currentVotes, optionId};
-        voteCounts[optionId]  = (voteCounts[optionId] ?? 0) + 1;
-        final cur             = pollVoterNames[pollId] ?? {};
+        myVotes[pollId]      = {...currentVotes, optionId};
+        voteCounts[optionId] = (voteCounts[optionId] ?? 0) + 1;
+        final cur            = pollVoterNames[pollId] ?? {};
         pollVoterNames[pollId] = {
           ...cur,
           optionId: [...(cur[optionId] ?? []), myName],
@@ -673,22 +740,21 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
       }
     } catch (e) {
       debugPrint('Vote error: $e');
-      // Revert optimistic update
       setState(() {
         if (alreadyVoted) {
-          myVotes[pollId]       = {...?myVotes[pollId], optionId};
-          voteCounts[optionId]  = (voteCounts[optionId] ?? 0) + 1;
-          final cur             = pollVoterNames[pollId] ?? {};
+          myVotes[pollId]      = {...?myVotes[pollId], optionId};
+          voteCounts[optionId] = (voteCounts[optionId] ?? 0) + 1;
+          final cur            = pollVoterNames[pollId] ?? {};
           pollVoterNames[pollId] = {
             ...cur,
             optionId: [...(cur[optionId] ?? []), myName],
           };
         } else {
           final updated = {...?myVotes[pollId]}..remove(optionId);
-          myVotes[pollId]       = updated;
-          voteCounts[optionId]  = (voteCounts[optionId] ?? 1) - 1;
-          final cur             = pollVoterNames[pollId] ?? {};
-          final updatedList     = List<String>.from(cur[optionId] ?? [])
+          myVotes[pollId]      = updated;
+          voteCounts[optionId] = (voteCounts[optionId] ?? 1) - 1;
+          final cur            = pollVoterNames[pollId] ?? {};
+          final updatedList    = List<String>.from(cur[optionId] ?? [])
             ..remove(myName);
           pollVoterNames[pollId] = {...cur, optionId: updatedList};
         }
@@ -737,6 +803,11 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
         pinnedAnnouncements.add(optimisticMsg);
         pinnedIndex = pinnedAnnouncements.length - 1;
         showPin();
+      }
+      // FIX: update timestamp tracker for our own optimistic message too
+      if (_lastMessageTimestamp == null ||
+          optimisticMsg.timestamp.isAfter(_lastMessageTimestamp!)) {
+        _lastMessageTimestamp = optimisticMsg.timestamp;
       }
     });
     if (!isAnnouncement) scrollToBottom();
@@ -873,13 +944,10 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // BUILD WIDGETS — identical in both admin and resident
+  // BUILD WIDGETS
   // ══════════════════════════════════════════════════════════════════════════
 
-  // Subclasses supply their own action widgets (settings button, mention badge…)
   List<Widget> buildAppBarActions();
-
-  // ── App bar ───────────────────────────────────────────────────────────────
 
   PreferredSizeWidget buildAppBar() {
     return AppBar(
@@ -892,15 +960,13 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
           onPressed: () => Navigator.pop(context)),
       title: Text(communityName,
           style: const TextStyle(
-              color:       Colors.black87,
-              fontSize:    16,
-              fontWeight:  FontWeight.w700,
+              color:        Colors.black87,
+              fontSize:     16,
+              fontWeight:   FontWeight.w700,
               letterSpacing: -0.3)),
       actions: buildAppBarActions(),
     );
   }
-
-  // ── Pinned strip ──────────────────────────────────────────────────────────
 
   Widget buildPinnedStrip() {
     if (pinnedAnnouncements.isEmpty || pinDismissed) {
@@ -958,8 +1024,8 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
               const SizedBox(width: 4),
               Column(mainAxisSize: MainAxisSize.min, children: [
                 GestureDetector(
-                    onTap: () => setState(() =>
-                    pinnedIndex = (pinnedIndex - 1 + total) % total),
+                    onTap: () => setState(
+                            () => pinnedIndex = (pinnedIndex - 1 + total) % total),
                     child: const Icon(Icons.keyboard_arrow_up_rounded,
                         size: 18, color: pinAccent)),
                 GestureDetector(
@@ -975,8 +1041,6 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
       ]),
     );
   }
-
-  // ── Reply preview bar ─────────────────────────────────────────────────────
 
   Widget buildReplyPreview() {
     final r = replyingTo!;
@@ -1004,7 +1068,7 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
                 Text(r.isPoll ? '📊 Poll' : r.text,
                     maxLines:  1,
                     overflow:  TextOverflow.ellipsis,
-                    style:     const TextStyle(
+                    style: const TextStyle(
                         fontSize: 12, color: Colors.black54)),
               ]),
         ),
@@ -1014,8 +1078,6 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
       ]),
     );
   }
-
-  // ── Search bar ────────────────────────────────────────────────────────────
 
   Widget buildSearchBar() {
     return Container(
@@ -1034,13 +1096,13 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
               onChanged:  (v) => setState(() => searchQuery = v),
               style: const TextStyle(fontSize: 14, color: Colors.black87),
               decoration: const InputDecoration(
-                hintText:     'Search in chat…',
-                hintStyle:    TextStyle(color: Colors.grey, fontSize: 14),
-                prefixIcon:   Icon(Icons.search_rounded,
+                hintText:  'Search in chat…',
+                hintStyle: TextStyle(color: Colors.grey, fontSize: 14),
+                prefixIcon: Icon(Icons.search_rounded,
                     color: Colors.grey, size: 18),
-                border:       InputBorder.none,
-                contentPadding:
-                EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                border:         InputBorder.none,
+                contentPadding: EdgeInsets.symmetric(
+                    horizontal: 12, vertical: 10),
                 isDense: true,
               ),
             ),
@@ -1049,8 +1111,8 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
         const SizedBox(width: 8),
         GestureDetector(
           onTap: () => setState(() {
-            showChatSearch  = false;
-            searchQuery = '';
+            showChatSearch = false;
+            searchQuery    = '';
             searchController.clear();
           }),
           child: const Text('Cancel',
@@ -1062,8 +1124,6 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
       ]),
     );
   }
-
-  // ── Mention suggestions ───────────────────────────────────────────────────
 
   Widget buildMentionSuggestions() {
     return Container(
@@ -1097,27 +1157,26 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
     );
   }
 
-  // ── Input bar ─────────────────────────────────────────────────────────────
-  // Admin sees a poll button on the left; resident does not.
-  // Subclasses pass showPollButton = true/false.
-
-  Widget buildInputBar({required bool showPollButton, VoidCallback? onPollTap}) {
+  Widget buildInputBar(
+      {required bool showPollButton, VoidCallback? onPollTap}) {
     return Container(
       color:   Colors.white,
       padding: const EdgeInsets.fromLTRB(12, 8, 8, 12),
       child: SafeArea(
         top: false,
-        child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+        child:
+        Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
           if (showPollButton) ...[
             GestureDetector(
               onTap: onPollTap,
               child: Container(
-                  width: 40, height: 40,
+                  width:  40,
+                  height: 40,
                   margin: const EdgeInsets.only(right: 6),
                   decoration: BoxDecoration(
-                      color:  primary.withOpacity(0.08),
+                      color:        primary.withOpacity(0.08),
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
+                      border:       Border.all(
                           color: primary.withOpacity(0.3), width: 1)),
                   child: const Icon(Icons.poll_outlined,
                       color: primary, size: 20)),
@@ -1133,18 +1192,19 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
                 const BoxConstraints(minHeight: 40, maxHeight: 120),
                 child: Scrollbar(
                   child: TextField(
-                    controller:          controller,
-                    focusNode:           inputFocusNode,
-                    textCapitalization:  TextCapitalization.sentences,
+                    controller:         controller,
+                    focusNode:          inputFocusNode,
+                    textCapitalization: TextCapitalization.sentences,
                     style: const TextStyle(
                         fontSize: 15, color: Colors.black87, height: 1.4),
-                    maxLines:          null,
-                    minLines:          1,
-                    keyboardType:      TextInputType.multiline,
-                    textInputAction:   TextInputAction.newline,
+                    maxLines:        null,
+                    minLines:        1,
+                    keyboardType:    TextInputType.multiline,
+                    textInputAction: TextInputAction.newline,
                     decoration: const InputDecoration(
-                      hintText:       'Type a message…',
-                      hintStyle:      TextStyle(color: Colors.grey, fontSize: 15),
+                      hintText:  'Type a message…',
+                      hintStyle: TextStyle(
+                          color: Colors.grey, fontSize: 15),
                       border:         InputBorder.none,
                       contentPadding: EdgeInsets.symmetric(
                           horizontal: 16, vertical: 10),
@@ -1159,7 +1219,8 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
           GestureDetector(
             onTap: () => sendMessage(),
             child: Container(
-                width:  42, height: 42,
+                width:  42,
+                height: 42,
                 decoration: const BoxDecoration(
                     color: primary, shape: BoxShape.circle),
                 child: const Icon(Icons.send_rounded,
@@ -1170,15 +1231,14 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
     );
   }
 
-  // ── Message list ──────────────────────────────────────────────────────────
-
   Widget buildMessageList() {
     final msgs = chatMessages;
     if (msgs.isEmpty) {
       return Center(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           if (showChatSearch && searchQuery.isNotEmpty) ...[
-            const Icon(Icons.search_off_rounded, size: 48, color: Colors.black26),
+            const Icon(Icons.search_off_rounded,
+                size: 48, color: Colors.black26),
             const SizedBox(height: 12),
             Text('No messages matching\n"$searchQuery"',
                 textAlign: TextAlign.center,
@@ -1198,9 +1258,11 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
       itemCount:  msgs.length,
       itemBuilder: (context, index) {
         final msg        = msgs[index];
-        final showSender = !msg.isMe && (index == 0 || msgs[index - 1].isMe);
+        final showSender = !msg.isMe &&
+            (index == 0 || msgs[index - 1].isMe);
         if (msg.isEventInvite) {
-          return buildSwipeable(msg, buildEventInviteBubble(msg, showSender));
+          return buildSwipeable(
+              msg, buildEventInviteBubble(msg, showSender));
         }
         if (msg.isPoll) {
           final poll = pollCache[msg.id];
@@ -1212,8 +1274,6 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
     );
   }
 
-  // ── Swipeable wrapper ─────────────────────────────────────────────────────
-
   Widget buildSwipeable(Message msg, Widget child) {
     return SwipeToReply(
         key:     ValueKey('swipe_${msg.id}'),
@@ -1222,33 +1282,37 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
         child:   child);
   }
 
-  // ── Loading poll placeholder ──────────────────────────────────────────────
-
   Widget buildLoadingPollBubble(Message msg) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(
-        mainAxisAlignment:
-        msg.isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment: msg.isMe
+            ? MainAxisAlignment.end
+            : MainAxisAlignment.start,
         children: [
           Container(
             constraints: BoxConstraints(
                 maxWidth: MediaQuery.of(context).size.width * 0.75),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            padding: const EdgeInsets.symmetric(
+                horizontal: 16, vertical: 14),
             decoration: BoxDecoration(
                 color:        msg.isMe ? bubbleMe : bubbleOther,
                 borderRadius: BorderRadius.circular(18)),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
               SizedBox(
-                  width:  16, height: 16,
+                  width:  16,
+                  height: 16,
                   child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      color:
-                      msg.isMe ? Colors.white54 : Colors.black38)),
+                      color: msg.isMe
+                          ? Colors.white54
+                          : Colors.black38)),
               const SizedBox(width: 10),
               Text('Loading poll…',
                   style: TextStyle(
-                      color:    msg.isMe ? Colors.white70 : Colors.black54,
+                      color: msg.isMe
+                          ? Colors.white70
+                          : Colors.black54,
                       fontSize: 14)),
             ]),
           ),
@@ -1256,9 +1320,6 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
       ),
     );
   }
-
-  // ── Poll bubble ───────────────────────────────────────────────────────────
-  // showResultsButton: true for admin, false for resident
 
   Widget buildPollBubble(Message msg, Poll poll,
       {bool showResultsButton = false, VoidCallback? onViewResults}) {
@@ -1269,8 +1330,9 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(
-        mainAxisAlignment:
-        msg.isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment: msg.isMe
+            ? MainAxisAlignment.end
+            : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           if (!msg.isMe) ...[
@@ -1279,12 +1341,15 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
           ],
           Flexible(
             child: Column(
-              crossAxisAlignment:
-              msg.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+              crossAxisAlignment: msg.isMe
+                  ? CrossAxisAlignment.end
+                  : CrossAxisAlignment.start,
               children: [
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 3, left: 4),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  padding:
+                  const EdgeInsets.only(bottom: 3, left: 4),
+                  child:
+                  Row(mainAxisSize: MainAxisSize.min, children: [
                     if (!msg.isMe)
                       Text(msg.senderName,
                           style: const TextStyle(
@@ -1300,21 +1365,24 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
                               borderRadius: BorderRadius.circular(6)),
                           child: const Text('Admin',
                               style: TextStyle(
-                                  color:      Colors.white,
-                                  fontSize:   9,
-                                  fontWeight: FontWeight.w700,
+                                  color:        Colors.white,
+                                  fontSize:     9,
+                                  fontWeight:   FontWeight.w700,
                                   letterSpacing: 0.5))),
                   ]),
                 ),
                 Container(
                   constraints: BoxConstraints(
-                      maxWidth: MediaQuery.of(context).size.width * 0.78,
-                      minWidth: MediaQuery.of(context).size.width * 0.55),
+                      maxWidth:
+                      MediaQuery.of(context).size.width * 0.78,
+                      minWidth:
+                      MediaQuery.of(context).size.width * 0.55),
                   decoration: BoxDecoration(
-                      color: Colors.white,
+                      color:        Colors.white,
                       borderRadius: BorderRadius.circular(18),
-                      border: Border.all(
-                          color: primary.withOpacity(0.25), width: 1.2),
+                      border:       Border.all(
+                          color: primary.withOpacity(0.25),
+                          width: 1.2),
                       boxShadow: [
                         BoxShadow(
                             color:      Colors.black.withOpacity(0.06),
@@ -1324,10 +1392,9 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
                   child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Poll header
                         Container(
-                          padding:
-                          const EdgeInsets.fromLTRB(14, 12, 14, 10),
+                          padding: const EdgeInsets.fromLTRB(
+                              14, 12, 14, 10),
                           decoration: BoxDecoration(
                               color: primary.withOpacity(0.07),
                               borderRadius: const BorderRadius.only(
@@ -1339,9 +1406,9 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
                             const SizedBox(width: 6),
                             const Text('Poll',
                                 style: TextStyle(
-                                    color:      primary,
-                                    fontSize:   11,
-                                    fontWeight: FontWeight.w700,
+                                    color:        primary,
+                                    fontSize:     11,
+                                    fontWeight:   FontWeight.w700,
                                     letterSpacing: 0.3)),
                             const Spacer(),
                             Text(
@@ -1351,20 +1418,18 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
                                     fontSize: 11)),
                           ]),
                         ),
-                        // Question
                         Padding(
-                            padding:
-                            const EdgeInsets.fromLTRB(14, 12, 14, 10),
+                            padding: const EdgeInsets.fromLTRB(
+                                14, 12, 14, 10),
                             child: Text(poll.question,
                                 style: const TextStyle(
                                     fontSize:   14,
                                     fontWeight: FontWeight.w700,
                                     color:      Colors.black87,
                                     height:     1.35))),
-                        // Options
                         Padding(
-                          padding:
-                          const EdgeInsets.fromLTRB(10, 0, 10, 10),
+                          padding: const EdgeInsets.fromLTRB(
+                              10, 0, 10, 10),
                           child: Column(
                             children: poll.options.map((opt) {
                               final count   = voteCounts[opt.id] ?? 0;
@@ -1375,7 +1440,8 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
                               return GestureDetector(
                                 onTap: () => toggleVote(poll, opt),
                                 child: Container(
-                                  margin: const EdgeInsets.only(bottom: 8),
+                                  margin: const EdgeInsets.only(
+                                      bottom: 8),
                                   decoration: BoxDecoration(
                                       borderRadius:
                                       BorderRadius.circular(10),
@@ -1394,32 +1460,38 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
                                           child: Container(
                                               height: 42,
                                               color: isVoted
-                                                  ? primary.withOpacity(0.13)
+                                                  ? primary
+                                                  .withOpacity(0.13)
                                                   : Colors.black
-                                                  .withOpacity(0.04))),
+                                                  .withOpacity(
+                                                  0.04))),
                                       SizedBox(
                                         height: 42,
                                         child: Padding(
                                           padding: const EdgeInsets
-                                              .symmetric(horizontal: 12),
+                                              .symmetric(
+                                              horizontal: 12),
                                           child: Row(children: [
                                             if (isVoted)
                                               const Padding(
-                                                  padding: EdgeInsets.only(
+                                                  padding:
+                                                  EdgeInsets.only(
                                                       right: 6),
                                                   child: Icon(
                                                       Icons
                                                           .check_circle_rounded,
-                                                      color:  primary,
-                                                      size:   16)),
+                                                      color: primary,
+                                                      size:  16)),
                                             Expanded(
                                                 child: Text(
                                                     opt.optionText,
                                                     style: TextStyle(
                                                         fontSize: 13,
                                                         fontWeight: isVoted
-                                                            ? FontWeight.w700
-                                                            : FontWeight.w500,
+                                                            ? FontWeight
+                                                            .w700
+                                                            : FontWeight
+                                                            .w500,
                                                         color: isVoted
                                                             ? primary
                                                             : Colors
@@ -1433,7 +1505,8 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
                                                     fontWeight: FontWeight.w600,
                                                     color: isVoted
                                                         ? primary
-                                                        : Colors.black45)),
+                                                        : Colors
+                                                        .black45)),
                                           ]),
                                         ),
                                       ),
@@ -1444,35 +1517,37 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
                             }).toList(),
                           ),
                         ),
-                        // Timestamp
                         Padding(
-                            padding:
-                            const EdgeInsets.fromLTRB(14, 0, 14, 10),
+                            padding: const EdgeInsets.fromLTRB(
+                                14, 0, 14, 10),
                             child: Row(
-                                mainAxisAlignment: MainAxisAlignment.end,
+                                mainAxisAlignment:
+                                MainAxisAlignment.end,
                                 children: [
-                                  Text(formatTimestamp(msg.timestamp),
+                                  Text(
+                                      formatTimestamp(msg.timestamp),
                                       style: const TextStyle(
                                           fontSize: 10,
                                           color:    Colors.black38))
                                 ])),
                       ]),
                 ),
-                // "View Results" shown only for admin
                 if (showResultsButton)
                   Padding(
-                    padding: const EdgeInsets.only(top: 6, right: 4),
+                    padding:
+                    const EdgeInsets.only(top: 6, right: 4),
                     child: GestureDetector(
                       onTap: onViewResults,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
-                            color:        primary.withOpacity(0.08),
+                            color: primary.withOpacity(0.08),
                             borderRadius: BorderRadius.circular(20),
-                            border:       Border.all(
+                            border: Border.all(
                                 color: primary.withOpacity(0.3))),
-                        child: const Row(mainAxisSize: MainAxisSize.min,
+                        child: const Row(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
                               Icon(Icons.bar_chart_rounded,
                                   size: 13, color: primary),
@@ -1495,8 +1570,6 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
     );
   }
 
-  // ── Event invite bubble ───────────────────────────────────────────────────
-
   Widget buildEventInviteBubble(Message msg, bool showSender) {
     Map<String, dynamic>? data;
     try {
@@ -1512,8 +1585,9 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(
-        mainAxisAlignment:
-        msg.isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment: msg.isMe
+            ? MainAxisAlignment.end
+            : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           if (!msg.isMe) ...[
@@ -1522,13 +1596,16 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
           ],
           Flexible(
             child: Column(
-              crossAxisAlignment:
-              msg.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+              crossAxisAlignment: msg.isMe
+                  ? CrossAxisAlignment.end
+                  : CrossAxisAlignment.start,
               children: [
                 if (showSender || msg.isMe)
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 4, left: 4),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    padding:
+                    const EdgeInsets.only(bottom: 4, left: 4),
+                    child:
+                    Row(mainAxisSize: MainAxisSize.min, children: [
                       if (!msg.isMe)
                         Text(msg.senderName,
                             style: const TextStyle(
@@ -1544,9 +1621,9 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
                                 borderRadius: BorderRadius.circular(6)),
                             child: const Text('Admin',
                                 style: TextStyle(
-                                    color:       Colors.white,
-                                    fontSize:    9,
-                                    fontWeight:  FontWeight.w700,
+                                    color:        Colors.white,
+                                    fontSize:     9,
+                                    fontWeight:   FontWeight.w700,
                                     letterSpacing: 0.5))),
                       ],
                     ]),
@@ -1557,7 +1634,8 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
                       color:        Colors.white,
                       borderRadius: BorderRadius.circular(18),
                       border:       Border.all(
-                          color: cardColor.withOpacity(0.3), width: 1.5),
+                          color: cardColor.withOpacity(0.3),
+                          width: 1.5),
                       boxShadow: [
                         BoxShadow(
                             color:      Colors.black.withOpacity(0.07),
@@ -1568,16 +1646,18 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Container(
-                          padding:
-                          const EdgeInsets.fromLTRB(14, 10, 14, 10),
+                          padding: const EdgeInsets.fromLTRB(
+                              14, 10, 14, 10),
                           decoration: BoxDecoration(
                               color: cardColor.withOpacity(0.08),
                               borderRadius: const BorderRadius.only(
                                   topLeft:  Radius.circular(17),
                                   topRight: Radius.circular(17))),
                           child: Row(children: [
-                            const Icon(Icons.calendar_month_rounded,
-                                size: 14, color: cardColor),
+                            const Icon(
+                                Icons.calendar_month_rounded,
+                                size:  14,
+                                color: cardColor),
                             const SizedBox(width: 6),
                             const Text('EVENT INVITATION',
                                 style: TextStyle(
@@ -1591,13 +1671,16 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 7, vertical: 2),
                                 decoration: BoxDecoration(
-                                    color:        Colors.purple.withOpacity(0.12),
-                                    borderRadius: BorderRadius.circular(10)),
+                                    color: Colors.purple
+                                        .withOpacity(0.12),
+                                    borderRadius:
+                                    BorderRadius.circular(10)),
                                 child: const Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       Icon(Icons.lock_outline,
-                                          size: 9, color: Colors.purple),
+                                          size:  9,
+                                          color: Colors.purple),
                                       SizedBox(width: 3),
                                       Text('Private',
                                           style: TextStyle(
@@ -1609,8 +1692,8 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
                           ]),
                         ),
                         Padding(
-                            padding:
-                            const EdgeInsets.fromLTRB(14, 12, 14, 8),
+                            padding: const EdgeInsets.fromLTRB(
+                                14, 12, 14, 8),
                             child: Text(
                                 data['title'] as String? ?? 'Event',
                                 style: const TextStyle(
@@ -1619,26 +1702,30 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
                                     color:      Color(0xFF2B2B2B),
                                     height:     1.2))),
                         Padding(
-                          padding:
-                          const EdgeInsets.fromLTRB(14, 0, 14, 12),
+                          padding: const EdgeInsets.fromLTRB(
+                              14, 0, 14, 12),
                           child: Column(children: [
                             _inviteRow(Icons.location_on_outlined,
                                 data['location'] as String? ?? ''),
                             const SizedBox(height: 5),
-                            _inviteRow(Icons.calendar_today_outlined,
+                            _inviteRow(
+                                Icons.calendar_today_outlined,
                                 data['date'] as String? ?? ''),
                             const SizedBox(height: 5),
-                            _inviteRow(Icons.access_time_outlined,
+                            _inviteRow(
+                                Icons.access_time_outlined,
                                 '${data['start_time'] ?? ''} – ${data['end_time'] ?? ''}'),
                             const SizedBox(height: 5),
                             _inviteRow(Icons.people_outline,
                                 'Max ${data['max_capacity'] ?? '?'} people'),
                           ]),
                         ),
-                        Divider(height: 1, color: cardColor.withOpacity(0.15)),
+                        Divider(
+                            height: 1,
+                            color:  cardColor.withOpacity(0.15)),
                         Padding(
-                          padding:
-                          const EdgeInsets.fromLTRB(12, 10, 12, 12),
+                          padding: const EdgeInsets.fromLTRB(
+                              12, 10, 12, 12),
                           child: SizedBox(
                             width: double.infinity,
                             child: ElevatedButton.icon(
@@ -1651,8 +1738,8 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: pinAccent,
                                 foregroundColor: Colors.white,
-                                padding:
-                                const EdgeInsets.symmetric(vertical: 10),
+                                padding: const EdgeInsets.symmetric(
+                                    vertical: 10),
                                 shape: RoundedRectangleBorder(
                                     borderRadius:
                                     BorderRadius.circular(12)),
@@ -1662,8 +1749,8 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
                           ),
                         ),
                         Padding(
-                            padding:
-                            const EdgeInsets.fromLTRB(14, 0, 14, 8),
+                            padding: const EdgeInsets.fromLTRB(
+                                14, 0, 14, 8),
                             child: Align(
                                 alignment: Alignment.centerRight,
                                 child: Text(
@@ -1688,26 +1775,28 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
       const SizedBox(width: 7),
       Expanded(
           child: Text(text,
-              style: const TextStyle(fontSize: 12, color: Colors.black54))),
+              style: const TextStyle(
+                  fontSize: 12, color: Colors.black54))),
     ]);
   }
-
-  // ── Message bubble ────────────────────────────────────────────────────────
 
   Widget buildMessageBubble(Message msg, bool showSender) {
     final showAdminBadge = msg.isMe && isAdmin;
     final bubbleColor    = msg.isMe ? bubbleMe : bubbleOther;
-    final timeColor      = msg.isMe ? Colors.white.withOpacity(0.6) : Colors.black38;
+    final timeColor      =
+    msg.isMe ? Colors.white.withOpacity(0.6) : Colors.black38;
     final textColor      = msg.isMe ? Colors.white : Colors.black87;
 
     final isMentionedMe = !msg.isMe &&
-        msg.mentions(myDisplayName.isNotEmpty ? myDisplayName : currentUser);
+        msg.mentions(
+            myDisplayName.isNotEmpty ? myDisplayName : currentUser);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(
-        mainAxisAlignment:
-        msg.isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment: msg.isMe
+            ? MainAxisAlignment.end
+            : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           if (!msg.isMe) ...[
@@ -1716,13 +1805,16 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
           ],
           Flexible(
             child: Column(
-              crossAxisAlignment:
-              msg.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+              crossAxisAlignment: msg.isMe
+                  ? CrossAxisAlignment.end
+                  : CrossAxisAlignment.start,
               children: [
                 if (showSender || showAdminBadge)
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 3, left: 4),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    padding:
+                    const EdgeInsets.only(bottom: 3, left: 4),
+                    child:
+                    Row(mainAxisSize: MainAxisSize.min, children: [
                       if (showSender)
                         Text(msg.senderName,
                             style: const TextStyle(
@@ -1739,9 +1831,9 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
                                 borderRadius: BorderRadius.circular(6)),
                             child: const Text('Admin',
                                 style: TextStyle(
-                                    color:       Colors.white,
-                                    fontSize:    9,
-                                    fontWeight:  FontWeight.w700,
+                                    color:        Colors.white,
+                                    fontSize:     9,
+                                    fontWeight:   FontWeight.w700,
                                     letterSpacing: 0.5))),
                       ],
                     ]),
@@ -1754,7 +1846,8 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
                     decoration: BoxDecoration(
                         color:        primary.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(6)),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    child:
+                    Row(mainAxisSize: MainAxisSize.min, children: [
                       const Icon(Icons.alternate_email_rounded,
                           size: 11, color: primary),
                       const SizedBox(width: 4),
@@ -1767,7 +1860,8 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
                   ),
                 Container(
                   constraints: BoxConstraints(
-                      maxWidth: MediaQuery.of(context).size.width * 0.72),
+                      maxWidth:
+                      MediaQuery.of(context).size.width * 0.72),
                   decoration: BoxDecoration(
                     color: isMentionedMe
                         ? primary.withOpacity(0.06)
@@ -1779,7 +1873,8 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
                         bottomRight: Radius.circular(msg.isMe ? 4 : 18)),
                     border: isMentionedMe
                         ? Border.all(
-                        color: primary.withOpacity(0.35), width: 1.5)
+                        color: primary.withOpacity(0.35),
+                        width: 1.5)
                         : null,
                     boxShadow: [
                       BoxShadow(
@@ -1794,8 +1889,10 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
                       children: [
                         if (msg.replyToText != null)
                           Container(
-                            margin:  const EdgeInsets.fromLTRB(8, 8, 8, 0),
-                            padding: const EdgeInsets.fromLTRB(10, 7, 10, 7),
+                            margin:  const EdgeInsets.fromLTRB(
+                                8, 8, 8, 0),
+                            padding: const EdgeInsets.fromLTRB(
+                                10, 7, 10, 7),
                             decoration: BoxDecoration(
                               color: msg.isMe
                                   ? Colors.white.withOpacity(0.15)
@@ -1804,13 +1901,15 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
                               border: Border(
                                   left: BorderSide(
                                       color: msg.isMe
-                                          ? Colors.white.withOpacity(0.7)
+                                          ? Colors.white
+                                          .withOpacity(0.7)
                                           : primary,
                                       width: 3)),
                             ),
                             child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize:       MainAxisSize.min,
+                                crossAxisAlignment:
+                                CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Text(
                                     msg.replyToSender ==
@@ -1833,13 +1932,15 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
                                       style: TextStyle(
                                           fontSize: 12,
                                           color: msg.isMe
-                                              ? Colors.white.withOpacity(0.75)
+                                              ? Colors.white
+                                              .withOpacity(0.75)
                                               : Colors.black54,
                                           height: 1.3)),
                                 ]),
                           ),
                         Padding(
-                          padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                          padding: const EdgeInsets.fromLTRB(
+                              12, 8, 12, 8),
                           child: _buildInlineTextWithTime(
                               msg:       msg,
                               textColor: isMentionedMe
@@ -1875,7 +1976,8 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
       if (match.start > last) {
         spans.add(TextSpan(
             text:  text.substring(last, match.start),
-            style: TextStyle(color: textColor, fontSize: 15, height: 1.4)));
+            style: TextStyle(
+                color: textColor, fontSize: 15, height: 1.4)));
       }
       spans.add(TextSpan(
           text:  match.group(0),
@@ -1889,7 +1991,8 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
     if (last < text.length) {
       spans.add(TextSpan(
           text:  text.substring(last),
-          style: TextStyle(color: textColor, fontSize: 15, height: 1.4)));
+          style: TextStyle(
+              color: textColor, fontSize: 15, height: 1.4)));
     }
     spans.add(const WidgetSpan(child: SizedBox(width: 6)));
     spans.add(WidgetSpan(
@@ -1898,17 +2001,16 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
             padding: const EdgeInsets.only(bottom: 1),
             child: Text(timestamp,
                 style: TextStyle(
-                    fontSize: 10, color: timeColor, height: 1.2)))));
+                    fontSize: 10,
+                    color:    timeColor,
+                    height:   1.2)))));
 
     return RichText(text: TextSpan(children: spans));
   }
 
-  // ── Shared scaffold body layout ───────────────────────────────────────────
-  // Subclasses call this inside their build() after passing the right widgets.
-
   Widget buildScaffoldBody({
-    required bool       showPollButton,
-    VoidCallback?       onPollTap,
+    required bool     showPollButton,
+    VoidCallback?     onPollTap,
   }) {
     return Column(children: [
       buildPinnedStrip(),
@@ -1916,7 +2018,8 @@ mixin BaseChatScreenState<T extends StatefulWidget> on State<T> {
       Expanded(child: buildMessageList()),
       if (showMentions) buildMentionSuggestions(),
       if (replyingTo != null) buildReplyPreview(),
-      buildInputBar(showPollButton: showPollButton, onPollTap: onPollTap),
+      buildInputBar(
+          showPollButton: showPollButton, onPollTap: onPollTap),
     ]);
   }
 }

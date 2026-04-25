@@ -7,6 +7,7 @@ import 'resident_event_history_screen.dart';
 import 'my_joined_events_screen.dart';
 import 'event_details_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // 1. Added Import
 
 class EventCalendarScreen extends StatefulWidget {
   final String? highlightEventId;
@@ -17,14 +18,15 @@ class EventCalendarScreen extends StatefulWidget {
 }
 
 class _EventCalendarScreenState extends State<EventCalendarScreen> {
-  final Color cork = const Color(0xFFAD8762);
-  final Color apricot = const Color(0xFFFFB38A);
-  final Color creamBg = const Color(0xFFFFF8F0);
+  // ── THEME COLORS ──────────────────────────────
+  final Color bgColor = const Color(0xFFF5F1ED);
+  final Color primaryColor = const Color(0xFF9A4B3C);
+  final Color accentColor = const Color(0xFFFC9D7E);
+  final Color softYellow = const Color(0xFFF0E6B8);
+  final Color textDark = const Color(0xFF2B2B2B);
 
-  // Three separate dot colors
-  static const Color _createdEventDot = Color(0xFF6C63FF); // indigo — events YOU created
-  static const Color _joinedEventDot  = Color(0xFF22C55E); // green  — events you JOINED
-  // apricot (above) is reused for community events (public, not yours)
+  static const Color _createdEventDot = Color(0xFF6C63FF);
+  static const Color _joinedEventDot  = Color(0xFF22C55E);
 
   CalendarFormat _calendarFormat = CalendarFormat.month;
   DateTime _focusedDay = DateTime.now();
@@ -38,11 +40,7 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
   bool _isLoadingEvents = false;
 
   List<CommunityEvent> _allEvents = [];
-
-  /// Events the resident CREATED (approved)
   List<CommunityEvent> _myCreatedEvents = [];
-
-  /// Events the resident JOINED (approved, not created by them)
   List<CommunityEvent> _myJoinedEvents = [];
 
   final EventService _eventService = EventService();
@@ -54,7 +52,77 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
     _initializeUserSession();
   }
 
-  // ── Session ──────────────────────────────────
+  // ── NEW NOTIFICATION LOGIC METHODS ──────────────────────────────
+
+  Future<bool> _hasNewRequestUpdate() async {
+    final prefs = await SharedPreferences.getInstance();
+    final List<String> seenIds = prefs.getStringList('seen_request_ids') ?? [];
+    try {
+      final supabase = Supabase.instance.client;
+      final response = await supabase
+          .from('requests')
+          .select('request_id, status')
+          .eq('user_id', currentUserId)
+          .eq('type', 'booking')
+          .neq('status', 'pending');
+
+      for (var req in response) {
+        if (!seenIds.contains(req['request_id'].toString())) return true;
+      }
+    } catch (e) {
+      debugPrint("Error checking request dots: $e");
+    }
+    return false;
+  }
+
+  Future<bool> _hasNewJoinedNotification() async {
+    final prefs = await SharedPreferences.getInstance();
+    final List<String> seenIds = prefs.getStringList('seen_joined_event_ids') ?? [];
+    try {
+      final supabase = Supabase.instance.client;
+      final response = await supabase
+          .from('event_participants')
+          .select('event_id')
+          .eq('user_id', currentUserId);
+
+      for (var entry in response) {
+        if (!seenIds.contains(entry['event_id'].toString())) return true;
+      }
+    } catch (e) {
+      debugPrint("Error checking joined dots: $e");
+    }
+    return false;
+  }
+
+  Future<void> _markItemsAsSeen(String key, List<String> ids) async {
+    final prefs = await SharedPreferences.getInstance();
+    List<String> seenIds = prefs.getStringList(key) ?? [];
+    seenIds.addAll(ids);
+    await prefs.setStringList(key, seenIds.toSet().toList());
+    if (mounted) setState(() {});
+  }
+
+  Widget _buildBadgeIconButton({required IconData icon, required bool showDot, required VoidCallback onPressed, String tooltip = ''}) {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        IconButton(icon: Icon(icon, color: Colors.white), onPressed: onPressed, tooltip: tooltip),
+        if (showDot)
+          Positioned(
+            right: 12, top: 12,
+            child: Container(
+              width: 10, height: 10,
+              decoration: BoxDecoration(
+                color: Colors.redAccent, shape: BoxShape.circle,
+                border: Border.all(color: primaryColor, width: 1.5),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  // ── REMAINING FUNCTIONS (UNCHANGED) ──────────────────────────────
 
   Future<void> _initializeUserSession() async {
     final supabase = Supabase.instance.client;
@@ -97,9 +165,6 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
     _refreshEvents();
   }
 
-  // ── Data ─────────────────────────────────────
-
-  /// Refreshes all events and updates state so the calendar dots render correctly.
   void _refreshEvents() {
     if (!mounted) return;
     setState(() => _isLoadingEvents = true);
@@ -121,13 +186,9 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
     }
   }
 
-  /// Separately loads created vs joined so they get distinct dots on the calendar.
   Future<void> _loadMyEvents() async {
     try {
-      // Events the resident created (approved)
       final created = await _eventService.fetchMyApprovedEvents(currentUserId);
-
-      // Events the resident joined (approved), excluding ones they also created
       final joined = await _eventService.fetchJoinedEvents(currentUserId);
       final createdIds = created.map((e) => e.id).toSet();
       final joinedApproved = joined
@@ -157,8 +218,6 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
     } catch (_) {}
   }
 
-  // ── Helpers ───────────────────────────────────
-
   List<CommunityEvent> _getEventsForDay(DateTime day) =>
       _allEvents.where((event) => isSameDay(event.eventDate, day)).toList();
 
@@ -168,33 +227,27 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
   bool _hasJoinedEventOnDay(DateTime day) =>
       _myJoinedEvents.any((e) => isSameDay(e.eventDate, day));
 
-  // ── Build ────────────────────────────────────
-
   @override
   Widget build(BuildContext context) {
     if (_isInitializing) {
       return Scaffold(
-        backgroundColor: creamBg,
-        body: Center(child: CircularProgressIndicator(color: apricot)),
+        backgroundColor: bgColor,
+        body: Center(child: CircularProgressIndicator(color: accentColor)),
       );
     }
 
     return Scaffold(
-      backgroundColor: creamBg,
+      backgroundColor: bgColor,
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
-          'Community Calendar',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-        ),
-        backgroundColor: cork,
+        title: const Text('Community Calendar', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        backgroundColor: primaryColor,
         centerTitle: true,
         elevation: 0,
       ),
-
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
       floatingActionButton: FloatingActionButton(
         onPressed: () {
@@ -210,59 +263,81 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
             ),
           ).then((_) => _refreshEvents());
         },
-        backgroundColor: apricot,
+        backgroundColor: accentColor,
         shape: const CircleBorder(),
         elevation: 4,
         child: const Icon(Icons.add, color: Colors.white, size: 30),
       ),
-
       bottomNavigationBar: BottomAppBar(
         shape: const CircularNotchedRectangle(),
         notchMargin: 8.0,
-        color: cork,
+        color: primaryColor,
         child: SizedBox(
           height: 60,
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              IconButton(
-                icon: const Icon(Icons.history, color: Colors.white),
-                tooltip: 'Event History',
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => ResidentEventHistoryScreen(
-                      currentUserId: currentUserId,
-                      currentUserName: currentName,
-                    ),
-                  ),
-                ).then((_) => _refreshEvents()),
+              // --- HISTORY ICON WITH RED DOT ---
+              StreamBuilder(
+                stream: Supabase.instance.client.from('requests').stream(primaryKey: ['request_id']).eq('user_id', currentUserId),
+                builder: (context, snapshot) {
+                  return FutureBuilder<bool>(
+                    future: _hasNewRequestUpdate(),
+                    builder: (context, dotSnapshot) {
+                      return _buildBadgeIconButton(
+                        icon: Icons.history,
+                        tooltip: 'Event History',
+                        showDot: dotSnapshot.data ?? false,
+                        onPressed: () async {
+                          if (snapshot.hasData) {
+                            final ids = snapshot.data!.map((e) => e['request_id'].toString()).toList();
+                            await _markItemsAsSeen('seen_request_ids', ids);
+                          }
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => ResidentEventHistoryScreen(currentUserId: currentUserId, currentUserName: currentName)),
+                          ).then((_) => _refreshEvents());
+                        },
+                      );
+                    },
+                  );
+                },
               ),
               const SizedBox(width: 40),
-              IconButton(
-                icon: const Icon(
-                    Icons.assignment_turned_in_rounded, color: Colors.white),
-                tooltip: 'My Joined Events',
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => MyJoinedEventsScreen(
-                      currentUserId: currentUserId,
-                      currentRole: currentRole,
-                    ),
-                  ),
-                ).then((_) => _refreshEvents()),
+              // --- JOINED ICON WITH RED DOT ---
+              StreamBuilder(
+                stream: Supabase.instance.client.from('event_participants').stream(primaryKey: ['event_id']).eq('user_id', currentUserId),
+                builder: (context, snapshot) {
+                  return FutureBuilder<bool>(
+                    future: _hasNewJoinedNotification(),
+                    builder: (context, dotSnapshot) {
+                      return _buildBadgeIconButton(
+                        icon: Icons.assignment_turned_in_rounded,
+                        tooltip: 'My Joined Events',
+                        showDot: dotSnapshot.data ?? false,
+                        onPressed: () async {
+                          if (snapshot.hasData) {
+                            final ids = snapshot.data!.map((e) => e['event_id'].toString()).toList();
+                            await _markItemsAsSeen('seen_joined_event_ids', ids);
+                          }
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => MyJoinedEventsScreen(currentUserId: currentUserId, currentRole: currentRole)),
+                          ).then((_) => _refreshEvents());
+                        },
+                      );
+                    },
+                  );
+                },
               ),
             ],
           ),
         ),
       ),
-
       body: SafeArea(
         child: SingleChildScrollView(
           child: Column(
             children: [
-              // ── Calendar ──────────────────────
               TableCalendar(
                 firstDay: DateTime.utc(2026, 01, 01),
                 lastDay: DateTime.utc(2026, 12, 31),
@@ -270,20 +345,13 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
                 calendarFormat: _calendarFormat,
                 eventLoader: _getEventsForDay,
                 selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
-                availableCalendarFormats: const {
-                  CalendarFormat.month: 'Month'
-                },
+                availableCalendarFormats: const {CalendarFormat.month: 'Month'},
                 headerStyle: HeaderStyle(
                   formatButtonVisible: false,
                   titleCentered: true,
-                  titleTextStyle: TextStyle(
-                      color: cork,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 17),
-                  leftChevronIcon:
-                  Icon(Icons.chevron_left, color: cork),
-                  rightChevronIcon:
-                  Icon(Icons.chevron_right, color: cork),
+                  titleTextStyle: TextStyle(color: primaryColor, fontWeight: FontWeight.bold, fontSize: 17),
+                  leftChevronIcon: Icon(Icons.chevron_left, color: primaryColor),
+                  rightChevronIcon: Icon(Icons.chevron_right, color: primaryColor),
                 ),
                 onDaySelected: (selectedDay, focusedDay) {
                   setState(() {
@@ -291,43 +359,29 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
                     _focusedDay  = focusedDay;
                   });
                 },
-                onPageChanged: (focusedDay) =>
-                    setState(() => _focusedDay = focusedDay),
+                onPageChanged: (focusedDay) => setState(() => _focusedDay = focusedDay),
                 rowHeight: 52,
                 daysOfWeekHeight: 24,
                 daysOfWeekStyle: DaysOfWeekStyle(
-                  weekdayStyle: TextStyle(
-                      color: cork, fontSize: 12, fontWeight: FontWeight.w600),
-                  weekendStyle: TextStyle(
-                      color: cork.withOpacity(0.7),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600),
+                  weekdayStyle: TextStyle(color: primaryColor, fontSize: 12, fontWeight: FontWeight.w600),
+                  weekendStyle: TextStyle(color: primaryColor.withOpacity(0.7), fontSize: 12, fontWeight: FontWeight.w600),
                 ),
                 calendarStyle: CalendarStyle(
                   cellMargin: const EdgeInsets.all(4),
-                  todayDecoration: BoxDecoration(
-                      color: apricot.withOpacity(0.5),
-                      shape: BoxShape.circle),
-                  selectedDecoration:
-                  BoxDecoration(color: cork, shape: BoxShape.circle),
-                  // Suppress default markers — we paint custom ones in markerBuilder
+                  todayDecoration: BoxDecoration(color: softYellow, shape: BoxShape.circle),
+                  todayTextStyle: TextStyle(color: textDark, fontWeight: FontWeight.bold),
+                  selectedDecoration: BoxDecoration(color: primaryColor, shape: BoxShape.circle),
                   markersMaxCount: 0,
                   outsideDaysVisible: false,
                 ),
                 calendarBuilders: CalendarBuilders(
                   markerBuilder: (context, day, events) {
                     final hasCommunityEvents = events.isNotEmpty;
-                    final hasCreated = currentRole == 'resident' &&
-                        _hasCreatedEventOnDay(day);
-                    final hasJoined = currentRole == 'resident' &&
-                        _hasJoinedEventOnDay(day);
+                    final hasCreated = currentRole == 'resident' && _hasCreatedEventOnDay(day);
+                    final hasJoined = currentRole == 'resident' && _hasJoinedEventOnDay(day);
 
-                    if (!hasCommunityEvents && !hasCreated && !hasJoined) {
-                      return const SizedBox.shrink();
-                    }
+                    if (!hasCommunityEvents && !hasCreated && !hasJoined) return const SizedBox.shrink();
 
-                    // Wrap in Align so dots anchor to the bottom of the cell
-                    // without overlapping the day number.
                     return Align(
                       alignment: Alignment.bottomCenter,
                       child: Padding(
@@ -336,56 +390,22 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
                           mainAxisSize: MainAxisSize.min,
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            // Apricot dots — community events
                             if (hasCommunityEvents)
                               ...List.generate(
                                 events.length.clamp(0, 3),
                                     (_) => Container(
-                                  width: 5,
-                                  height: 5,
+                                  width: 5, height: 5,
                                   margin: const EdgeInsets.symmetric(horizontal: 1),
-                                  decoration: BoxDecoration(
-                                      color: apricot, shape: BoxShape.circle),
+                                  decoration: BoxDecoration(color: accentColor, shape: BoxShape.circle),
                                 ),
                               ),
-                            // Indigo dot — events this resident CREATED
                             if (hasCreated) ...[
                               if (hasCommunityEvents) const SizedBox(width: 2),
-                              Container(
-                                width: 7,
-                                height: 7,
-                                decoration: BoxDecoration(
-                                  color: _createdEventDot,
-                                  shape: BoxShape.circle,
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: _createdEventDot.withOpacity(0.5),
-                                      blurRadius: 4,
-                                      spreadRadius: 1,
-                                    )
-                                  ],
-                                ),
-                              ),
+                              _legendDot(_createdEventDot, glow: true, size: 7),
                             ],
-                            // Green dot — events this resident JOINED
                             if (hasJoined) ...[
-                              if (hasCommunityEvents || hasCreated)
-                                const SizedBox(width: 2),
-                              Container(
-                                width: 7,
-                                height: 7,
-                                decoration: BoxDecoration(
-                                  color: _joinedEventDot,
-                                  shape: BoxShape.circle,
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: _joinedEventDot.withOpacity(0.5),
-                                      blurRadius: 4,
-                                      spreadRadius: 1,
-                                    )
-                                  ],
-                                ),
-                              ),
+                              if (hasCommunityEvents || hasCreated) const SizedBox(width: 2),
+                              _legendDot(_joinedEventDot, glow: true, size: 7),
                             ],
                           ],
                         ),
@@ -394,22 +414,18 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
                   },
                 ),
               ),
-
-              // ── Legend (residents only) — uses Wrap to prevent overflow ───
               if (currentRole == 'resident')
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
                   child: Wrap(
-                    spacing: 10,
-                    runSpacing: 4,
+                    spacing: 10, runSpacing: 4,
                     children: [
-                      _legendItem(apricot, 'Community events'),
+                      _legendItem(accentColor, 'Community events'),
                       _legendItem(_createdEventDot, 'Your events', glow: true),
                       _legendItem(_joinedEventDot, 'Joined events', glow: true),
                     ],
                   ),
                 ),
-
               const Divider(height: 16),
               _buildEventList(),
             ],
@@ -419,78 +435,44 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
     );
   }
 
-  // ── Legend helpers ────────────────────────────
+  // ── BUILD HELPERS (UNCHANGED) ──────────────────────────────
 
   Widget _legendItem(Color color, String label, {bool glow = false}) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _legendDot(color, glow: glow),
+        _legendDot(color, glow: glow, size: 8),
         const SizedBox(width: 4),
-        Text(label,
-            style:
-            const TextStyle(fontSize: 11, color: Colors.black45)),
+        Text(label, style: TextStyle(fontSize: 11, color: textDark.withOpacity(0.6))),
       ],
     );
   }
 
-  Widget _legendDot(Color color, {bool glow = false}) {
+  Widget _legendDot(Color color, {bool glow = false, double size = 8}) {
     return Container(
-      width: 8,
-      height: 8,
+      width: size, height: size,
       decoration: BoxDecoration(
-        color: color,
-        shape: BoxShape.circle,
-        boxShadow: glow
-            ? [
-          BoxShadow(
-              color: color.withOpacity(0.5),
-              blurRadius: 4,
-              spreadRadius: 1)
-        ]
-            : null,
+        color: color, shape: BoxShape.circle,
+        boxShadow: glow ? [BoxShadow(color: color.withOpacity(0.5), blurRadius: 4, spreadRadius: 1)] : null,
       ),
     );
   }
-
-  // ── Event list below calendar ─────────────────
 
   Widget _buildEventList() {
     if (_isLoadingEvents) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 40),
-        child: Center(child: CircularProgressIndicator(color: apricot)),
+        child: Center(child: CircularProgressIndicator(color: accentColor)),
       );
     }
-
     final selectedDay = _selectedDay;
-
-    final publicDayEvents = _allEvents
-        .where((e) => isSameDay(e.eventDate, selectedDay))
-        .toList();
-
-    // Private events the resident is involved in (created or joined)
-    // that aren't already in the public list
+    final publicDayEvents = _allEvents.where((e) => isSameDay(e.eventDate, selectedDay)).toList();
     final myPrivateDayEvents = currentRole == 'resident'
-        ? [
-      ..._myCreatedEvents,
-      ..._myJoinedEvents,
-    ]
-        .where((e) =>
-    e.isPrivate &&
-        isSameDay(e.eventDate, selectedDay) &&
-        !publicDayEvents.any((p) => p.id == e.id))
-        .toList()
+        ? [..._myCreatedEvents, ..._myJoinedEvents].where((e) => e.isPrivate && isSameDay(e.eventDate, selectedDay) && !publicDayEvents.any((p) => p.id == e.id)).toList()
         : <CommunityEvent>[];
 
     final dayEvents = [...publicDayEvents, ...myPrivateDayEvents];
-
-    if (dayEvents.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 40),
-        child: _buildEmptyState(),
-      );
-    }
+    if (dayEvents.isEmpty) return Padding(padding: const EdgeInsets.symmetric(vertical: 40), child: _buildEmptyState());
 
     return ListView.builder(
       shrinkWrap: true,
@@ -501,12 +483,9 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
     );
   }
 
-  // ── Event card ────────────────────────────────
-
   Widget _buildEventCard(CommunityEvent event) {
     final int participantCount = event.participants ?? 0;
-    final double occupancy =
-    event.maxCapacity > 0 ? participantCount / event.maxCapacity : 0;
+    final double occupancy = event.maxCapacity > 0 ? participantCount / event.maxCapacity : 0;
     final bool isFull    = participantCount >= event.maxCapacity;
     final bool isMyEvent = event.userId == currentUserId;
     final bool hasJoined = _myJoinedEvents.any((e) => e.id == event.id);
@@ -514,172 +493,66 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
     return GestureDetector(
       onTap: () => Navigator.push(
         context,
-        MaterialPageRoute(
-          builder: (_) => EventDetailsScreen(
-            event: event,
-            currentRole: currentRole,
-            currentUserId: currentUserId,
-            currentUserName: currentName,
-            onRefresh: _refreshEvents,
-          ),
-        ),
+        MaterialPageRoute(builder: (_) => EventDetailsScreen(event: event, currentRole: currentRole, currentUserId: currentUserId, currentUserName: currentName, onRefresh: _refreshEvents)),
       ),
       child: Card(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        shape:
-        RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        color: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         elevation: 4,
         child: Column(
           children: [
-            // Image / placeholder
             Stack(
               children: [
                 ClipRRect(
-                  borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(20)),
-                  child: event.imageUrl != null &&
-                      event.imageUrl!.isNotEmpty
-                      ? Image.network(event.imageUrl!,
-                      height: 150,
-                      width: double.infinity,
-                      fit: BoxFit.cover)
-                      : Container(
-                    height: 150,
-                    width: double.infinity,
-                    color: cork.withOpacity(0.1),
-                    child:
-                    Icon(Icons.image, color: cork, size: 50),
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                  child: event.imageUrl != null && event.imageUrl!.isNotEmpty
+                      ? Image.network(event.imageUrl!, height: 150, width: double.infinity, fit: BoxFit.cover)
+                      : Container(height: 150, width: double.infinity, color: primaryColor.withOpacity(0.1), child: Icon(Icons.image, color: primaryColor, size: 50)),
+                ),
+                Positioned(
+                  top: 10,
+                  left: 12,
+                  child: Wrap(
+                    spacing: 8,
+                    children: [
+                      if (isMyEvent)
+                        _buildStickyBadge('Your Event', _createdEventDot, Icons.star_rounded),
+                      if (!isMyEvent && hasJoined)
+                        _buildStickyBadge('Joined', _joinedEventDot, Icons.check_circle_rounded),
+                      if (!event.isPrivate && event.status == 'approved')
+                        _buildStickyBadge('Community Event', accentColor, Icons.groups_rounded),
+                    ],
                   ),
                 ),
-                // "Your Event" badge (created)
-                if (isMyEvent)
-                  Positioned(
-                    top: 10,
-                    left: 12,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: _createdEventDot,
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(
-                              color: _createdEventDot.withOpacity(0.4),
-                              blurRadius: 6)
-                        ],
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.star_rounded,
-                              color: Colors.white, size: 12),
-                          SizedBox(width: 4),
-                          Text('Your Event',
-                              style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700)),
-                        ],
-                      ),
-                    ),
-                  ),
-                // "Joined" badge
-                if (!isMyEvent && hasJoined)
-                  Positioned(
-                    top: 10,
-                    left: 12,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: _joinedEventDot,
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(
-                              color: _joinedEventDot.withOpacity(0.4),
-                              blurRadius: 6)
-                        ],
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.check_circle_rounded,
-                              color: Colors.white, size: 12),
-                          SizedBox(width: 4),
-                          Text('Joined',
-                              style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700)),
-                        ],
-                      ),
-                    ),
-                  ),
-                // "Private" badge
                 if (event.isPrivate)
                   Positioned(
                     top: 10,
                     right: 12,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.purple.withOpacity(0.85),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.lock_outline,
-                              color: Colors.white, size: 11),
-                          SizedBox(width: 4),
-                          Text('Private',
-                              style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600)),
-                        ],
-                      ),
-                    ),
+                    child: _buildStickyBadge('Private', Colors.purple.withOpacity(0.85), Icons.lock_outline),
                   ),
               ],
             ),
-
-            // Details
             ListTile(
-              title: Text(event.title,
-                  style: TextStyle(
-                      color: cork,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 18)),
+              title: Text(event.title, style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold, fontSize: 18)),
               subtitle: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const SizedBox(height: 5),
                   _buildInfoRow(Icons.location_on, event.location),
-                  _buildInfoRow(Icons.access_time,
-                      "${event.startTime} - ${event.endTime}"),
-                  _buildInfoRow(Icons.people,
-                      "Capacity: $participantCount / ${event.maxCapacity}"),
+                  _buildInfoRow(Icons.access_time, "${event.startTime} - ${event.endTime}"),
+                  _buildInfoRow(Icons.people, "Capacity: $participantCount / ${event.maxCapacity}"),
                   const SizedBox(height: 8),
-                  LinearProgressIndicator(
-                    value: occupancy,
-                    backgroundColor: Colors.grey[200],
-                    color: isFull ? Colors.red : apricot,
-                    minHeight: 8,
-                    borderRadius: BorderRadius.circular(5),
-                  ),
+                  LinearProgressIndicator(value: occupancy, backgroundColor: Colors.grey[200], color: isFull ? Colors.red : accentColor, minHeight: 8, borderRadius: BorderRadius.circular(5)),
                 ],
               ),
             ),
-
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  if (event.status == 'approved')
-                    _buildJoinButton(event, isFull),
+                  if (event.status == 'approved') _buildJoinButton(event, isFull),
                   _buildStatusBadge(event.status),
                 ],
               ),
@@ -690,13 +563,30 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
     );
   }
 
+  Widget _buildStickyBadge(String text, Color color, IconData icon) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [BoxShadow(color: color.withOpacity(0.4), blurRadius: 6)],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: Colors.white, size: 12),
+          const SizedBox(width: 4),
+          Text(text, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
+        ],
+      ),
+    );
+  }
+
   Widget _buildInfoRow(IconData icon, String label) {
     return Row(children: [
-      Icon(icon, size: 16, color: apricot),
+      Icon(icon, size: 16, color: accentColor),
       const SizedBox(width: 5),
-      Expanded(
-          child: Text(label,
-              style: const TextStyle(fontSize: 13, color: Colors.black87))),
+      Expanded(child: Text(label, style: TextStyle(fontSize: 13, color: textDark))),
     ]);
   }
 
@@ -704,63 +594,29 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
     final bool isHost    = event.userId == currentUserId;
     final bool hasJoined = _myJoinedEvents.any((e) => e.id == event.id);
 
-    if (isHost) {
-      return Text(
-        "You are the Host",
-        style: TextStyle(
-            color: cork,
-            fontWeight: FontWeight.bold,
-            fontStyle: FontStyle.italic,
-            fontSize: 13),
-      );
-    }
-    if (hasJoined) {
-      return Text(
-        "Already Joined",
-        style: TextStyle(
-            color: _joinedEventDot,
-            fontWeight: FontWeight.bold,
-            fontStyle: FontStyle.italic,
-            fontSize: 13),
-      );
-    }
+    if (isHost) return Text("You are the Host", style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold, fontStyle: FontStyle.italic, fontSize: 13));
+    if (hasJoined) return Text("Already Joined", style: TextStyle(color: _joinedEventDot, fontWeight: FontWeight.bold, fontStyle: FontStyle.italic, fontSize: 13));
+
     return ElevatedButton(
-      onPressed: isFull
-          ? null
-          : () async {
+      onPressed: isFull ? null : () async {
         try {
           await _eventService.joinEvent(event.id, currentUserId);
           _refreshEvents();
         } catch (e) {
-          _showErrorDialog(
-              "Note", e.toString().replaceAll("Exception: ", ""));
+          _showErrorDialog("Note", e.toString().replaceAll("Exception: ", ""));
         }
       },
-      style: ElevatedButton.styleFrom(
-          backgroundColor: apricot,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10))),
-      child: Text(isFull ? "Full" : "Join",
-          style: const TextStyle(color: Colors.white)),
+      style: ElevatedButton.styleFrom(backgroundColor: accentColor, elevation: 2, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+      child: Text(isFull ? "Full" : "Join", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
     );
   }
 
   Widget _buildStatusBadge(String status) {
-    final Color badgeColor = status == 'pending'
-        ? Colors.orange
-        : (status == 'approved' ? Colors.green : Colors.red);
+    final Color badgeColor = status == 'pending' ? Colors.orange : (status == 'approved' ? Colors.green : Colors.red);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: badgeColor.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: badgeColor.withOpacity(0.5)),
-      ),
-      child: Text(status.toUpperCase(),
-          style: TextStyle(
-              color: badgeColor,
-              fontSize: 10,
-              fontWeight: FontWeight.bold)),
+      decoration: BoxDecoration(color: badgeColor.withOpacity(0.1), borderRadius: BorderRadius.circular(10), border: Border.all(color: badgeColor.withOpacity(0.5))),
+      child: Text(status.toUpperCase(), style: TextStyle(color: badgeColor, fontSize: 10, fontWeight: FontWeight.bold)),
     );
   }
 
@@ -769,10 +625,9 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.event_busy, size: 50, color: cork.withOpacity(0.3)),
+          Icon(Icons.event_busy, size: 50, color: primaryColor.withOpacity(0.3)),
           const SizedBox(height: 10),
-          Text("No events for this day.",
-              style: TextStyle(color: cork.withOpacity(0.6))),
+          Text("No events for this day.", style: TextStyle(color: primaryColor.withOpacity(0.6))),
         ],
       ),
     );
@@ -784,11 +639,7 @@ class _EventCalendarScreenState extends State<EventCalendarScreen> {
       builder: (_) => AlertDialog(
         title: Text(title),
         content: Text(message),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("OK"))
-        ],
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("OK"))],
       ),
     );
   }

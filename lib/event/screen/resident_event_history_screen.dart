@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // 1. Added Import
 import '../model/event_model.dart';
 import '../service/event_service.dart';
 import 'share_event_sheet.dart';
@@ -22,34 +23,52 @@ class ResidentEventHistoryScreen extends StatefulWidget {
 class _ResidentEventHistoryScreenState
     extends State<ResidentEventHistoryScreen> {
   final EventService _eventService = EventService();
+  List<String> _seenRequestIds = []; // 2. Track seen IDs locally
 
-  final Color cork = const Color(0xFFAD8762);
-  final Color apricot = const Color(0xFFFFB38A);
+  // ── THEME COLORS ──────────────────────────────
+  final Color primaryRed = const Color(0xFF9A4B3C); // Deep Red/Brown
+  final Color accentPeach = const Color(0xFFFC9D7E); // Apricot/Peach
+  final Color bgColor = const Color(0xFFF5F1ED);    // Beige/Off-white
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSeenIds();
+  }
+
+  // 3. Load the list of IDs the user has already "seen"
+  Future<void> _loadSeenIds() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _seenRequestIds = prefs.getStringList('seen_request_ids') ?? [];
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFFFF8F0),
+      backgroundColor: bgColor,
       appBar: AppBar(
         title: const Text(
           "My Event History",
           style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
         ),
-        backgroundColor: cork,
+        backgroundColor: primaryRed,
         centerTitle: true,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: RefreshIndicator(
         onRefresh: () async {
+          await _loadSeenIds();
           setState(() {});
         },
-        color: apricot,
+        color: accentPeach,
         child: FutureBuilder<List<CommunityEvent>>(
           future: _eventService.fetchUserRequests(),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
+              return Center(child: CircularProgressIndicator(color: accentPeach));
             }
 
             if (snapshot.hasError) {
@@ -66,6 +85,16 @@ class _ResidentEventHistoryScreenState
 
             final requests = snapshot.data ?? [];
 
+            if (requests.isNotEmpty) {
+              requests.sort((a, b) {
+                bool aIsPending = a.status.toLowerCase() == 'pending';
+                bool bIsPending = b.status.toLowerCase() == 'pending';
+                if (aIsPending && !bIsPending) return -1;
+                if (!aIsPending && bIsPending) return 1;
+                return b.eventDate.compareTo(a.eventDate);
+              });
+            }
+
             if (requests.isEmpty) {
               return _buildEmptyState();
             }
@@ -76,7 +105,11 @@ class _ResidentEventHistoryScreenState
               physics: const AlwaysScrollableScrollPhysics(),
               itemBuilder: (context, index) {
                 final event = requests[index];
-                return _buildHistoryCard(event);
+                // 4. Determine if this specific card should show a "NEW" badge
+                final bool isNewUpdate = !_seenRequestIds.contains(event.id) &&
+                    event.status.toLowerCase() != 'pending';
+
+                return _buildHistoryCard(event, isNewUpdate);
               },
             );
           },
@@ -101,22 +134,23 @@ class _ResidentEventHistoryScreenState
     );
   }
 
-  Widget _buildHistoryCard(CommunityEvent event) {
+  // 5. Updated buildHistoryCard to accept the isNewUpdate boolean
+  Widget _buildHistoryCard(CommunityEvent event, bool isNewUpdate) {
     final bool isApproved = event.status.toLowerCase() == 'approved';
     final bool isRejected = event.status.toLowerCase() == 'rejected';
     final bool isPrivate = event.isPrivate;
 
     return Card(
-      elevation: 3,
+      elevation: 2,
       margin: const EdgeInsets.only(bottom: 16),
-      shadowColor: Colors.black.withOpacity(0.1),
+      shadowColor: Colors.black.withOpacity(0.05),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+      color: Colors.white,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header: Title + Privacy badge + Status + Share
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -124,13 +158,37 @@ class _ResidentEventHistoryScreenState
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        event.title,
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: cork,
-                        ),
+                      // 6. Added NEW Badge next to title
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              event.title,
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: primaryRed,
+                              ),
+                            ),
+                          ),
+                          if (isNewUpdate)
+                            Container(
+                              margin: const EdgeInsets.only(left: 8),
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.redAccent,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Text(
+                                "NEW",
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                       const SizedBox(height: 4),
                       Container(
@@ -185,21 +243,21 @@ class _ResidentEventHistoryScreenState
                           padding: const EdgeInsets.symmetric(
                               horizontal: 10, vertical: 6),
                           decoration: BoxDecoration(
-                            color: apricot.withOpacity(0.15),
+                            color: accentPeach.withOpacity(0.15),
                             borderRadius: BorderRadius.circular(20),
                             border:
-                            Border.all(color: apricot.withOpacity(0.5)),
+                            Border.all(color: accentPeach.withOpacity(0.5)),
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.share_outlined, size: 13, color: cork),
+                              Icon(Icons.share_outlined, size: 13, color: primaryRed),
                               const SizedBox(width: 4),
                               Text(
                                 'Share',
                                 style: TextStyle(
                                   fontSize: 11,
-                                  color: cork,
+                                  color: primaryRed,
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
@@ -214,7 +272,6 @@ class _ResidentEventHistoryScreenState
             ),
             const Divider(height: 24, thickness: 1),
 
-            // Event Details
             _buildIconInfo(Icons.location_on_outlined, event.location),
             const SizedBox(height: 8),
             _buildIconInfo(
@@ -301,10 +358,12 @@ class _ResidentEventHistoryScreenState
     );
   }
 
+  // --- HELPER METHODS REMAIN UNCHANGED ---
+
   Widget _buildIconInfo(IconData icon, String text) {
     return Row(
       children: [
-        Icon(icon, size: 18, color: apricot),
+        Icon(icon, size: 18, color: accentPeach),
         const SizedBox(width: 10),
         Text(
           text,
@@ -349,10 +408,7 @@ class _ResidentEventHistoryScreenState
     );
   }
 
-  Widget _buildFeedbackBox(
-      {required String title,
-        required String message,
-        required Color baseColor}) {
+  Widget _buildFeedbackBox({required String title, required String message, required Color baseColor}) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
@@ -398,17 +454,17 @@ class _ResidentEventHistoryScreenState
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(Icons.history_outlined,
-              size: 80, color: cork.withOpacity(0.2)),
+              size: 80, color: primaryRed.withOpacity(0.2)),
           const SizedBox(height: 16),
           Text(
             "No requests yet",
             style: TextStyle(
-                color: cork, fontSize: 18, fontWeight: FontWeight.w500),
+                color: primaryRed, fontSize: 18, fontWeight: FontWeight.w500),
           ),
           const SizedBox(height: 8),
           Text(
             "When you propose an event, it will appear here.",
-            style: TextStyle(color: cork.withOpacity(0.6), fontSize: 14),
+            style: TextStyle(color: primaryRed.withOpacity(0.6), fontSize: 14),
           ),
         ],
       ),

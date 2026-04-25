@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../chat/CommunityChatScreen.dart';
+import 'package:assignment/chat/CommunityChatScreen.dart';
 
 final supabase = Supabase.instance.client;
 

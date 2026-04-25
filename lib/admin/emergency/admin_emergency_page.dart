@@ -5,8 +5,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
-// 🔥 确保路径正确（已修正为单斜杠）
-import '../emergency/location.dart';
+import 'package:assignment/admin/emergency/location.dart';
 
 class AdminEmergencyPage extends StatefulWidget {
   final Map<String, dynamic> emergency;
@@ -22,7 +21,7 @@ class _AdminEmergencyPageState extends State<AdminEmergencyPage> {
 
   double targetLat = 0.0;
   double targetLng = 0.0;
-  String currentStatus = 'active';
+  String currentStatus = 'active'; // Used to track current status
 
   Position? adminPosition;
   GoogleMapController? mapController;
@@ -48,12 +47,12 @@ class _AdminEmergencyPageState extends State<AdminEmergencyPage> {
       ),
     );
 
-    // 如果还没结案，才需要订阅实时位置并画路线
+    // Only subscribe to real-time location and draw route if the case is not yet solved
     if (currentStatus != 'solved') {
       subscribeRealtime();
       _loadAdminLocationAndDrawRoute();
     } else {
-      // 已经结案的话，只要把镜头对准事发地就行
+      // If already solved, just point the camera to the incident location
       Future.delayed(const Duration(milliseconds: 500), () {
         mapController?.animateCamera(CameraUpdate.newLatLngZoom(LatLng(targetLat, targetLng), 16));
       });
@@ -61,7 +60,7 @@ class _AdminEmergencyPageState extends State<AdminEmergencyPage> {
   }
 
   // ==========================================
-  // 📸 调用相机拍照
+  // 📸 Take a photo using camera
   // ==========================================
   Future<void> _takePhoto() async {
     final ImagePicker picker = ImagePicker();
@@ -94,7 +93,7 @@ class _AdminEmergencyPageState extends State<AdminEmergencyPage> {
   }
 
   // ==========================================
-  // 🗺️ 获取管理员位置并绘制路线
+  // 🗺️ Get admin location and draw route
   // ==========================================
   Future<void> _loadAdminLocationAndDrawRoute() async {
     try {
@@ -148,14 +147,14 @@ class _AdminEmergencyPageState extends State<AdminEmergencyPage> {
   }
 
   void subscribeRealtime() {
-    // 假设你的主键是 id（如果是 emergency_id 请自行替换）
+    // Assuming your primary key is id (replace if it's emergency_id)
     final emergencyId = widget.emergency['emergency_id'] ?? widget.emergency['emergency_id'];
 
     supabase.channel('emergency-updates-$emergencyId').onPostgresChanges(
         event: PostgresChangeEvent.update,
         schema: 'public',
         table: 'emergency',
-        filter: PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'id', value: emergencyId.toString()), // 注意主键名字
+        filter: PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'id', value: emergencyId.toString()), // Note the primary key name
         callback: (payload) {
           final newData = payload.newRecord;
           if (!mounted) return;
@@ -199,7 +198,7 @@ class _AdminEmergencyPageState extends State<AdminEmergencyPage> {
   }
 
   // ==========================================
-  // ✅ 提交结案报告
+  // ✅ Submit resolution report
   // ==========================================
   Future<void> markSolved() async {
     if (_evidencePhoto == null) return;
@@ -215,46 +214,46 @@ class _AdminEmergencyPageState extends State<AdminEmergencyPage> {
       final String fileName = 'resolution_$emergencyId\_${DateTime.now().millisecondsSinceEpoch}.jpg';
       final String filePath = 'records/$fileName';
 
-      // 获取当前管理员邮箱作为记录人，如果没有就写 Admin
+      // Get current admin email as the recorder, fallback to 'Admin'
       final String adminName = supabase.auth.currentUser?.email ?? 'Admin';
 
-      // 1. 上传图片到 storage (假设你用的桶名叫 emergency_evidence)
+      // 1. Upload image to storage (assuming bucket name is emergency_evidence)
       await supabase.storage.from('emergency_evidence').upload(
         filePath,
         _evidencePhoto!,
         fileOptions: const FileOptions(cacheControl: '3600', upsert: false),
       );
 
-      // 2. 获取图片公开链接
+      // 2. Get public image URL
       final String publicUrl = supabase.storage.from('emergency_evidence').getPublicUrl(filePath);
 
-      // 3. 更新数据库：🚨 保存到 admin_resolution_url 字段
+      // 3. Update database: 🚨 Save to admin_resolution_url field
       await supabase.from('emergency').update({
         'status': 'solved',
-        'admin_resolution_url': publicUrl, // 🔥 这里改为了 admin 专属的字段
+        'admin_resolution_url': publicUrl, // 🔥 Changed to admin-exclusive field
         'solved_at': DateTime.now().toIso8601String(),
         'solved_by': adminName,
-      }).eq('emergency_id', emergencyId); // 这里用的是 id，如果是 emergency_id 请自行替换
+      }).eq('emergency_id', emergencyId); // Using emergency_id here, update if necessary
 
       if (mounted) {
         setState(() {
           currentStatus = 'solved';
-          // 更新本地数据，以便立刻展示
+          // Update local data to display immediately
           widget.emergency['admin_resolution_url'] = publicUrl;
           widget.emergency['solved_by'] = adminName;
           widget.emergency['solved_at'] = DateTime.now().toIso8601String();
         });
-        Navigator.pop(context); // 关掉加载圈
+        Navigator.pop(context); // Close loading indicator
 
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Case successfully solved!"), backgroundColor: Colors.green),
         );
 
-        // 退出到上一页，并返回 true，通知列表页刷新数据
+        // Exit to previous page and return true to notify list page to refresh data
         Navigator.pop(context, true);
       }
     } catch (e) {
-      if (mounted) Navigator.pop(context); // 关掉加载圈
+      if (mounted) Navigator.pop(context); // Close loading indicator
       print("Upload/Update Error: $e");
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red),
@@ -274,6 +273,9 @@ class _AdminEmergencyPageState extends State<AdminEmergencyPage> {
     final weight = user['Weight'] ?? user['weight'] ?? '-';
     final height = user['Height'] ?? user['height'] ?? '-';
 
+    // 🔥 Extract description field
+    final String description = widget.emergency['description']?.toString() ?? "No description provided.";
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -282,7 +284,7 @@ class _AdminEmergencyPageState extends State<AdminEmergencyPage> {
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
-          // 如果未结案，显示导航按钮
+          // Show navigation button if case is not solved
           if (currentStatus != 'solved')
             IconButton(icon: const Icon(Icons.directions), tooltip: "Open Maps", onPressed: _launchNavigation)
         ],
@@ -323,10 +325,42 @@ class _AdminEmergencyPageState extends State<AdminEmergencyPage> {
                       _infoTile("Type", "${widget.emergency['type'] ?? 'Emergency'}", Icons.warning, Colors.orange),
                     ]),
 
+                    const SizedBox(height: 20),
+
+                    // ==========================================
+                    // 📝 Added: Emergency Description Box
+                    // ==========================================
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(15),
+                      decoration: BoxDecoration(
+                        color: Colors.amber[50],
+                        borderRadius: BorderRadius.circular(15),
+                        border: Border.all(color: Colors.amber[200]!),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Row(
+                            children: [
+                              Icon(Icons.notes, color: Colors.orange, size: 20),
+                              SizedBox(width: 8),
+                              Text("Description", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.orange)),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            description,
+                            style: const TextStyle(fontSize: 15, color: Colors.black87, height: 1.4),
+                          ),
+                        ],
+                      ),
+                    ),
+
                     const SizedBox(height: 30),
 
                     // ==========================================
-                    // 📸 新增：展示居民报警时上传的证据图
+                    // 📸 Show evidence photo uploaded by resident during report
                     // ==========================================
                     if (widget.emergency['report_evidence_url'] != null)
                       Padding(
@@ -353,10 +387,10 @@ class _AdminEmergencyPageState extends State<AdminEmergencyPage> {
                       ),
 
                     // ==========================================
-                    // 🔍 UI 分支：结案报告 VS 处理面板
+                    // 🔍 UI Branch: Resolution Report VS Processing Panel
                     // ==========================================
                     if (currentStatus == 'solved')
-                    // 👉 【模式一】如果已结案：显示结案报告
+                    // 👉 [Mode 1] If solved: Show resolution report
                       Container(
                         padding: const EdgeInsets.all(15),
                         decoration: BoxDecoration(
@@ -381,7 +415,7 @@ class _AdminEmergencyPageState extends State<AdminEmergencyPage> {
                             const SizedBox(height: 20),
                             const Text("Resolution Photo:", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                             const SizedBox(height: 10),
-                            // 🔥 这里改成了读取 admin_resolution_url
+                            // 🔥 Changed to read from admin_resolution_url
                             if (widget.emergency['admin_resolution_url'] != null)
                               ClipRRect(
                                 borderRadius: BorderRadius.circular(10),
@@ -399,7 +433,7 @@ class _AdminEmergencyPageState extends State<AdminEmergencyPage> {
                         ),
                       )
                     else
-                    // 👉 【模式二】如果未结案：显示操作按钮与相片预览
+                    // 👉 [Mode 2] If not solved: Show action buttons and photo preview
                       Column(
                         children: [
                           if (_evidencePhoto != null)

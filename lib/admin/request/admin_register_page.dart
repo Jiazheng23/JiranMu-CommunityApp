@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../resident/resident_login_page.dart';
-import '../admin_login_page.dart';
+import 'package:assignment/admin/admin_login_page.dart';
 
 class AdminRegisterPage extends StatefulWidget {
   const AdminRegisterPage({super.key});

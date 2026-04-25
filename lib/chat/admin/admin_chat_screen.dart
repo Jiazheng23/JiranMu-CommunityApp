@@ -712,6 +712,17 @@ class _AdminChatScreenState extends State<AdminChatScreen>
     scrollToBottom();
 
     try {
+      await supabase.from('messages').insert({
+        'id':              messageId,
+        'room_id':         roomId,
+        'sender':          currentUser,
+        'content':         question,
+        'created_at':      now.toIso8601String(),
+        'is_poll':         true,
+        'poll_id':         pollId,
+        'is_announcement': false,
+        'is_event_invite': false,
+      });
       await supabase.from('polls').insert({
         'id':         pollId,
         'message_id': messageId,
@@ -728,17 +739,6 @@ class _AdminChatScreenState extends State<AdminChatScreen>
           'display_order': opt.displayOrder,
         });
       }
-      await supabase.from('messages').insert({
-        'id':              messageId,
-        'room_id':         roomId,
-        'sender':          currentUser,
-        'content':         question,
-        'created_at':      now.toIso8601String(),
-        'is_poll':         true,
-        'poll_id':         pollId,
-        'is_announcement': false,
-        'is_event_invite': false,
-      });
     } catch (e, stack) {
       debugPrint('Error creating poll: $e\n$stack');
       setState(() {

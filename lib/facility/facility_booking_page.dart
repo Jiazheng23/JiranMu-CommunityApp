@@ -1,6 +1,6 @@
+import 'package:assignment/facility/facility_booking_sheet.dart';
 import 'package:assignment/facility/facility_model.dart';
 import 'package:assignment/facility/facility_service.dart';
-import 'package:assignment/facility/facility_booking_sheet.dart';
 import 'package:flutter/material.dart';
 
 class FacilityBookingPage extends StatefulWidget {
@@ -25,7 +25,11 @@ class _FacilityBookingPageState extends State<FacilityBookingPage> {
   @override
   void initState() {
     super.initState();
-    _facilitiesFuture = _facilityService.fetchFacilities();
+    _facilitiesFuture = _facilityService.fetchFacilities(
+      usageType: 'facility',
+      bookingMode: 'instant',
+      activeOnly: true,
+    );
   }
 
   @override
@@ -36,7 +40,11 @@ class _FacilityBookingPageState extends State<FacilityBookingPage> {
 
   void _reloadFacilities() {
     setState(() {
-      _facilitiesFuture = _facilityService.fetchFacilities();
+      _facilitiesFuture = _facilityService.fetchFacilities(
+        usageType: 'facility',
+        bookingMode: 'instant',
+        activeOnly: true,
+      );
     });
   }
 
@@ -50,8 +58,7 @@ class _FacilityBookingPageState extends State<FacilityBookingPage> {
     return facilities.where((facility) {
       return facility.name.toLowerCase().contains(query) ||
           facility.description.toLowerCase().contains(query) ||
-          facility.location.toLowerCase().contains(query) ||
-          facility.bookingMode.toLowerCase().contains(query);
+          facility.location.toLowerCase().contains(query);
     }).toList();
   }
 
@@ -64,20 +71,16 @@ class _FacilityBookingPageState extends State<FacilityBookingPage> {
     );
 
     if (result == true && mounted) {
-      final message = facility.isInstantBooking
-          ? 'Booking submitted successfully.'
-          : 'Request submitted successfully. Waiting for admin approval.';
-
       Future.delayed(const Duration(milliseconds: 250), () {
         if (!mounted) return;
 
         ScaffoldMessenger.of(context)
           ..hideCurrentSnackBar()
           ..showSnackBar(
-            SnackBar(
-              content: Text(message),
+            const SnackBar(
+              content: Text('Booking submitted successfully.'),
               behavior: SnackBarBehavior.floating,
-              margin: const EdgeInsets.fromLTRB(16, 0, 16, 90),
+              margin: EdgeInsets.fromLTRB(16, 0, 16, 90),
             ),
           );
       });
@@ -292,19 +295,15 @@ class FacilityCard extends StatelessWidget {
                             vertical: 6,
                           ),
                           decoration: BoxDecoration(
-                            color: facility.isInstantBooking
-                                ? const Color(0xFFE7F7EC)
-                                : const Color(0xFFFFF3DD),
+                            color: const Color(0xFFE7F7EC),
                             borderRadius: BorderRadius.circular(12),
                           ),
-                          child: Text(
-                            facility.isInstantBooking ? 'Instant' : 'Approval',
+                          child: const Text(
+                            'Instant',
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
-                              color: facility.isInstantBooking
-                                  ? const Color(0xFF2E8B57)
-                                  : const Color(0xFFB7791F),
+                              color: Color(0xFF2E8B57),
                             ),
                           ),
                         ),
@@ -388,11 +387,9 @@ class FacilityCard extends StatelessWidget {
                             borderRadius: BorderRadius.circular(14),
                           ),
                         ),
-                        child: Text(
-                          facility.isInstantBooking
-                              ? 'Book Now'
-                              : 'Submit Request',
-                          style: const TextStyle(
+                        child: const Text(
+                          'Book Now',
+                          style: TextStyle(
                             fontWeight: FontWeight.w600,
                           ),
                         ),

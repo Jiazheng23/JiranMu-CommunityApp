@@ -2,16 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:assignment/chat/user_session.dart';
-
-import '../../chat/CommunityChatScreen.dart';
-import '../../chat/in_app_notification_service.dart';
-import '../emergency/emergency_list_page.dart';
-import '../request/request_list_page.dart';
+import 'package:assignment/chat/CommunityChatScreen.dart';
+import 'package:assignment/chat/in_app_notification_service.dart';
+import 'package:assignment/admin/emergency/emergency_list_page.dart';
+import 'package:assignment/admin/request/request_list_page.dart';
 
 final _supabase = Supabase.instance.client;
 
+// ── Notification kind enum ────────────────────────────────────────────────────
 enum _NotifKind { emergency, request, groupChat, directMessage }
 
+// ── Typed notification model ──────────────────────────────────────────────────
 class _NotifItem {
   final _NotifKind kind;
   final String id;
@@ -34,12 +35,13 @@ class _NotifItem {
   });
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+
 class AdminNotificationsPage extends StatefulWidget {
   const AdminNotificationsPage({super.key});
 
   @override
-  State<AdminNotificationsPage> createState() =>
-      _AdminNotificationsPageState();
+  State<AdminNotificationsPage> createState() => _AdminNotificationsPageState();
 }
 
 class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
@@ -49,11 +51,13 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
   String _currentUserId = '';
   String _currentUserEmail = '';
 
-  // ── NEW: track per-room cleared state so badge goes away after tap ──
+  // Track rooms cleared by a tap this session so the badge disappears instantly
   final Set<String> _clearedRooms = {};
 
-  String _filter = 'all';
+  String _filter = 'all'; // 'all' | 'messages' | 'requests' | 'emergency'
   List<_NotifItem> _items = [];
+
+  // ── Init ────────────────────────────────────────────────────────────────────
 
   @override
   void initState() {
@@ -67,6 +71,8 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
     _currentUserEmail = UserSession.email ?? '';
     await _fetch();
   }
+
+  // ── Fetch all notification sources in parallel ───────────────────────────
 
   Future<void> _fetch() async {
     if (!mounted) return;
@@ -88,11 +94,11 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
       });
     } catch (e) {
       debugPrint('❌ Notifications fetch error: $e');
-      setState(() => _loading = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
-  // ── Data fetching ─────────────────────────────
+  // ── Data fetching ────────────────────────────────────────────────────────
 
   Future<List<_NotifItem>> _fetchRequests() async {
     final rows = await _supabase
@@ -131,6 +137,8 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
   }
 
   Future<List<_NotifItem>> _fetchGroupChatMessages() async {
+    if (_currentUserId.isEmpty) return [];
+
     final groups = await _supabase
         .from('group_chats')
         .select('id, room_id, name, block')
@@ -181,6 +189,8 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
   }
 
   Future<List<_NotifItem>> _fetchDirectMessages() async {
+    if (_currentUserId.isEmpty) return [];
+
     final roomsU1 = await _supabase
         .from('chat_rooms')
         .select('room_id, user1_id, user2_id')
@@ -251,25 +261,49 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
     return items;
   }
 
-  // ── Navigation ────────────────────────────────
+  // ── Navigation ───────────────────────────────────────────────────────────
 
   void _onTap(_NotifItem item) {
     switch (item.kind) {
       case _NotifKind.emergency:
-        Navigator.push(context,
-            MaterialPageRoute(builder: (_) => const EmergencyListPage()))
-            .then((_) => _fetch());
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const EmergencyListPage()),
+        ).then((_) => _fetch());
 
       case _NotifKind.request:
         final type = item.raw['type'] as String? ?? '';
-        Navigator.push(context,
-            MaterialPageRoute(builder: (_) => RequestListPage(type: type)))
-            .then((_) => _fetch());
+        String? targetPageType;
+        switch (type.toLowerCase()) {
+          case 'resident':
+          case 'user':
+            targetPageType = 'Users';
+          case 'event':
+          case 'booking':
+            targetPageType = 'Event';
+          case 'facility':
+            targetPageType = 'Facilities';
+          case 'visitor':
+            targetPageType = 'Visitor';
+          default:
+            targetPageType = type.isNotEmpty ? type : null;
+        }
+        if (targetPageType != null) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+                builder: (_) => RequestListPage(type: targetPageType!)),
+          ).then((_) => _fetch());
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Unknown request type.')),
+          );
+        }
 
       case _NotifKind.groupChat:
       case _NotifKind.directMessage:
         final roomId = item.raw['room_id'] as String;
-        // Mark this room as cleared immediately so the badge disappears
+        // Optimistically clear the badge for this room
         setState(() => _clearedRooms.add(roomId));
 
         InAppNotificationService.activeRoomId = roomId;
@@ -286,13 +320,13 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
           ),
         ).then((_) {
           InAppNotificationService.activeRoomId = null;
-          // Full refresh when coming back so counts reflect actual DB state
+          // Full refresh when returning so counts reflect actual DB state
           _fetch();
         });
     }
   }
 
-  // ── Helpers ───────────────────────────────────
+  // ── Helpers ──────────────────────────────────────────────────────────────
 
   DateTime _parseDate(dynamic v) {
     if (v == null) return DateTime.now();
@@ -303,20 +337,13 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
     }
   }
 
-  String _getInitials(String name) {
-    final parts = name.trim().split(RegExp(r'\s+'));
-    if (parts.isEmpty) return '?';
-    if (parts.length == 1) return parts[0][0].toUpperCase();
-    return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
-  }
-
   Color _nameToColor(String name) {
     final hue =
     (name.codeUnits.fold(0, (a, b) => a + b) % 360).toDouble();
     return HSLColor.fromAHSL(1, hue, 0.55, 0.55).toColor();
   }
 
-  // ── UI ────────────────────────────────────────
+  // ── Build ────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -337,9 +364,10 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F1ED),
       appBar: AppBar(
-        title: const Text('Notifications',
-            style: TextStyle(
-                color: Colors.black87, fontWeight: FontWeight.w700)),
+        title: const Text(
+          'Notifications',
+          style: TextStyle(color: Colors.black87, fontWeight: FontWeight.w700),
+        ),
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.black87),
@@ -350,29 +378,32 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
           ),
         ],
       ),
-      body: Column(children: [
-        _buildFilterBar(),
-        Expanded(
-          child: _loading
-              ? const Center(child: CircularProgressIndicator())
-              : filtered.isEmpty
-              ? _buildEmpty()
-              : RefreshIndicator(
-            color: _primary,
-            onRefresh: _fetch,
-            child: ListView.separated(
-              padding:
-              const EdgeInsets.fromLTRB(16, 8, 16, 32),
-              itemCount: filtered.length,
-              separatorBuilder: (_, __) =>
-              const SizedBox(height: 8),
-              itemBuilder: (_, i) => _buildTile(filtered[i]),
+      body: Column(
+        children: [
+          _buildFilterBar(),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : filtered.isEmpty
+                ? _buildEmpty()
+                : RefreshIndicator(
+              color: _primary,
+              onRefresh: _fetch,
+              child: ListView.separated(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+                itemCount: filtered.length,
+                separatorBuilder: (_, __) =>
+                const SizedBox(height: 8),
+                itemBuilder: (_, i) => _buildTile(filtered[i]),
+              ),
             ),
           ),
-        ),
-      ]),
+        ],
+      ),
     );
   }
+
+  // ── Filter bar ───────────────────────────────────────────────────────────
 
   Widget _buildFilterBar() {
     const filters = [
@@ -381,42 +412,44 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
       ('requests', 'Requests'),
       ('emergency', 'Emergency'),
     ];
+
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
       child: Row(
         children: filters.map((f) {
           final isSelected = _filter == f.$1;
+
+          // Count per filter — only shown when NOT selected
           int count = 0;
-          if (f.$1 == 'messages') {
-            // Sum unread counts across all message items
-            count = _items
-                .where((i) =>
-            i.kind == _NotifKind.groupChat ||
-                i.kind == _NotifKind.directMessage)
-                .fold(0, (s, i) => s + i.unreadCount);
-          } else if (f.$1 == 'emergency') {
-            count = _items
-                .where((i) => i.kind == _NotifKind.emergency)
-                .length;
-          } else if (f.$1 == 'requests') {
-            count = _items
-                .where((i) => i.kind == _NotifKind.request)
-                .length;
-          } else if (f.$1 == 'all') {
-            // Total badge = pending requests + active emergencies + unread messages
-            final msgUnread = _items
-                .where((i) =>
-            i.kind == _NotifKind.groupChat ||
-                i.kind == _NotifKind.directMessage)
-                .fold(0, (s, i) => s + i.unreadCount);
-            count = _items
-                .where((i) => i.kind == _NotifKind.emergency)
-                .length +
-                _items
-                    .where((i) => i.kind == _NotifKind.request)
-                    .length +
-                msgUnread;
+          switch (f.$1) {
+            case 'messages':
+              count = _items
+                  .where((i) =>
+              i.kind == _NotifKind.groupChat ||
+                  i.kind == _NotifKind.directMessage)
+                  .fold(0, (s, i) => s + i.unreadCount);
+            case 'emergency':
+              count = _items
+                  .where((i) => i.kind == _NotifKind.emergency)
+                  .length;
+            case 'requests':
+              count = _items
+                  .where((i) => i.kind == _NotifKind.request)
+                  .length;
+            case 'all':
+              final msgUnread = _items
+                  .where((i) =>
+              i.kind == _NotifKind.groupChat ||
+                  i.kind == _NotifKind.directMessage)
+                  .fold(0, (s, i) => s + i.unreadCount);
+              count = _items
+                  .where((i) => i.kind == _NotifKind.emergency)
+                  .length +
+                  _items
+                      .where((i) => i.kind == _NotifKind.request)
+                      .length +
+                  msgUnread;
           }
 
           return Padding(
@@ -424,38 +457,45 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
             child: GestureDetector(
               onTap: () => setState(() => _filter = f.$1),
               child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 7),
+                padding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
                 decoration: BoxDecoration(
-                  color: isSelected
-                      ? _primary
-                      : Colors.grey.shade200,
+                  color: isSelected ? _primary : Colors.grey.shade200,
                   borderRadius: BorderRadius.circular(20),
                 ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Text(f.$2,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      f.$2,
                       style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: isSelected
-                              ? Colors.white
-                              : Colors.black54)),
-                  if (count > 0 && !isSelected) ...[
-                    const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 5, vertical: 1),
-                      decoration: BoxDecoration(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: isSelected ? Colors.white : Colors.black54,
+                      ),
+                    ),
+                    // Show count badge only when chip is NOT selected
+                    if (count > 0 && !isSelected) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 5, vertical: 1),
+                        decoration: BoxDecoration(
                           color: _primary,
-                          borderRadius: BorderRadius.circular(10)),
-                      child: Text('$count',
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '$count',
                           style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w800)),
-                    )
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
-                ]),
+                ),
               ),
             ),
           );
@@ -464,20 +504,20 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
     );
   }
 
+  // ── Tile ─────────────────────────────────────────────────────────────────
+
   Widget _buildTile(_NotifItem item) {
     final isEmergency = item.kind == _NotifKind.emergency;
     final isMessage = item.kind == _NotifKind.groupChat ||
         item.kind == _NotifKind.directMessage;
 
-    // ── Avatar ────────────────────────────────────
+    // ── Avatar
     Widget avatar;
     if (item.kind == _NotifKind.emergency) {
       avatar = _iconAvatar(Icons.emergency, Colors.red);
     } else if (item.kind == _NotifKind.request) {
-      avatar = _iconAvatar(
-          _requestIcon(item.raw['type'] ?? ''), Colors.blue);
+      avatar = _iconAvatar(_requestIcon(item.raw['type'] ?? ''), Colors.blue);
     } else {
-      // Group chat vs DM icon
       avatar = Container(
         width: 42,
         height: 42,
@@ -497,32 +537,36 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
       );
     }
 
-    // ── Trailing badge ────────────────────────────
+    // ── Trailing badge
     Widget? trailing;
     final roomId = item.raw['room_id'] as String?;
     final isCleared = roomId != null && _clearedRooms.contains(roomId);
 
     if (isMessage && item.unreadCount > 0 && !isCleared) {
       trailing = Container(
-        padding:
-        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
         decoration: BoxDecoration(
-            color: _primary,
-            borderRadius: BorderRadius.circular(12)),
+          color: _primary,
+          borderRadius: BorderRadius.circular(12),
+        ),
         child: Text(
           item.unreadCount > 99 ? '99+' : '${item.unreadCount}',
           style: const TextStyle(
-              color: Colors.white,
-              fontSize: 11,
-              fontWeight: FontWeight.w800),
+            color: Colors.white,
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+          ),
         ),
       );
     } else if (!item.isRead && !isCleared) {
       trailing = Container(
-          width: 9,
-          height: 9,
-          decoration: const BoxDecoration(
-              color: Colors.redAccent, shape: BoxShape.circle));
+        width: 9,
+        height: 9,
+        decoration: const BoxDecoration(
+          color: Colors.redAccent,
+          shape: BoxShape.circle,
+        ),
+      );
     }
 
     return GestureDetector(
@@ -536,49 +580,62 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
               : Border.all(color: Colors.black.withOpacity(0.06)),
           boxShadow: [
             BoxShadow(
-                color: Colors.black.withOpacity(0.03),
-                blurRadius: 8,
-                offset: const Offset(0, 3)),
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 8,
+              offset: const Offset(0, 3),
+            ),
           ],
         ),
         child: ListTile(
           contentPadding:
           const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
           leading: avatar,
-          title: Text(item.title,
-              style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 14,
-                  color: isEmergency
-                      ? Colors.red.shade800
-                      : Colors.black87)),
+          title: Text(
+            item.title,
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 14,
+              color:
+              isEmergency ? Colors.red.shade800 : Colors.black87,
+            ),
+          ),
           subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 3),
-                Text(item.body,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        fontSize: 13, color: Colors.black54)),
-                const SizedBox(height: 5),
-                Text(timeago.format(item.time),
-                    style: const TextStyle(
-                        fontSize: 11,
-                        color: Colors.grey,
-                        fontWeight: FontWeight.w500)),
-              ]),
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 3),
+              Text(
+                item.body,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style:
+                const TextStyle(fontSize: 13, color: Colors.black54),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                timeago.format(item.time),
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: Colors.grey,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
           trailing: trailing,
         ),
       ),
     );
   }
 
+  // ── Small helpers ────────────────────────────────────────────────────────
+
   Widget _iconAvatar(IconData icon, Color color) => Container(
     width: 42,
     height: 42,
     decoration: BoxDecoration(
-        color: color.withOpacity(0.12), shape: BoxShape.circle),
+      color: color.withOpacity(0.12),
+      shape: BoxShape.circle,
+    ),
     child: Icon(icon, color: color, size: 20),
   );
 
@@ -599,18 +656,26 @@ class _AdminNotificationsPageState extends State<AdminNotificationsPage> {
   }
 
   Widget _buildEmpty() => Center(
-    child: Column(mainAxisSize: MainAxisSize.min, children: [
-      Icon(Icons.notifications_off_outlined,
-          size: 72, color: Colors.grey.shade300),
-      const SizedBox(height: 16),
-      const Text('All caught up!',
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.notifications_off_outlined,
+            size: 72, color: Colors.grey.shade300),
+        const SizedBox(height: 16),
+        const Text(
+          'All caught up!',
           style: TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.w700,
-              color: Colors.black54)),
-      const SizedBox(height: 6),
-      const Text('No new notifications',
-          style: TextStyle(color: Colors.grey)),
-    ]),
+            fontSize: 17,
+            fontWeight: FontWeight.w700,
+            color: Colors.black54,
+          ),
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          'No new notifications',
+          style: TextStyle(color: Colors.grey),
+        ),
+      ],
+    ),
   );
 }
