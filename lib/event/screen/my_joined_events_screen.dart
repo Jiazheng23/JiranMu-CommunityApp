@@ -199,6 +199,7 @@ class _MyJoinedEventsScreenState extends State<MyJoinedEventsScreen> {
   }
 
   // 5. Updated buildEventCard to accept the isNew boolean
+  // 5. Improved buildEventCard UI with a Sleek Black Outline
   Widget _buildEventCard(CommunityEvent event, bool isNew) {
     final now = DateTime.now();
     final isPast = event.eventDate.isBefore(now);
@@ -214,217 +215,224 @@ class _MyJoinedEventsScreenState extends State<MyJoinedEventsScreen> {
             event: event,
             currentRole: widget.currentRole,
             currentUserId: widget.currentUserId,
-            onRefresh: () => setState(() {}), currentUserName: '',
+            onRefresh: () => setState(() {}),
+            currentUserName: '',
           ),
         ),
       ),
       child: Container(
+        clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
+          // --- THE BLACK LINE COVER (BORDER) ---
+          border: Border.all(
+            color: Colors.black.withOpacity(0.15), // Subtle black outline
+            width: 1.2,
+          ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 8,
-              offset: const Offset(0, 3),
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
             ),
           ],
         ),
-        child: Row(
-          children: [
-            // Date strip
-            Container(
-              width: 64,
-              decoration: BoxDecoration(
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // --- LEFT: DATE STRIP ---
+              Container(
+                width: 75,
                 color: isPast
-                    ? Colors.grey.withOpacity(0.08)
-                    : primaryRed.withOpacity(0.09),
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(16),
-                  bottomLeft: Radius.circular(16),
-                ),
-              ),
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    DateFormat('dd').format(event.eventDate),
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
-                      color: isPast ? Colors.grey : primaryRed,
-                    ),
-                  ),
-                  Text(
-                    DateFormat('MMM').format(event.eventDate)
-                        .toUpperCase(),
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: isPast
-                          ? Colors.grey.withOpacity(0.7)
-                          : primaryRed.withOpacity(0.7),
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+                    ? Colors.grey.withOpacity(0.1)
+                    : primaryRed.withOpacity(0.08),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            event.title,
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: isPast
-                                  ? Colors.black45
-                                  : Colors.black87,
-                              fontSize: 15,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        // 6. Added NEW Badge if newly joined
-                        if (isNew && !isPast)
-                          Container(
-                            margin: const EdgeInsets.only(left: 6),
-                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.redAccent,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: const Text(
-                              "NEW",
-                              style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: event.isPrivate
-                                ? Colors.purple.withOpacity(0.1)
-                                : Colors.blue.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Icon(
-                            event.isPrivate
-                                ? Icons.lock_outline
-                                : Icons.public,
-                            size: 11,
-                            color: event.isPrivate
-                                ? Colors.purple
-                                : Colors.blue,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-
-                    Row(
-                      children: [
-                        Icon(Icons.location_on_outlined,
-                            size: 13,
-                            color: isPast ? Colors.grey : accentPeach),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Text(
-                            event.location,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: isPast
-                                  ? Colors.black38
-                                  : Colors.black54,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
+                    Text(
+                      DateFormat('dd').format(event.eventDate),
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                        color: isPast ? Colors.grey : primaryRed,
+                        height: 1.0,
+                      ),
                     ),
                     const SizedBox(height: 4),
-
-                    Row(
-                      children: [
-                        Icon(Icons.access_time_outlined,
-                            size: 13,
-                            color: isPast ? Colors.grey : accentPeach),
-                        const SizedBox(width: 4),
-                        Text(
-                          '${event.startTime} – ${event.endTime}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: isPast
-                                ? Colors.black38
-                                : Colors.black54,
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    if (isToday || isPast) ...[
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: isToday
-                              ? Colors.green.withOpacity(0.1)
-                              : Colors.grey.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          isToday ? '📅 Today' : '✓ Past event',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color:
-                            isToday ? Colors.green : Colors.grey,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
+                    Text(
+                      DateFormat('MMM').format(event.eventDate).toUpperCase(),
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: isPast
+                            ? Colors.grey.withOpacity(0.7)
+                            : primaryRed.withOpacity(0.7),
+                        letterSpacing: 1.0,
                       ),
-                    ],
+                    ),
                   ],
                 ),
               ),
-            ),
 
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (!isPast)
-                  GestureDetector(
-                    onTap: () => _confirmLeave(event),
-                    child: Container(
-                      padding: const EdgeInsets.all(6),
-                      margin: const EdgeInsets.only(right: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.red.withOpacity(0.08),
-                        shape: BoxShape.circle,
+              // Vertical Separator Line
+              VerticalDivider(
+                width: 1,
+                thickness: 1,
+                color: Colors.black.withOpacity(0.1),
+              ),
+
+              // --- RIGHT: CONTENT ---
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              event.title,
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: isPast ? Colors.black45 : Colors.black87,
+                                fontSize: 16,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (isNew && !isPast)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.redAccent,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Text(
+                                "NEW",
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
-                      child: const Icon(Icons.logout_rounded, size: 15, color: Colors.red),
-                    ),
+                      const SizedBox(height: 10),
+
+                      // Location & Time
+                      _buildInfoRow(Icons.location_on_rounded, event.location, isPast),
+                      const SizedBox(height: 6),
+                      _buildInfoRow(Icons.access_time_filled_rounded, '${event.startTime} – ${event.endTime}', isPast),
+
+                      const SizedBox(height: 14),
+
+                      // Footer
+                      Row(
+                        children: [
+                          if (isToday || isPast)
+                            _buildStatusBadge(isToday),
+                          if (isToday || isPast) const SizedBox(width: 8),
+
+                          // Privacy Badge
+                          _buildPrivacyBadge(event),
+
+                          const Spacer(),
+
+                          if (!isPast)
+                            GestureDetector(
+                              onTap: () => _confirmLeave(event),
+                              child: Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: BoxDecoration(
+                                  color: Colors.red.withOpacity(0.08),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.logout_rounded, size: 16, color: Colors.red),
+                              ),
+                            ),
+                          const SizedBox(width: 8),
+                          Icon(Icons.chevron_right_rounded, color: isPast ? Colors.black12 : primaryRed.withOpacity(0.4)),
+                        ],
+                      ),
+                    ],
                   ),
-                Padding(
-                  padding: const EdgeInsets.only(right: 12),
-                  child: Icon(Icons.arrow_forward_ios_rounded,
-                      size: 14,
-                      color: isPast ? Colors.black26 : primaryRed.withOpacity(0.5)),
                 ),
-              ],
-            ),
-          ],
+              ),
+            ],
+          ),
         ),
+      ),
+    );
+  }
+
+  // Helper UI methods to keep the card clean while preserving all logic:
+
+  Widget _buildInfoRow(IconData icon, String text, bool isPast) {
+    return Row(
+      children: [
+        Icon(icon, size: 14, color: isPast ? Colors.grey : accentPeach),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            text,
+            style: TextStyle(
+              fontSize: 13,
+              color: isPast ? Colors.black38 : Colors.black54,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStatusBadge(bool isToday) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: isToday ? Colors.green.withOpacity(0.1) : Colors.grey.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        isToday ? '📅 Today' : '✓ Past',
+        style: TextStyle(
+          fontSize: 11,
+          color: isToday ? Colors.green : Colors.grey,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPrivacyBadge(CommunityEvent event) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      decoration: BoxDecoration(
+        color: event.isPrivate ? Colors.purple.withOpacity(0.05) : Colors.blue.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            event.isPrivate ? Icons.lock : Icons.public,
+            size: 11,
+            color: event.isPrivate ? Colors.purple : Colors.blue,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            event.isPrivate ? "Private" : "Public",
+            style: TextStyle(
+              fontSize: 10,
+              color: event.isPrivate ? Colors.purple : Colors.blue,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -88,6 +88,9 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   // ─────────────────────────────────────────────
   // VALIDATION LOGIC (Remains Unchanged)
   // ─────────────────────────────────────────────
+  // ─────────────────────────────────────────────
+  // UPDATED VALIDATION LOGIC
+  // ─────────────────────────────────────────────
   Future<void> _validateAvailability() async {
     if (_selectedFacility == null) return;
 
@@ -97,6 +100,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       _availableSuggestions = [];
     });
 
+    // 1. Basic Operating Hours Check (No change here)
     if (_isOutsideOperatingHours()) {
       setState(() {
         _isAvailable = false;
@@ -111,6 +115,35 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       final dbStartTime = _formatTimeForDb(_startTime);
       final dbEndTime = _formatTimeForDb(_endTime);
 
+      // 2. NEW: Check if Admin has manually blocked this specific slot
+      bool adminBlocked = await _eventService.isBlockedByAdmin(
+        _selectedFacility!['id'], // We now use the UUID 'id'
+        formattedDate,
+        dbStartTime,
+        dbEndTime,
+      );
+
+      if (adminBlocked) {
+        // If admin blocked it, we don't even need to check for other events
+        final suggestions = await _eventService.getAvailableSlots(
+          facilityId: _selectedFacility!['id'],
+          location: _selectedFacility!['name'],
+          date: formattedDate,
+          openTime: _selectedFacility!['open_time'],
+          closeTime: _selectedFacility!['close_time'],
+        );
+
+        if (mounted) {
+          setState(() {
+            _isAvailable = false;
+            _availableSuggestions = suggestions;
+            _isCheckingAvailability = false;
+          });
+        }
+        return;
+      }
+
+      // 3. Check for existing event overlaps (existing logic)
       bool result = await _eventService.isFacilityAvailable(
         _selectedFacility!['name'],
         formattedDate,
@@ -120,7 +153,9 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
 
       List<String> suggestions = [];
       if (!result) {
+        // UPDATED: Pass the facilityId to getAvailableSlots
         suggestions = await _eventService.getAvailableSlots(
+          facilityId: _selectedFacility!['id'],
           location: _selectedFacility!['name'],
           date: formattedDate,
           openTime: _selectedFacility!['open_time'],
@@ -480,7 +515,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                       ? "Verifying venue schedule..."
                       : (_isAvailable == true
                       ? "Venue is available for this time!"
-                      : "Schedule Conflict: Please pick a different time."),
+                      : "Unavailable: This slot is reserved or already booked"),
                   style: TextStyle(
                     fontSize: 13,
                     color: _isAvailable == true ? Colors.green.shade900 : Colors.red.shade900,
@@ -494,8 +529,10 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
             const SizedBox(height: 12),
             const Divider(height: 1),
             const SizedBox(height: 12),
-            const Text(
-              "No other free slots found for this day.",
+            Text(
+              _availableSuggestions.isNotEmpty
+                  ? "Suggested available times for this venue:"
+                  : "No other free slots found for this day.",
               style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black87),
             ),
             const SizedBox(height: 8),
