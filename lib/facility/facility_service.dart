@@ -44,7 +44,7 @@ class FacilityService {
   Future<List<FacilityModel>> fetchFacilities({
     bool activeOnly = true,
     String usageType = 'facility',
-    String? bookingMode,
+    String? bookingType,
   }) async {
     var query = _supabase.from('facilities').select();
 
@@ -54,8 +54,8 @@ class FacilityService {
 
     query = query.eq('usage_type', usageType);
 
-    if (bookingMode != null && bookingMode.trim().isNotEmpty) {
-      query = query.eq('booking_mode', bookingMode);
+    if (bookingType != null && bookingType.trim().isNotEmpty) {
+      query = query.eq('booking_type', bookingType);
     }
 
     final data = await query.order('name');
@@ -101,11 +101,10 @@ class FacilityService {
     required int capacity,
     required String openTime,
     required String closeTime,
-    required String bookingMode,
+    required String bookingType,
     required String usageType,
     required bool isActive,
     int? maxDurationMinutes,
-    required bool isShared,
   }) async {
     await _supabase.from('facilities').insert({
       'name': name,
@@ -115,11 +114,10 @@ class FacilityService {
       'capacity': capacity,
       'open_time': openTime,
       'close_time': closeTime,
-      'booking_mode': bookingMode,
+      'booking_type': bookingType,
       'usage_type': usageType,
       'is_active': isActive,
-      'max_duration_minutes': maxDurationMinutes,
-      'is_shared': isShared,
+      'max_duration_minutes': maxDurationMinutes
     });
   }
 
@@ -132,11 +130,10 @@ class FacilityService {
     required int capacity,
     required String openTime,
     required String closeTime,
-    required String bookingMode,
+    required String bookingType,
     required String usageType,
     required bool isActive,
-    int? maxDurationMinutes,
-    required bool isShared,
+    int? maxDurationMinutes
   }) async {
     await _supabase.from('facilities').update({
       'name': name,
@@ -146,11 +143,10 @@ class FacilityService {
       'capacity': capacity,
       'open_time': openTime,
       'close_time': closeTime,
-      'booking_mode': bookingMode,
+      'booking_type': bookingType,
       'usage_type': usageType,
       'is_active': isActive,
-      'max_duration_minutes': maxDurationMinutes,
-      'is_shared': isShared,
+      'max_duration_minutes': maxDurationMinutes
     }).eq('id', id);
   }
 
@@ -171,7 +167,7 @@ class FacilityService {
         .from('facility_bookings')
         .select('id')
         .eq('facility_id', facilityId)
-        .eq('status', 'approved')
+        .eq('status', 'confirmed')
         .gte('booking_date', today);
 
     return (data as List).length;
@@ -197,7 +193,7 @@ class FacilityService {
       'cancelled_at': nowIso,
     })
         .eq('facility_id', facilityId)
-        .eq('status', 'approved')
+        .eq('status', 'confirmed')
         .gte('booking_date', today);
 
     await _supabase
@@ -260,7 +256,7 @@ class FacilityService {
         .select('start_time, end_time')
         .eq('facility_id', facility.id)
         .eq('booking_date', dateOnly)
-        .eq('status', 'approved');
+        .eq('status', 'confirmed');
 
     final hasApprovedOverlap = approvedBookings.any((item) {
       final bookedStart =
@@ -336,7 +332,7 @@ class FacilityService {
         .select('start_time, end_time')
         .eq('facility_id', facility.id)
         .eq('booking_date', dateOnly)
-        .eq('status', 'approved');
+        .eq('status', 'confirmed');
 
     final blockedSlots = await _supabase
         .from('facility_unavailable_slots')
@@ -433,9 +429,9 @@ class FacilityService {
         .select('participants, start_time, end_time')
         .eq('facility_id', facility.id)
         .eq('booking_date', dateOnly)
-        .eq('status', 'approved');
+        .eq('status', 'confirmed');
 
-    if (facility.isShared) {
+    if (facility.bookingType == 'shared') {
       int usedCapacity = 0;
 
       for (final row in approvedBookings) {
@@ -474,7 +470,7 @@ class FacilityService {
         'start_time': startTime,
         'end_time': endTime,
         'participants': 1,
-        'status': 'approved',
+        'status': 'confirmed',
       });
       return;
     }
@@ -505,7 +501,7 @@ class FacilityService {
       'start_time': startTime,
       'end_time': endTime,
       'participants': 1,
-      'status': 'approved',
+      'status': 'confirmed',
     });
   }
 
@@ -531,12 +527,11 @@ class FacilityService {
             id,
             name,
             location,
-            booking_mode,
-            is_shared
+            booking_type
           )
         ''')
         .eq('resident_id', user.id)
-        .inFilter('status', ['approved', 'cancelled'])
+        .inFilter('status', ['confirmed', 'cancelled'])
         .order('booking_date', ascending: false)
         .order('start_time', ascending: false);
 
@@ -548,10 +543,6 @@ class FacilityService {
   }
 
   Future<List<Map<String, dynamic>>> fetchMyFacilityRequests() async {
-    return [];
-  }
-
-  Future<List<Map<String, dynamic>>> fetchPendingFacilityRequestsForAdmin() async {
     return [];
   }
 

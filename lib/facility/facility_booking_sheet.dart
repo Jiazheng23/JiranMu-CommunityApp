@@ -26,7 +26,8 @@ class _FacilityBookingSheetState extends State<FacilityBookingSheet> {
   bool _isLoadingSlots = false;
   bool _isSubmitting = false;
 
-  List<_BookedRange> _existingRanges = [];
+  List<_BookedRange> _bookingRanges = [];
+  List<_BookedRange> _blockedRanges = [];
 
   @override
   void initState() {
@@ -110,7 +111,8 @@ class _FacilityBookingSheetState extends State<FacilityBookingSheet> {
       _selectedDate = date;
       _selectedStartTime = null;
       _selectedEndTime = null;
-      _existingRanges = [];
+      _bookingRanges = [];
+      _blockedRanges = [];
       _isLoadingSlots = true;
     });
 
@@ -122,16 +124,27 @@ class _FacilityBookingSheetState extends State<FacilityBookingSheet> {
 
       if (!mounted) return;
 
+      final bookingList = <_BookedRange>[];
+      final blockedList = <_BookedRange>[];
+
+      for (final item in result) {
+        final start = item['start_time']?.toString() ?? '';
+        final end = item['end_time']?.toString() ?? '';
+        if (start.isEmpty || end.isEmpty) continue;
+
+        final source = item['source']?.toString() ?? 'booking';
+        final range = _BookedRange(startTime: start, endTime: end);
+
+        if (source == 'blocked') {
+          blockedList.add(range);
+        } else {
+          bookingList.add(range);
+        }
+      }
+
       setState(() {
-        _existingRanges = result
-            .map(
-              (item) => _BookedRange(
-            startTime: item['start_time']?.toString() ?? '',
-            endTime: item['end_time']?.toString() ?? '',
-          ),
-        )
-            .where((e) => e.startTime.isNotEmpty && e.endTime.isNotEmpty)
-            .toList();
+        _bookingRanges = bookingList;
+        _blockedRanges = blockedList;
       });
     } catch (e) {
       await _showErrorDialog('Failed to load booking time ranges: $e');
@@ -290,27 +303,21 @@ class _FacilityBookingSheetState extends State<FacilityBookingSheet> {
 
     if (_isSameDate(_selectedDate!, _today) && startMinutes <= _nowMinutes) {
       await _showErrorDialog(
-        'Start time must be later than current time for today.',
-      );
+          'Start time must be later than current time for today.');
       return;
     }
-
     if (startMinutes < openMinutes || startMinutes >= closeMinutes) {
       await _showErrorDialog(
-        'Start time must be within facility operating hours.',
-      );
+          'Start time must be within facility operating hours.');
       return;
     }
-
     if (endMinutes <= startMinutes) {
       await _showErrorDialog('End time must be later than start time.');
       return;
     }
-
     if (endMinutes > closeMinutes) {
       await _showErrorDialog(
-        'End time must be within facility operating hours.',
-      );
+          'End time must be within facility operating hours.');
       return;
     }
 
@@ -325,21 +332,29 @@ class _FacilityBookingSheetState extends State<FacilityBookingSheet> {
       return;
     }
 
-    if (!widget.facility.isShared) {
-      final hasOverlap = _existingRanges.any((range) {
+    if (widget.facility.bookingType == 'exclusive') {
+      for (final range in _blockedRanges) {
+        final blockedStart = _parseTimeToMinutes(range.startTime);
+        final blockedEnd = _parseTimeToMinutes(range.endTime);
+        if (blockedStart == null || blockedEnd == null) continue;
+        if (!(endMinutes <= blockedStart || startMinutes >= blockedEnd)) {
+          await _showErrorDialog(
+            'This time is currently not open for booking.\nPlease choose a different time.',
+          );
+          return;
+        }
+      }
+
+      for (final range in _bookingRanges) {
         final bookedStart = _parseTimeToMinutes(range.startTime);
         final bookedEnd = _parseTimeToMinutes(range.endTime);
-
-        if (bookedStart == null || bookedEnd == null) return false;
-
-        return !(endMinutes <= bookedStart || startMinutes >= bookedEnd);
-      });
-
-      if (hasOverlap) {
-        await _showErrorDialog(
-          'This selected time range overlaps with an existing booking.',
-        );
-        return;
+        if (bookedStart == null || bookedEnd == null) continue;
+        if (!(endMinutes <= bookedStart || startMinutes >= bookedEnd)) {
+          await _showErrorDialog(
+            'This time range conflicts with an existing booking.',
+          );
+          return;
+        }
       }
     }
 
@@ -502,7 +517,9 @@ class _FacilityBookingSheetState extends State<FacilityBookingSheet> {
   Widget _buildBookedRangesSection() {
     if (_selectedDate == null) return const SizedBox.shrink();
 
-    if (_existingRanges.isEmpty) {
+    final displayRanges = _bookingRanges;
+
+    if (displayRanges.isEmpty) {
       return Container(
         width: double.infinity,
         padding: const EdgeInsets.all(14),
@@ -512,11 +529,8 @@ class _FacilityBookingSheetState extends State<FacilityBookingSheet> {
           border: Border.all(color: const Color(0xFFE4DDD6)),
         ),
         child: const Text(
-          'No unavailable time ranges for this date.',
-          style: TextStyle(
-            fontSize: 13,
-            color: Colors.black54,
-          ),
+          'No existing bookings for this date.',
+          style: TextStyle(fontSize: 13, color: Colors.black54),
         ),
       );
     }
@@ -533,7 +547,7 @@ class _FacilityBookingSheetState extends State<FacilityBookingSheet> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Unavailable time ranges',
+            'Existing bookings',
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w700,
@@ -544,15 +558,11 @@ class _FacilityBookingSheetState extends State<FacilityBookingSheet> {
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: _existingRanges.map((range) {
+            children: displayRanges.map((range) {
               final label =
                   '${_formatDbTimeTo12Hour(range.startTime)} - ${_formatDbTimeTo12Hour(range.endTime)}';
-
               return Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
                   color: const Color(0xFFF4ECE6),
                   borderRadius: BorderRadius.circular(20),

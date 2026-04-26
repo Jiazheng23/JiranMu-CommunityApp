@@ -36,11 +36,10 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
   late final TextEditingController _capacityController;
   late final TextEditingController _maxDurationController;
 
-  String _bookingMode = 'instant';
+  String _bookingType = 'exclusive';
   String _usageType = 'facility';
 
   bool _isActive = true;
-  bool _isShared = false;
   bool _isSaving = false;
 
   TimeOfDay? _openTime;
@@ -65,10 +64,14 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
       text: facility?.maxDurationMinutes?.toString() ?? '',
     );
 
-    _bookingMode = facility?.bookingMode ?? 'instant';
+    _bookingType = facility?.bookingType ?? 'exclusive';
     _usageType = facility?.usageType ?? 'facility';
+    if (_usageType == 'event') {
+      _bookingType = 'exclusive';
+    } else {
+      _bookingType = facility?.bookingType ?? 'exclusive';
+    }
     _isActive = facility?.isActive ?? true;
-    _isShared = facility?.isShared ?? false;
 
     _openTime = _parseTime(facility?.openTime);
     _closeTime = _parseTime(facility?.closeTime);
@@ -266,10 +269,9 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
     _maxDurationController.clear();
 
     setState(() {
-      _bookingMode = 'instant';
+      _bookingType = 'exclusive';
       _usageType = 'facility';
       _isActive = true;
-      _isShared = false;
       _openTime = null;
       _closeTime = null;
       _selectedImageFile = null;
@@ -298,6 +300,13 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
         ? null
         : int.parse(_maxDurationController.text.trim());
 
+    if (_usageType == 'facility' && maxDuration == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Maximum duration is required for facilities')),
+      );
+      return;
+    }
+
     if (maxDuration != null && maxDuration <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Maximum duration must be more than 0')),
@@ -323,8 +332,6 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
         finalImageUrl = uploadedUrl;
       }
 
-      final effectiveIsShared = _usageType == 'event' ? false : _isShared;
-
       if (widget.isEditMode) {
         await _facilityService.updateFacility(
           id: widget.facility!.id,
@@ -335,11 +342,10 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
           capacity: capacity,
           openTime: _formatToDbTime(_openTime!),
           closeTime: _formatToDbTime(_closeTime!),
-          bookingMode: _bookingMode,
+          bookingType: _bookingType,
           usageType: _usageType,
           isActive: _isActive,
-          maxDurationMinutes: maxDuration,
-          isShared: effectiveIsShared,
+          maxDurationMinutes: maxDuration
         );
 
         if (!mounted) return;
@@ -353,11 +359,10 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
           capacity: capacity,
           openTime: _formatToDbTime(_openTime!),
           closeTime: _formatToDbTime(_closeTime!),
-          bookingMode: _bookingMode,
+          bookingType: _bookingType,
           usageType: _usageType,
           isActive: _isActive,
-          maxDurationMinutes: maxDuration,
-          isShared: effectiveIsShared,
+          maxDurationMinutes: maxDuration
         );
 
         if (!mounted) return;
@@ -640,19 +645,26 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
               controller: _maxDurationController,
               keyboardType: TextInputType.number,
               decoration: _inputDecoration(
-                'Maximum Duration (minutes, optional)',
+                isEventUsage
+                    ? 'Maximum Duration (minutes, optional)'
+                    : 'Maximum Duration (minutes)',
               ),
               validator: (value) {
-                if (value == null || value.trim().isEmpty) return null;
-
-                final parsed = int.tryParse(value.trim());
-                if (parsed == null) {
-                  return 'Please enter a valid number';
+                if (isEventUsage) {
+                  if (value == null || value.trim().isEmpty) return null;
+                  final parsed = int.tryParse(value.trim());
+                  if (parsed == null) return 'Please enter a valid number';
+                  if (parsed <= 0) return 'Duration must be more than 0';
+                  return null;
+                } else {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Maximum duration is required';
+                  }
+                  final parsed = int.tryParse(value.trim());
+                  if (parsed == null) return 'Please enter a valid number';
+                  if (parsed <= 0) return 'Duration must be more than 0';
+                  return null;
                 }
-                if (parsed <= 0) {
-                  return 'Duration must be more than 0';
-                }
-                return null;
               },
             ),
             const SizedBox(height: 12),
@@ -676,32 +688,31 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
                   setState(() {
                     _usageType = value;
                     if (_usageType == 'event') {
-                      _isShared = false;
+                      _bookingType = 'exclusive';
                     }
+                  });
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    _formKey.currentState?.validate();
                   });
                 },
               ),
             ),
             const SizedBox(height: 12),
             _buildDropdownCard(
-              label: 'Booking Mode',
+              label: 'Booking Type',
               child: DropdownButtonFormField<String>(
-                value: _bookingMode,
+                value: _bookingType,
                 decoration: const InputDecoration(border: InputBorder.none),
                 items: const [
-                  DropdownMenuItem(
-                    value: 'instant',
-                    child: Text('Instant'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'approval',
-                    child: Text('Approval'),
-                  ),
+                  DropdownMenuItem(value: 'exclusive', child: Text('Exclusive')),
+                  DropdownMenuItem(value: 'shared', child: Text('Shared')),
                 ],
-                onChanged: (value) {
+                onChanged: isEventUsage
+                    ? null
+                    : (value) {
                   if (value == null) return;
                   setState(() {
-                    _bookingMode = value;
+                    _bookingType = value;
                   });
                 },
               ),
@@ -748,31 +759,6 @@ class _CreateFacilityPageState extends State<CreateFacilityPage> {
                     onChanged: (value) {
                       setState(() {
                         _isActive = value;
-                      });
-                    },
-                  ),
-                  const Divider(height: 1),
-                  SwitchListTile(
-                    value: isEventUsage ? false : _isShared,
-                    activeColor: primaryColor,
-                    title: const Text(
-                      'Shared Capacity',
-                      style: TextStyle(
-                        color: textDark,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    subtitle: Text(
-                      isEventUsage
-                          ? 'Event venue is not shared in facility booking.'
-                          : 'Turn on only if multiple residents can share the same time range.',
-                      style: TextStyle(color: Colors.grey.shade700),
-                    ),
-                    onChanged: isEventUsage
-                        ? null
-                        : (value) {
-                      setState(() {
-                        _isShared = value;
                       });
                     },
                   ),

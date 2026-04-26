@@ -90,7 +90,7 @@ class _ResidentBookingHistoryPageState
 
   Color _statusColor(String status) {
     switch (status.toLowerCase()) {
-      case 'approved':
+      case 'confirmed':
         return Colors.green;
       case 'cancelled':
         return Colors.redAccent;
@@ -132,7 +132,7 @@ class _ResidentBookingHistoryPageState
   Widget _buildHistoryCard(Map<String, dynamic> item) {
     final facility = _extractSubData(item['facilities']);
 
-    final status = item['status']?.toString() ?? 'approved';
+    final status = item['status']?.toString() ?? 'confirmed';
     final facilityName = facility?['name']?.toString() ?? 'Facility';
     final location = facility?['location']?.toString() ?? '-';
     final bookingDate = item['booking_date']?.toString() ?? '-';
@@ -267,7 +267,7 @@ class _ResidentBookingHistoryPageState
   @override
   Widget build(BuildContext context) {
     final allItems = _historyByStatus('all');
-    final approvedItems = _historyByStatus('approved');
+    final approvedItems = _historyByStatus('confirmed');
     final cancelledItems = _historyByStatus('cancelled');
 
     return Scaffold(
@@ -303,7 +303,7 @@ class _ResidentBookingHistoryPageState
           _buildHistoryList(
             approvedItems,
             emptyIcon: Icons.check_circle_outline,
-            emptyMsg: 'No approved booking history',
+            emptyMsg: 'No confirmed booking history',
           ),
           _buildHistoryList(
             cancelledItems,
