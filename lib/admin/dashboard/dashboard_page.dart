@@ -950,14 +950,6 @@ class _DashboardPageState extends State<DashboardPage>
             subtitle: "Bookings",
           ),
           _accessCard(
-            "Facility",
-            Icons.apartment_outlined,
-            primary,
-                () => navigateTo("Facilities"),
-            hasNotif: hasFacilityNotif,
-            subtitle: "Requests",
-          ),
-          _accessCard(
             "Visitor",
             Icons.badge_outlined,
             chartRose,

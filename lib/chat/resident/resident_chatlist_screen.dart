@@ -4,7 +4,6 @@ import 'package:assignment/chat/user_session.dart';
 
 import '../../resident/ResidentInvitationsWidget.dart';
 import '../CommunityChatScreen.dart';
-import '../CommunityChatsListScreen.dart';
 import '../chat_shared_widget.dart';
 import '../in_app_notification_service.dart';
 
@@ -142,7 +141,7 @@ class _ResidentChatsListScreenState extends State<ResidentChatsListScreen> {
 
         final msgList = msgs as List<dynamic>;
         final lastMsg = msgList.isNotEmpty
-            ? msgList[0]['content'] as String
+            ? friendlyPreview(msgList[0]['content'] as String)
             : 'Tap to start chatting';
         final lastTime = msgList.isNotEmpty
             ? DateTime.parse(msgList[0]['created_at'] as String)
@@ -292,7 +291,7 @@ class _ResidentChatsListScreenState extends State<ResidentChatsListScreen> {
 
           InAppNotificationService.instance.show(InAppNotification(
             title: notifTitle,
-            body: content,
+            body: friendlyPreview(content),
             roomId: roomId,
             onTap: onTap,
           ));

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../base_chat_screen.dart';
 import '../model/message.dart';
@@ -77,9 +76,16 @@ class _AdminChatScreenState extends State<AdminChatScreen>
 
   // ══════════════════════════════════════════════════════════════════════════
   // Poll results sheet  (admin-only)
+  // FIX: refresh poll data before showing to guarantee voter names are current
   // ══════════════════════════════════════════════════════════════════════════
 
-  void _showPollResults(Poll poll) {
+  void _showPollResults(Poll poll) async {
+    // Always refresh voter data so the sheet reflects the latest votes,
+    // even if the screen was opened before those votes arrived via realtime.
+    await loadPollData(poll.id, poll.messageId);
+    if (!mounted) return;
+
+    // Re-read from the now-updated maps instead of using stale captured values.
     final voterMap   = pollVoterNames[poll.id] ?? {};
     final totalVotes = poll.options
         .fold<int>(0, (sum, o) => sum + (voteCounts[o.id] ?? 0));

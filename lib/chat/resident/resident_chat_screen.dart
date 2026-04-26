@@ -1,24 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:uuid/uuid.dart';
-import 'package:assignment/chat/chat_shared_widget.dart';
 import 'package:assignment/chat/base_chat_screen.dart';
-
 import '../shared/chat_utils.dart';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ResidentChatScreen
-//
-// Extends the shared base with resident-only capabilities:
-//   • DM settings sheet  (view profile, invite to group, clear chat)
-//   • Group settings sheet  (view members, search, pinned, leave group)
-//   • Read-only pinned announcements sheet
-//   • Invite-to-group flow
-//   • Confirm leave / confirm clear chat
-//
-// Every shared behaviour (message list, realtime, send, search …) lives in
-// BaseChatScreenState and is reused without any duplication.
-// ─────────────────────────────────────────────────────────────────────────────
 
 class ResidentChatScreen extends StatefulWidget {
   final String roomId;
