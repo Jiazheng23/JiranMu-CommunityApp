@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:assignment/resident/VisitorPassRequestScreen.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -1436,11 +1437,11 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                           _unreadMessageCount > 0)
                         Positioned(
                           top: -3,
-                          right: -3,
+                          right: -6,
                           child: Container(
                             padding: _unreadMessageCount > 0
                                 ? const EdgeInsets.symmetric(
-                                horizontal: 4, vertical: 1)
+                                horizontal: 4, vertical: 0)
                                 : EdgeInsets.zero,
                             constraints: BoxConstraints(
                               minWidth:
@@ -1450,7 +1451,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                             ),
                             decoration: BoxDecoration(
                               color: Colors.red.shade500,
-                              borderRadius: BorderRadius.circular(10),
+                              borderRadius: BorderRadius.circular(15),
                               border: Border.all(
                                   color: Colors.white, width: 1.5),
                             ),
@@ -1529,9 +1530,10 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                 icon: Icons.badge_outlined,
                 color: const Color(0xFFE96B9E),
                 label: "Visitors",
-                onTap: () => ScaffoldMessenger.of(context)
-                    .showSnackBar(const SnackBar(
-                    content: Text("Visitors clicked"))),
+                onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => VisitorPassRequestScreen())),
               ),
               const SizedBox(width: 10),
               buildServiceItem(

@@ -5,7 +5,6 @@ import 'package:assignment/chat/shared/chat_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
-import 'package:assignment/chat/NotificationService.dart';
 import 'package:assignment/event/screen/event_details_screen.dart';
 import 'package:assignment/event/service/event_service.dart';
 

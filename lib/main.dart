@@ -4,8 +4,6 @@ import 'package:assignment/reset_password_page.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'chat/NotificationService.dart';
-
 const supabaseUrl = 'https://xgttjcpvjweueoaeufac.supabase.co';
 const supabaseKey = 'sb_publishable_jO5Lkks7maYrgqJp3IA-3g_04wY0JRb';
 
