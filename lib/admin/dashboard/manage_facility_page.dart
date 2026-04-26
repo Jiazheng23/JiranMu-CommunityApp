@@ -50,7 +50,7 @@ class _ManageFacilityPageState extends State<ManageFacilityPage> {
     return facilities.where((facility) {
       return facility.name.toLowerCase().contains(query) ||
           facility.location.toLowerCase().contains(query) ||
-          facility.bookingMode.toLowerCase().contains(query) ||
+          facility.bookingType.toLowerCase().contains(query) ||
           facility.usageType.toLowerCase().contains(query);
     }).toList();
   }
@@ -389,14 +389,12 @@ class _ManageFacilityPageState extends State<ManageFacilityPage> {
                 _buildInfoChip(Icons.people_outline, '${facility.capacity} pax'),
                 _buildInfoChip(
                   Icons.calendar_view_day_outlined,
-                  facility.bookingMode == 'instant' ? 'Instant' : 'Approval',
+                  facility.bookingType == 'exclusive' ? 'Exclusive' : 'Shared',
                 ),
                 _buildInfoChip(
                   Icons.access_time_outlined,
                   '${facility.openTime} - ${facility.closeTime}',
                 ),
-                if (facility.isShared)
-                  _buildInfoChip(Icons.groups_2_outlined, 'Shared'),
               ],
             ),
             if (facility.description.isNotEmpty) ...[

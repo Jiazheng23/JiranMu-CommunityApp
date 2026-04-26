@@ -27,7 +27,6 @@ class _FacilityBookingPageState extends State<FacilityBookingPage> {
     super.initState();
     _facilitiesFuture = _facilityService.fetchFacilities(
       usageType: 'facility',
-      bookingMode: 'instant',
       activeOnly: true,
     );
   }
@@ -42,7 +41,6 @@ class _FacilityBookingPageState extends State<FacilityBookingPage> {
     setState(() {
       _facilitiesFuture = _facilityService.fetchFacilities(
         usageType: 'facility',
-        bookingMode: 'instant',
         activeOnly: true,
       );
     });
@@ -296,12 +294,14 @@ class FacilityCard extends StatelessWidget {
                             color: const Color(0xFFE7F7EC),
                             borderRadius: BorderRadius.circular(12),
                           ),
-                          child: const Text(
-                            'Instant',
+                          child: Text(
+                            facility.bookingType == 'exclusive' ? 'Exclusive' : 'Shared',
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
-                              color: Color(0xFF2E8B57),
+                              color: facility.bookingType == 'exclusive'
+                                  ? Color(0xFF2E8B57)
+                                  : Color(0xFF8B6F2E),
                             ),
                           ),
                         ),

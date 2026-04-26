@@ -51,9 +51,9 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
       return 'Please enter password';
     }
 
-    // if (value.length < 6) {
-    //   return 'Password must be at least 6 characters';
-    // }
+    if (value.length < 6) {
+      return 'Password must be at least 6 characters';
+    }
 
     return null;
   }
