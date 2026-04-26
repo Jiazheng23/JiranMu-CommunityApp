@@ -226,7 +226,7 @@ class _VisitorPassListScreenState extends State<VisitorPassListScreen>
                           horizontal: 7, vertical: 2),
                       decoration: BoxDecoration(
                         color: Colors.orange,
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
                         '${_pending.length}',
@@ -253,7 +253,7 @@ class _VisitorPassListScreenState extends State<VisitorPassListScreen>
                           horizontal: 7, vertical: 2),
                       decoration: BoxDecoration(
                         color: Colors.red,
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
                         '${_rejected.length}',

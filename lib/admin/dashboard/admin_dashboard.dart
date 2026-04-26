@@ -342,24 +342,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
           const Icon(Icons.add, size: 30, color: Colors.white),
         ),
       )
-          : selectedIndex == 1
-          ? SizedBox(
-        width: 65,
-        height: 65,
-        child: FloatingActionButton(
-          onPressed: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-                builder: (_) => const CreateFacilityPage()),
-          ),
-          backgroundColor: primaryColor,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(60)),
-          elevation: 4,
-          child: const Icon(Icons.add,
-              size: 30, color: Colors.white),
-        ),
-      )
           : selectedIndex == 2
           ? SizedBox(
         width: 65,

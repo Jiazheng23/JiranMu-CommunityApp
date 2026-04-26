@@ -504,15 +504,33 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
   // ── Auth ──────────────────────────────────────────────────────────────────
 
   Future<void> logout() async {
-    UserSession.clear();
-    await Supabase.instance.client.auth.signOut();
-    if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const ResidentLoginPage()),
-          (route) => false,
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
     );
-  }
 
+    try {
+      await Supabase.instance.client.auth.signOut();
+
+      if (mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => const ResidentLoginPage()),
+              (route) => false,
+        );
+      }
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Logout failed: $e"),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
   // ── Emergency ─────────────────────────────────────────────────────────────
 
   void resetState() {
@@ -1876,6 +1894,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     );
   }
 }
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // _NotificationSheet  — with All / Announcements / Messages filter tabs
