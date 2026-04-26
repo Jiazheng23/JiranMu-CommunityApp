@@ -83,6 +83,18 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
     return null;
   }
 
+  String? _validateUnit(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Please enter unit number';
+    }
+    final trimmed = value.trim();
+    final unitRegex = RegExp(r'^\d+(-\d+)?$');
+    if (!unitRegex.hasMatch(trimmed)) {
+      return 'Invalid format (e.g. 10-15)';
+    }
+    return null;
+  }
+
   String? _validatePassword(String? value) {
     if (value == null || value.isEmpty) {
       return 'Please enter password';
@@ -405,7 +417,7 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
 
                 _buildTextFormField(
                   controller: blockController,
-                  hintText: 'Block',
+                  hintText: 'Block (e.g. A)',
                   icon: Icons.apartment_outlined,
                   validator: (value) => _validateRequired(value, 'block'),
                 ),
@@ -413,9 +425,9 @@ class _ResidentRegisterPageState extends State<ResidentRegisterPage> {
 
                 _buildTextFormField(
                   controller: unitController,
-                  hintText: 'Unit Number',
+                  hintText: 'Unit Number (e.g 10-12)',
                   icon: Icons.home_outlined,
-                  validator: (value) => _validateRequired(value, 'unit number'),
+                  validator: _validateUnit,
                 ),
                 const SizedBox(height: 16),
 

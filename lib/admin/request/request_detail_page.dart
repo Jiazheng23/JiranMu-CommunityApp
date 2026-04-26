@@ -60,7 +60,7 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
             'block': subData['block'],
             'unit_number': subData['unit_number'],
             'status': 'active',
-            'resident_type': 'owner',
+            'resident_type': subData['resident_type'] ?? 'owner'
           });
         }
       } else if (type == 'booking') {
