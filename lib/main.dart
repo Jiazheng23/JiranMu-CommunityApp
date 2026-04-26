@@ -3,11 +3,12 @@ import 'package:assignment/resident/resident_login_page.dart';
 import 'package:assignment/reset_password_page.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
 import 'chat/NotificationService.dart';
+import 'package:assignment/resident/resident_home_page.dart';
 
 const supabaseUrl = 'https://xgttjcpvjweueoaeufac.supabase.co';
 const supabaseKey = 'sb_publishable_jO5Lkks7maYrgqJp3IA-3g_04wY0JRb';
+
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -64,6 +65,8 @@ class _MyAppState extends State<MyApp> {
 
   @override
   Widget build(BuildContext context) {
+    final session = Supabase.instance.client.auth.currentSession;
+
     return MaterialApp(
       navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
@@ -71,7 +74,7 @@ class _MyAppState extends State<MyApp> {
       theme: ThemeData(
         scaffoldBackgroundColor: const Color(0xFFF8F3EE),
       ),
-      home: const ResidentLoginPage(),
+      home: session != null ? const ResidentHomePage() : const ResidentLoginPage(),
     );
   }
 }
