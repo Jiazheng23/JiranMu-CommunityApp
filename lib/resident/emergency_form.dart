@@ -1,13 +1,8 @@
 import 'dart:io';
-import 'dart:convert';
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:assignment/resident/Resident_Emergency_Detail_Page.dart';
 
 class EmergencyForm extends StatefulWidget {
@@ -31,11 +26,8 @@ class _EmergencyFormState extends State<EmergencyForm> with SingleTickerProvider
   String? homeUnitNumber;
   bool _isLoadingUserData = true;
 
-  // ── Tab Controller ──
+  // ── Tab Controller
   TabController? _tabController;
-
-  // ── Network Subscription ──
-  late StreamSubscription<List<ConnectivityResult>> _connectivitySubscription;
 
   // ── Design tokens ──
   static const Color bgColor      = Color(0xFFF5F1ED);
@@ -57,6 +49,7 @@ class _EmergencyFormState extends State<EmergencyForm> with SingleTickerProvider
   List<Map<String, dynamic>> _historyData = [];
   bool _isLoadingHistory = true;
 
+  // Emergency type options
   final List<Map<String, dynamic>> emergencyTypes = [
     {'type': 'Fire',            'icon': Icons.local_fire_department_rounded, 'color': const Color(0xFFFF5A5A), 'label': 'Fire'},
     {'type': 'Medical',         'icon': Icons.medical_services_rounded,      'color': const Color(0xFFFF8C42), 'label': 'Medical'},
@@ -72,23 +65,14 @@ class _EmergencyFormState extends State<EmergencyForm> with SingleTickerProvider
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _fetchUserData();
     _fetchHistory();
-
-    _syncOfflineRecords();
-
-    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((List<ConnectivityResult> results) {
-      if (!results.contains(ConnectivityResult.none)) {
-        _syncOfflineRecords();
-      }
-    });
+    _fetchUserData();
   }
 
   @override
   void dispose() {
     _descController.dispose();
     _tabController?.dispose();
-    _connectivitySubscription.cancel();
     super.dispose();
   }
 
@@ -115,6 +99,7 @@ class _EmergencyFormState extends State<EmergencyForm> with SingleTickerProvider
     }
   }
 
+  // ── Fetch User's Emergency History ──
   Future<void> _fetchHistory() async {
     setState(() => _isLoadingHistory = true);
     try {
@@ -135,10 +120,13 @@ class _EmergencyFormState extends State<EmergencyForm> with SingleTickerProvider
     } catch (e) {
       debugPrint("Error fetching history: $e");
     } finally {
-      if (mounted) setState(() => _isLoadingHistory = false);
+      if (mounted) {
+        setState(() => _isLoadingHistory = false);
+      }
     }
   }
 
+  // ── Get GPS location ──
   Future<void> _getLocation() async {
     setState(() => isLocating = true);
     try {
@@ -154,7 +142,8 @@ class _EmergencyFormState extends State<EmergencyForm> with SingleTickerProvider
         }
         return;
       }
-      final pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+      final pos = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high);
       setState(() {
         latitude  = pos.latitude;
         longitude = pos.longitude;
@@ -166,6 +155,7 @@ class _EmergencyFormState extends State<EmergencyForm> with SingleTickerProvider
     }
   }
 
+  // ── Pick evidence photo ──
   Future<void> _pickEvidence() async {
     final XFile? file = await _picker.pickImage(source: ImageSource.camera, imageQuality: 70);
     if (file != null) setState(() => evidenceFile = File(file.path));
@@ -173,43 +163,68 @@ class _EmergencyFormState extends State<EmergencyForm> with SingleTickerProvider
 
   Future<void> _submit() async {
     if (selectedType == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please select an emergency type."), backgroundColor: Colors.red));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text("Please select an emergency type."),
+          backgroundColor: Colors.red));
       return;
     }
 
-    if (useHomeAddress && (homeUnitNumber == null || homeUnitNumber!.isEmpty)) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("No home address in profile. Use GPS."), backgroundColor: Colors.orange));
-      return;
-    } else if (!useHomeAddress && (latitude == null || longitude == null)) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please capture your GPS location."), backgroundColor: Colors.orange));
+    if (useHomeAddress) {
+      if (homeUnitNumber == null || homeUnitNumber!.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text("Your profile does not include an address. Please use your current location or update your information."),
+            backgroundColor: Colors.orange));
+        return;
+      }
+    }
+    else if (latitude == null || longitude == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text("Please capture your GPS location."),
+          backgroundColor: Colors.orange));
       return;
     }
 
     setState(() => isSubmitting = true);
 
     try {
-      final List<ConnectivityResult> connectivityResult = await (Connectivity().checkConnectivity());
-      bool isOnline = !connectivityResult.contains(ConnectivityResult.none);
+      final userId = supabase.auth.currentUser?.id;
+      if (userId == null) throw "User not logged in";
 
-      if (isOnline) {
-        try {
-          await _submitOnline();
-        } catch (e) {
-          if (e.toString().contains('SocketException') ||
-              e.toString().contains('Failed host lookup') ||
-              e.toString().contains('ClientException')) {
+      String? evidenceUrl;
 
-            debugPrint("If a fake network or no internet connection is detected, the system will automatically downgrade to offline saving....");
-            await _saveOffline();
+      if (evidenceFile != null) {
 
-          } else {
-            rethrow;
-          }
-        }
-      } else {
-        await _saveOffline();
+        final fileExt = evidenceFile!.path.split('.').last;
+        final fileName = 'emergency_${DateTime.now().millisecondsSinceEpoch}.$fileExt';
+        final filePath = '$userId/$fileName';
+
+        await supabase.storage.from('emergency_evidence').upload(
+          filePath,
+          evidenceFile!,
+          fileOptions: const FileOptions(cacheControl: '3600', upsert: false),
+        );
+
+        evidenceUrl = supabase.storage.from('emergency_evidence').getPublicUrl(filePath);
       }
+
+      await supabase.from('emergency').insert({
+        'user_id': userId,
+        'type': selectedType,
+        'status': 'active',
+        'latitude': useHomeAddress ? null : latitude,
+        'longitude': useHomeAddress ? null : longitude,
+        'is_home_address': useHomeAddress,
+        'description': _descController.text.trim().isEmpty ? null : _descController.text.trim(),
+        'report_evidence_url': evidenceUrl,
+        'created_at': DateTime.now().toUtc().toIso8601String(),
+      });
+
       if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text("An emergency alert has been sent! Help is on its way."),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3)));
+
         setState(() {
           selectedType = null;
           evidenceFile = null;
@@ -218,153 +233,25 @@ class _EmergencyFormState extends State<EmergencyForm> with SingleTickerProvider
           longitude = null;
           useHomeAddress = false;
         });
+
+        await _fetchHistory();
+
         _tabController?.animateTo(1);
       }
     } catch (e) {
-      debugPrint("Submit Error: $e");
+      debugPrint("Submission failed Error: $e");
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("Submission error: $e"), backgroundColor: Colors.red)
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text("Submission failed: $e"),
+            backgroundColor: Colors.red));
       }
     } finally {
-      if (mounted) setState(() => isSubmitting = false);
-    }
-  }
-
-  Future<void> _submitOnline() async {
-    final userId = supabase.auth.currentUser?.id;
-    if (userId == null) throw "User not logged in";
-
-    String? evidenceUrl;
-
-    if (evidenceFile != null) {
-      final fileExt = evidenceFile!.path.split('.').last;
-      final fileName = 'emergency_${DateTime.now().millisecondsSinceEpoch}.$fileExt';
-      final filePath = '$userId/$fileName';
-
-      await supabase.storage.from('emergency_evidence').upload(
-        filePath,
-        evidenceFile!,
-        fileOptions: const FileOptions(cacheControl: '3600', upsert: false),
-      );
-      evidenceUrl = supabase.storage.from('emergency_evidence').getPublicUrl(filePath);
-    }
-
-    await supabase.from('emergency').insert({
-      'user_id': userId,
-      'type': selectedType,
-      'status': 'active',
-      'latitude': useHomeAddress ? null : latitude,
-      'longitude': useHomeAddress ? null : longitude,
-      'is_home_address': useHomeAddress,
-      'description': _descController.text.trim().isEmpty ? null : _descController.text.trim(),
-      'report_evidence_url': evidenceUrl,
-      'created_at': DateTime.now().toUtc().toIso8601String(),
-    });
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text("🚨 Alert sent! Help is on the way."), backgroundColor: Colors.green));
-      await _fetchHistory();
-    }
-  }
-
-  Future<void> _saveOffline() async {
-    String? permanentImagePath;
-
-    if (evidenceFile != null) {
-      final directory = await getApplicationDocumentsDirectory();
-      final fileName = 'offline_img_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      permanentImagePath = '${directory.path}/$fileName';
-      await evidenceFile!.copy(permanentImagePath);
-    }
-
-    final offlineData = {
-      'type': selectedType,
-      'latitude': useHomeAddress ? null : latitude,
-      'longitude': useHomeAddress ? null : longitude,
-      'is_home_address': useHomeAddress,
-      'description': _descController.text.trim(),
-      'local_image_path': permanentImagePath,
-      'created_at': DateTime.now().toUtc().toIso8601String(),
-    };
-
-    final prefs = await SharedPreferences.getInstance();
-    List<String> pendingRecords = prefs.getStringList('offline_emergencies') ?? [];
-    pendingRecords.add(jsonEncode(offlineData));
-    await prefs.setStringList('offline_emergencies', pendingRecords);
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text("No internet. 📡 Report saved OFFLINE and will auto-sync when connected."),
-          backgroundColor: Colors.orange, duration: Duration(seconds: 4)));
-    }
-  }
-
-  Future<void> _syncOfflineRecords() async {
-    final List<ConnectivityResult> connectivityResult = await (Connectivity().checkConnectivity());
-    if (connectivityResult.contains(ConnectivityResult.none)) return;
-
-    final prefs = await SharedPreferences.getInstance();
-    List<String> pendingRecords = prefs.getStringList('offline_emergencies') ?? [];
-
-    if (pendingRecords.isEmpty) return;
-
-    List<String> failedRecords = [];
-    bool hasSyncedAny = false;
-
-    for (String recordString in pendingRecords) {
-      try {
-        final data = jsonDecode(recordString);
-        final userId = supabase.auth.currentUser?.id;
-        if (userId == null) continue;
-
-        String? evidenceUrl;
-
-        if (data['local_image_path'] != null) {
-          File localFile = File(data['local_image_path']);
-          if (await localFile.exists()) {
-            final fileName = 'emergency_${DateTime.now().millisecondsSinceEpoch}.jpg';
-            final filePath = '$userId/$fileName';
-            await supabase.storage.from('emergency_evidence').upload(filePath, localFile);
-            evidenceUrl = supabase.storage.from('emergency_evidence').getPublicUrl(filePath);
-
-            await localFile.delete();
-          }
-        }
-
-        await supabase.from('emergency').insert({
-          'user_id': userId,
-          'type': data['type'],
-          'status': 'active',
-          'latitude': data['latitude'],
-          'longitude': data['longitude'],
-          'is_home_address': data['is_home_address'],
-          'description': data['description'],
-          'report_evidence_url': evidenceUrl,
-          'created_at': data['created_at'],
-        });
-
-        hasSyncedAny = true;
-      } catch (e) {
-        failedRecords.add(recordString);
-        debugPrint("Sync failed for record: $e");
+      if (mounted) {
+        setState(() => isSubmitting = false);
       }
     }
-
-    await prefs.setStringList('offline_emergencies', failedRecords);
-
-    if (hasSyncedAny && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text("✅ Offline emergency reports synced successfully!"), backgroundColor: Colors.green));
-      _fetchHistory();
-    }
   }
 
-  // ==============================================================
-  // UI Build
-  // ==============================================================
   @override
   Widget build(BuildContext context) {
     if (_tabController == null) {
@@ -384,19 +271,31 @@ class _EmergencyFormState extends State<EmergencyForm> with SingleTickerProvider
           icon: const Icon(Icons.arrow_back_ios_new_rounded, color: textDark),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text("Emergency", style: TextStyle(color: textDark, fontWeight: FontWeight.bold, fontSize: 18)),
+        title: const Text(
+          "Emergency",
+          style: TextStyle(color: textDark, fontWeight: FontWeight.bold, fontSize: 18),
+        ),
         bottom: TabBar(
           controller: _tabController,
           labelColor: primaryColor,
           unselectedLabelColor: Colors.grey,
           indicatorColor: primaryColor,
           indicatorWeight: 3,
-          tabs: const [Tab(text: "Report"), Tab(text: "History")],
+          tabs: const [
+            Tab(text: "Report"),
+            Tab(text: "History"),
+          ],
         ),
       ),
       body: TabBarView(
         controller: _tabController,
-        children: [_buildReportForm(), _buildHistoryTab()],
+        children: [
+          // ── TAB 1: Report Form ──
+          _buildReportForm(),
+
+          // ── TAB 2: History List ──
+          _buildHistoryTab(),
+        ],
       ),
     );
   }
@@ -439,6 +338,7 @@ class _EmergencyFormState extends State<EmergencyForm> with SingleTickerProvider
                 ],
               ),
             ),
+
             const SizedBox(height: 28),
 
             // Emergency type grid
@@ -472,11 +372,13 @@ class _EmergencyFormState extends State<EmergencyForm> with SingleTickerProvider
                 );
               }).toList(),
             ),
+
             const SizedBox(height: 28),
 
             // Location Section
             const Text("Where is the emergency?", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: textDark)),
             const SizedBox(height: 12),
+
             Row(
               children: [
                 Expanded(
@@ -541,7 +443,7 @@ class _EmergencyFormState extends State<EmergencyForm> with SingleTickerProvider
                       SizedBox(width: 14),
                       Expanded(
                           child: Text(
-                              "No home address found. Please use GPS.",
+                              "No home address found in your profile. Please use GPS or update your profile first.",
                               style: TextStyle(color: Colors.red, fontWeight: FontWeight.w500, fontSize: 13, height: 1.4)
                           )
                       ),
@@ -577,7 +479,7 @@ class _EmergencyFormState extends State<EmergencyForm> with SingleTickerProvider
 
             const SizedBox(height: 28),
 
-            // Description
+            // Description (Optional)
             const Text("Additional Details (Optional)", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: textDark)),
             const SizedBox(height: 12),
             Container(
@@ -596,6 +498,7 @@ class _EmergencyFormState extends State<EmergencyForm> with SingleTickerProvider
                 ),
               ),
             ),
+
             const SizedBox(height: 28),
 
             // Evidence photo
@@ -623,6 +526,7 @@ class _EmergencyFormState extends State<EmergencyForm> with SingleTickerProvider
                 ),
               ),
             ),
+
             const SizedBox(height: 36),
 
             // Submit button
@@ -636,6 +540,7 @@ class _EmergencyFormState extends State<EmergencyForm> with SingleTickerProvider
                     : const Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.emergency_rounded, color: Colors.white, size: 22), SizedBox(width: 10), Text("Send Emergency Alert", style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold))]),
               ),
             ),
+
             const SizedBox(height: 16),
             const Center(child: Text("Only use for real emergencies.\nFalse reports may result in penalties.", textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: Colors.black45, height: 1.4))),
             const SizedBox(height: 30),
@@ -678,19 +583,12 @@ class _EmergencyFormState extends State<EmergencyForm> with SingleTickerProvider
           final type = item['type'] ?? 'Unknown';
           final status = item['status'] ?? 'unknown';
           final isSolved = status == 'solved';
+          final dateStr = item['created_at']?.toString().substring(0, 16).replaceFirst('T', ' ') ?? '';
 
-          String dateStr = 'N/A';
-          if (item['created_at'] != null) {
-            try {
-              dateStr = DateTime.parse(item['created_at']).toLocal().toString().substring(0, 16);
-            } catch (e) {
-              dateStr = item['created_at'].toString().substring(0, 16);
-            }
-          }
-
+          // Find icon and color based on type
           final typeInfo = emergencyTypes.firstWhere(
                 (e) => e['type'] == type,
-            orElse: () => emergencyTypes.last,
+            orElse: () => emergencyTypes.last, // 'Other'
           );
 
           return GestureDetector(
@@ -706,7 +604,9 @@ class _EmergencyFormState extends State<EmergencyForm> with SingleTickerProvider
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(16),
-                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 3))],
+                boxShadow: [
+                  BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 3)),
+                ],
               ),
               child: Padding(
                 padding: const EdgeInsets.all(16),
@@ -744,6 +644,7 @@ class _EmergencyFormState extends State<EmergencyForm> with SingleTickerProvider
                       ),
                     ),
                     const SizedBox(width: 8),
+                    // 加一个小箭头，暗示用户可以点击查看详情
                     const Icon(Icons.chevron_right_rounded, color: Colors.black26),
                   ],
                 ),
