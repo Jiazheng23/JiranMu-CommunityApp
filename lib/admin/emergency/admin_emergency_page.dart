@@ -225,7 +225,7 @@ class _AdminEmergencyPageState extends State<AdminEmergencyPage> {
       );
 
       final adminId = supabase.auth.currentUser!.id;
-      final adminData = await supabase.from('profiles').select('full_name').eq('id', adminId).single();
+      final adminData = await supabase.from('admin_new').select('full_name').eq('id', adminId).single();
       final String realName = adminData['full_name'] ?? 'Security Officer';
 
       final String emergencyId = (widget.emergency['emergency_id'] ?? widget.emergency['emergency_id']).toString();
