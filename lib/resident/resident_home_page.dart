@@ -106,6 +106,13 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
   String? _accountError;
   Map<String, dynamic>? _residentSummary;
 
+  String _getGreeting() {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
+  }
+
   // ─────────────────────────────────────────────
   @override
   void initState() {
@@ -1477,14 +1484,13 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
           ),
 
           const SizedBox(height: 20),
-          Text("Welcome back",
-              style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: textDark)),
+          Text(
+            '${_getGreeting()}, ${_residentSummary?['full_name']?.toString().split(' ').first ?? 'there'}!',
+            style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: textDark),
+          ),
           const SizedBox(height: 6),
           const Text(
-            "Manage your community services and stay informed.",
+            "Stay in the loop with your community.",
             style: TextStyle(
                 fontSize: 14, color: Colors.black54, height: 1.5),
           ),
