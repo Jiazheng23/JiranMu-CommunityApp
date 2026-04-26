@@ -1,4 +1,29 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+
+// ─────────────────────────────────────────────
+// Friendly message preview helper
+// ─────────────────────────────────────────────
+
+String friendlyPreview(String content) {
+  final trimmed = content.trimLeft();
+  if (!trimmed.startsWith('{')) return content;
+  try {
+    final map = jsonDecode(trimmed) as Map<String, dynamic>;
+    switch (map['type'] as String?) {
+      case 'event_invitation':
+        final title = map['title'] as String? ?? 'an event';
+        return 'Event Invitation: $title';
+      case 'poll':
+        final question = map['question'] as String? ?? 'a poll';
+        return 'Poll: $question';
+      default:
+        return content;
+    }
+  } catch (_) {
+    return content;
+  }
+}
 
 // ─────────────────────────────────────────────
 // Models
@@ -18,8 +43,8 @@ class ResidentProfile {
   });
 
   factory ResidentProfile.fromMap(Map<String, dynamic> map) => ResidentProfile(
-    id: map['id']?.toString() ?? '',
-    name: map['full_name']?.toString() ?? 'Unknown',
+    id:    map['id']?.toString() ?? '',
+    name:  map['full_name']?.toString() ?? 'Unknown',
     block: map['block']?.toString() ?? '',
     email: map['email']?.toString() ?? '',
   );
@@ -116,6 +141,8 @@ class GroupChatTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hasUnread = group.unreadCount > 0;
+    // ── KEY FIX: convert raw JSON to friendly text ──
+    final preview = friendlyPreview(group.lastMessage);
 
     return GestureDetector(
       onTap: onTap,
@@ -129,22 +156,22 @@ class GroupChatTile extends StatelessWidget {
               : null,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.04),
+              color:      Colors.black.withOpacity(0.04),
               blurRadius: 8,
-              offset: const Offset(0, 2),
+              offset:     const Offset(0, 2),
             ),
           ],
         ),
         child: Row(
           children: [
             Container(
-              width: 50,
+              width:  50,
               height: 50,
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [primaryColor, primaryColor.withOpacity(0.7)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+                  begin:  Alignment.topLeft,
+                  end:    Alignment.bottomRight,
                 ),
                 borderRadius: BorderRadius.circular(16),
               ),
@@ -152,9 +179,9 @@ class GroupChatTile extends StatelessWidget {
                 child: Text(
                   group.block,
                   style: const TextStyle(
-                      color: Colors.white,
+                      color:      Colors.white,
                       fontWeight: FontWeight.w800,
-                      fontSize: 17),
+                      fontSize:   17),
                 ),
               ),
             ),
@@ -164,28 +191,24 @@ class GroupChatTile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   HighlightText(
-                    text: group.name,
-                    query: searchQuery,
+                    text:           group.name,
+                    query:          searchQuery,
                     style: TextStyle(
-                      fontSize: 15,
-                      fontWeight:
-                      hasUnread ? FontWeight.w800 : FontWeight.w700,
-                      color: const Color(0xFF2B2B2B),
+                      fontSize:   15,
+                      fontWeight: hasUnread ? FontWeight.w800 : FontWeight.w700,
+                      color:      const Color(0xFF2B2B2B),
                     ),
                     highlightColor: primaryColor,
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    group.lastMessage,
+                    preview, // ← friendly text, not raw JSON
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 13,
-                      color: hasUnread
-                          ? const Color(0xFF2B2B2B)
-                          : Colors.black45,
-                      fontWeight:
-                      hasUnread ? FontWeight.w600 : FontWeight.w400,
+                      fontSize:   13,
+                      color:      hasUnread ? const Color(0xFF2B2B2B) : Colors.black45,
+                      fontWeight: hasUnread ? FontWeight.w600 : FontWeight.w400,
                     ),
                   ),
                 ],
@@ -198,16 +221,15 @@ class GroupChatTile extends StatelessWidget {
                 Text(
                   formatTime(group.lastTime),
                   style: TextStyle(
-                    fontSize: 12,
-                    color: hasUnread ? primaryColor : Colors.black38,
-                    fontWeight:
-                    hasUnread ? FontWeight.w600 : FontWeight.w400,
+                    fontSize:   12,
+                    color:      hasUnread ? primaryColor : Colors.black38,
+                    fontWeight: hasUnread ? FontWeight.w600 : FontWeight.w400,
                   ),
                 ),
                 if (hasUnread) ...[
                   const SizedBox(height: 5),
                   Container(
-                    width: 9,
+                    width:  9,
                     height: 9,
                     decoration: BoxDecoration(
                         color: primaryColor, shape: BoxShape.circle),
@@ -246,8 +268,10 @@ class ConversationTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final resident = preview.resident;
+    final resident  = preview.resident;
     final hasUnread = preview.unreadCount > 0;
+    // ── KEY FIX: convert raw JSON to friendly text ──
+    final lastMsgPreview = friendlyPreview(preview.lastMessage);
 
     return GestureDetector(
       onTap: onTap,
@@ -261,16 +285,16 @@ class ConversationTile extends StatelessWidget {
               : null,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.04),
+              color:      Colors.black.withOpacity(0.04),
               blurRadius: 8,
-              offset: const Offset(0, 2),
+              offset:     const Offset(0, 2),
             ),
           ],
         ),
         child: Row(
           children: [
             Container(
-              width: 50,
+              width:  50,
               height: 50,
               decoration: BoxDecoration(
                 gradient: LinearGradient(
@@ -279,7 +303,7 @@ class ConversationTile extends StatelessWidget {
                     resident.avatarColor.withOpacity(0.7),
                   ],
                   begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+                  end:   Alignment.bottomRight,
                 ),
                 borderRadius: BorderRadius.circular(16),
               ),
@@ -287,9 +311,9 @@ class ConversationTile extends StatelessWidget {
                 child: Text(
                   resident.initials,
                   style: const TextStyle(
-                      color: Colors.white,
+                      color:      Colors.white,
                       fontWeight: FontWeight.w800,
-                      fontSize: 17),
+                      fontSize:   17),
                 ),
               ),
             ),
@@ -299,28 +323,24 @@ class ConversationTile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   HighlightText(
-                    text: resident.name,
-                    query: searchQuery,
+                    text:           resident.name,
+                    query:          searchQuery,
                     style: TextStyle(
-                      fontSize: 15,
-                      fontWeight:
-                      hasUnread ? FontWeight.w800 : FontWeight.w700,
-                      color: const Color(0xFF2B2B2B),
+                      fontSize:   15,
+                      fontWeight: hasUnread ? FontWeight.w800 : FontWeight.w700,
+                      color:      const Color(0xFF2B2B2B),
                     ),
                     highlightColor: primaryColor,
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    preview.lastMessage,
+                    lastMsgPreview, // ← friendly text, not raw JSON
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 13,
-                      color: hasUnread
-                          ? const Color(0xFF2B2B2B)
-                          : Colors.black45,
-                      fontWeight:
-                      hasUnread ? FontWeight.w600 : FontWeight.w400,
+                      fontSize:   13,
+                      color:      hasUnread ? const Color(0xFF2B2B2B) : Colors.black45,
+                      fontWeight: hasUnread ? FontWeight.w600 : FontWeight.w400,
                     ),
                   ),
                 ],
@@ -333,16 +353,15 @@ class ConversationTile extends StatelessWidget {
                 Text(
                   formatTime(preview.lastTime),
                   style: TextStyle(
-                    fontSize: 12,
-                    color: hasUnread ? primaryColor : Colors.black38,
-                    fontWeight:
-                    hasUnread ? FontWeight.w600 : FontWeight.w400,
+                    fontSize:   12,
+                    color:      hasUnread ? primaryColor : Colors.black38,
+                    fontWeight: hasUnread ? FontWeight.w600 : FontWeight.w400,
                   ),
                 ),
                 if (hasUnread) ...[
                   const SizedBox(height: 5),
                   Container(
-                    width: 9,
+                    width:  9,
                     height: 9,
                     decoration: BoxDecoration(
                         color: primaryColor, shape: BoxShape.circle),
@@ -381,7 +400,7 @@ class HighlightText extends StatelessWidget {
       return Text(text,
           style: style, maxLines: 1, overflow: TextOverflow.ellipsis);
     }
-    final lowerText = text.toLowerCase();
+    final lowerText  = text.toLowerCase();
     final lowerQuery = query.toLowerCase();
     final matchIndex = lowerText.indexOf(lowerQuery);
     if (matchIndex == -1) {
@@ -392,11 +411,12 @@ class HighlightText extends StatelessWidget {
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       text: TextSpan(
-        style: style,
+        style:    style,
         children: [
-          if (matchIndex > 0) TextSpan(text: text.substring(0, matchIndex)),
+          if (matchIndex > 0)
+            TextSpan(text: text.substring(0, matchIndex)),
           TextSpan(
-            text: text.substring(matchIndex, matchIndex + query.length),
+            text:  text.substring(matchIndex, matchIndex + query.length),
             style: style.copyWith(
                 color: highlightColor, fontWeight: FontWeight.w900),
           ),
@@ -437,7 +457,7 @@ class NeighbourCard extends StatelessWidget {
             Stack(
               children: [
                 Container(
-                  width: 56,
+                  width:  56,
                   height: 56,
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
@@ -446,14 +466,14 @@ class NeighbourCard extends StatelessWidget {
                         profile.avatarColor.withOpacity(0.7),
                       ],
                       begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
+                      end:   Alignment.bottomRight,
                     ),
                     borderRadius: BorderRadius.circular(17),
                     boxShadow: [
                       BoxShadow(
-                        color: profile.avatarColor.withOpacity(0.35),
+                        color:      profile.avatarColor.withOpacity(0.35),
                         blurRadius: 8,
-                        offset: const Offset(0, 3),
+                        offset:     const Offset(0, 3),
                       ),
                     ],
                   ),
@@ -461,22 +481,22 @@ class NeighbourCard extends StatelessWidget {
                     child: Text(
                       profile.initials,
                       style: const TextStyle(
-                          color: Colors.white,
+                          color:      Colors.white,
                           fontWeight: FontWeight.w800,
-                          fontSize: 18),
+                          fontSize:   18),
                     ),
                   ),
                 ),
                 if (isOnline)
                   Positioned(
                     bottom: 1,
-                    right: 1,
+                    right:  1,
                     child: Container(
-                      width: 13,
+                      width:  13,
                       height: 13,
                       decoration: BoxDecoration(
-                        color: const Color(0xFF22C55E),
-                        shape: BoxShape.circle,
+                        color:  const Color(0xFF22C55E),
+                        shape:  BoxShape.circle,
                         border: Border.all(
                             color: const Color(0xFFF5F1ED), width: 2),
                       ),
@@ -487,13 +507,13 @@ class NeighbourCard extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               profile.firstName,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+              maxLines:  1,
+              overflow:  TextOverflow.ellipsis,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                  fontSize: 11,
+                  fontSize:   11,
                   fontWeight: FontWeight.w600,
-                  color: Color(0xFF2B2B2B)),
+                  color:      Color(0xFF2B2B2B)),
             ),
           ],
         ),
@@ -517,7 +537,7 @@ class CountBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color:        color.withOpacity(0.12),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Text(
@@ -557,21 +577,21 @@ class FabOption extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
             decoration: BoxDecoration(
-              color: Colors.black87,
+              color:        Colors.black87,
               borderRadius: BorderRadius.circular(20),
             ),
             child: Text(label,
                 style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
+                    color:      Colors.white,
+                    fontSize:   13,
                     fontWeight: FontWeight.w600)),
           ),
           const SizedBox(width: 10),
           Container(
-            width: 44,
+            width:  44,
             height: 44,
-            decoration:
-            BoxDecoration(color: color.withOpacity(0.85), shape: BoxShape.circle),
+            decoration: BoxDecoration(
+                color: color.withOpacity(0.85), shape: BoxShape.circle),
             child: Icon(icon, color: Colors.white, size: 20),
           ),
         ],
@@ -612,13 +632,13 @@ class ChatProfileHeader extends StatelessWidget {
       child: Row(
         children: [
           Container(
-            width: 42,
+            width:  42,
             height: 42,
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [avatarColor, avatarColor.withOpacity(0.7)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+                begin:  Alignment.topLeft,
+                end:    Alignment.bottomRight,
               ),
               borderRadius: BorderRadius.circular(13),
             ),
@@ -626,9 +646,9 @@ class ChatProfileHeader extends StatelessWidget {
               child: Text(
                 _getInitials(displayName),
                 style: const TextStyle(
-                    color: Colors.white,
+                    color:      Colors.white,
                     fontWeight: FontWeight.w800,
-                    fontSize: 15),
+                    fontSize:   15),
               ),
             ),
           ),
@@ -639,13 +659,13 @@ class ChatProfileHeader extends StatelessWidget {
               children: [
                 Text(displayName,
                     style: const TextStyle(
-                        fontSize: 17,
+                        fontSize:   17,
                         fontWeight: FontWeight.w800,
-                        color: _textDark)),
+                        color:      _textDark)),
                 Text(subtitle,
                     style: const TextStyle(
-                        fontSize: 12,
-                        color: Colors.black45,
+                        fontSize:   12,
+                        color:      Colors.black45,
                         fontWeight: FontWeight.w500)),
               ],
             ),
@@ -669,7 +689,7 @@ class ChatSearchBar extends StatelessWidget {
   final ValueChanged<String> onChanged;
   final ValueChanged<String> onSubmitted;
   final VoidCallback onClear;
-  static const Color _primary = Color(0xFF9A4B3C);
+  static const Color _primary  = Color(0xFF9A4B3C);
   static const Color _textDark = Color(0xFF2B2B2B);
 
   const ChatSearchBar({
@@ -691,7 +711,7 @@ class ChatSearchBar extends StatelessWidget {
       child: Container(
         height: 53,
         decoration: BoxDecoration(
-          color: Colors.white,
+          color:        Colors.white,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: isActive ? _primary.withOpacity(0.5) : Colors.transparent,
@@ -699,23 +719,23 @@ class ChatSearchBar extends StatelessWidget {
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color:      Colors.black.withOpacity(0.05),
               blurRadius: 8,
-              offset: const Offset(0, 3),
+              offset:     const Offset(0, 3),
             ),
           ],
         ),
         child: TextField(
-          controller: controller,
-          onTap: onTap,
-          onChanged: onChanged,
+          controller:  controller,
+          onTap:       onTap,
+          onChanged:   onChanged,
           onSubmitted: onSubmitted,
           style: const TextStyle(fontSize: 14, color: _textDark),
           decoration: InputDecoration(
-            hintText: hint,
+            hintText:  hint,
             hintStyle: const TextStyle(color: Colors.black38, fontSize: 14),
-            prefixIcon:
-            const Icon(Icons.search_rounded, color: Colors.black38, size: 20),
+            prefixIcon: const Icon(Icons.search_rounded,
+                color: Colors.black38, size: 20),
             suffixIcon: searchQuery.isNotEmpty
                 ? GestureDetector(
               onTap: onClear,
@@ -723,7 +743,7 @@ class ChatSearchBar extends StatelessWidget {
                   color: Colors.black38, size: 18),
             )
                 : null,
-            border: InputBorder.none,
+            border:         InputBorder.none,
             contentPadding: const EdgeInsets.symmetric(vertical: 10),
           ),
         ),
@@ -756,9 +776,9 @@ class ChatErrorState extends StatelessWidget {
             const SizedBox(height: 16),
             const Text('Something went wrong',
                 style: TextStyle(
-                    fontSize: 18,
+                    fontSize:   18,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFF2B2B2B))),
+                    color:      Color(0xFF2B2B2B))),
             const SizedBox(height: 8),
             Text(message ?? '',
                 textAlign: TextAlign.center,
@@ -766,8 +786,8 @@ class ChatErrorState extends StatelessWidget {
             const SizedBox(height: 24),
             ElevatedButton.icon(
               onPressed: onRetry,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
+              icon:      const Icon(Icons.refresh),
+              label:     const Text('Retry'),
               style: ElevatedButton.styleFrom(
                   backgroundColor: _primary,
                   foregroundColor: Colors.white,
@@ -802,13 +822,14 @@ class ChatUnknownRoleState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.person_off_outlined, size: 56, color: Colors.black38),
+            const Icon(Icons.person_off_outlined,
+                size: 56, color: Colors.black38),
             const SizedBox(height: 16),
             const Text('Account not recognised',
                 style: TextStyle(
-                    fontSize: 18,
+                    fontSize:   18,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFF2B2B2B))),
+                    color:      Color(0xFF2B2B2B))),
             const SizedBox(height: 8),
             Text('UID: $userId\nRole: $role',
                 textAlign: TextAlign.center,
@@ -816,8 +837,8 @@ class ChatUnknownRoleState extends StatelessWidget {
             const SizedBox(height: 24),
             ElevatedButton.icon(
               onPressed: onRetry,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
+              icon:      const Icon(Icons.refresh),
+              label:     const Text('Retry'),
               style: ElevatedButton.styleFrom(
                   backgroundColor: _primary,
                   foregroundColor: Colors.white,

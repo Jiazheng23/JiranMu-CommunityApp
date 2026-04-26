@@ -22,11 +22,12 @@ class _AdminCreateChatScreenState extends State<AdminCreateChatScreen> {
   static const Color _border    = Color(0xFFEDE9E5);
 
   // ── State ──────────────────────────────────────────────────────────────────
-  List<String> _blocks = [];
-  String? _selectedBlock;
+  List<String> _blocks              = [];
+  Set<String>  _existingGroupBlocks = {};
+  String?      _selectedBlock;
   List<Map<String, dynamic>> _residents = [];
-  Set<String> _selectedIds = {};
-  bool _loading = false;
+  Set<String>  _selectedIds = {};
+  bool         _loading     = false;
   final TextEditingController _groupNameCtrl = TextEditingController();
 
   @override
@@ -42,16 +43,38 @@ class _AdminCreateChatScreenState extends State<AdminCreateChatScreen> {
   }
 
   // ── Data ───────────────────────────────────────────────────────────────────
+
   Future<void> _loadBlocks() async {
     try {
-      final data = await supabase.from('resident').select('block').neq('block', '');
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
+
+      final data = await supabase
+          .from('resident')
+          .select('block')
+          .neq('block', '');
       final blocks = (data as List)
           .map((e) => e['block']?.toString() ?? '')
           .where((s) => s.isNotEmpty)
           .toSet()
           .toList()
         ..sort();
-      if (mounted) setState(() => _blocks = blocks);
+
+      final existingGroups = await supabase
+          .from('group_chats')
+          .select('block')
+          .eq('created_by', user.id);
+      final existingBlocks = (existingGroups as List)
+          .map((e) => e['block']?.toString() ?? '')
+          .where((s) => s.isNotEmpty)
+          .toSet();
+
+      if (mounted) {
+        setState(() {
+          _blocks              = blocks;
+          _existingGroupBlocks = existingBlocks;
+        });
+      }
     } catch (e) {
       debugPrint('Error loading blocks: $e');
     }
@@ -103,7 +126,9 @@ class _AdminCreateChatScreenState extends State<AdminCreateChatScreen> {
       debugPrint('Error loading residents: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.redAccent),
+          SnackBar(
+              content:         Text('Error: $e'),
+              backgroundColor: Colors.redAccent),
         );
       }
     } finally {
@@ -130,21 +155,20 @@ class _AdminCreateChatScreenState extends State<AdminCreateChatScreen> {
 
       if (existing != null) {
         groupChatId = existing['id'] as String;
-        roomId = existing['room_id'] as String;
+        roomId      = existing['room_id'] as String;
       } else {
         groupChatId = const Uuid().v4();
-        roomId = 'block_${_selectedBlock!.toLowerCase()}_community';
+        roomId      = 'block_${_selectedBlock!.toLowerCase()}_community';
         await supabase.from('group_chats').insert({
-          'id': groupChatId,
-          'room_id': roomId,
-          'block': _selectedBlock,
+          'id':         groupChatId,
+          'room_id':    roomId,
+          'block':      _selectedBlock,
           'created_by': adminId,
           if (_groupNameCtrl.text.trim().isNotEmpty)
             'name': _groupNameCtrl.text.trim(),
         });
       }
 
-      final List<String> newlyAdded = [];
       for (final userId in _selectedIds) {
         final alreadyInvited = await supabase
             .from('group_chat_invitations')
@@ -155,32 +179,27 @@ class _AdminCreateChatScreenState extends State<AdminCreateChatScreen> {
 
         if (alreadyInvited == null) {
           await supabase.from('group_chat_invitations').insert({
-            'id': const Uuid().v4(),
-            'group_chat_id': groupChatId,
+            'id':              const Uuid().v4(),
+            'group_chat_id':   groupChatId,
             'invited_user_id': userId,
-            'invited_by': adminId,
-            'status': 'pending',
+            'invited_by':      adminId,
+            'status':          'pending',
           });
-          final resident = _residents.firstWhere(
-                (r) => r['id'] == userId,
-            orElse: () => {},
-          );
-          final name = resident['full_name'] as String? ?? 'New Member';
-          newlyAdded.add(name);
         }
       }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Chat created & ${_selectedIds.length} member(s) invited!'),
+            content: Text(
+                'Chat created & ${_selectedIds.length} member(s) invited!'),
             backgroundColor: Colors.green,
           ),
         );
         setState(() {
-          _selectedIds = {};
+          _selectedIds   = {};
           _selectedBlock = null;
-          _residents = [];
+          _residents     = [];
           _groupNameCtrl.clear();
         });
         Navigator.pop(context);
@@ -199,7 +218,8 @@ class _AdminCreateChatScreenState extends State<AdminCreateChatScreen> {
 
   // ── Helpers ────────────────────────────────────────────────────────────────
   Color _avatarColor(String name) {
-    final hue = (name.codeUnits.fold(0, (a, b) => a + b) % 360).toDouble();
+    final hue =
+    (name.codeUnits.fold(0, (a, b) => a + b) % 360).toDouble();
     return HSLColor.fromAHSL(1, hue, 0.45, 0.48).toColor();
   }
 
@@ -215,20 +235,20 @@ class _AdminCreateChatScreenState extends State<AdminCreateChatScreen> {
     return Scaffold(
       backgroundColor: _bg,
       appBar: AppBar(
-        backgroundColor: _surface,
-        foregroundColor: _textDark,
-        elevation: 0,
+        backgroundColor:  _surface,
+        foregroundColor:  _textDark,
+        elevation:        0,
         surfaceTintColor: Colors.transparent,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
+          icon:      const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
           onPressed: () => Navigator.pop(context),
         ),
         title: const Text(
           'Add Community Members',
           style: TextStyle(
-            fontSize: 16,
+            fontSize:   16,
             fontWeight: FontWeight.w700,
-            color: _textDark,
+            color:      _textDark,
           ),
         ),
         bottom: PreferredSize(
@@ -237,18 +257,17 @@ class _AdminCreateChatScreenState extends State<AdminCreateChatScreen> {
         ),
       ),
       body: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch, // stretch children to full width
         children: [
-
-          // ── Selected members strip ─────────────────────────────────────────
+          // ── Selected members strip ───────────────────────────────────────
           if (_selectedIds.isNotEmpty) _selectedStrip(),
 
-          // ── Block selector ─────────────────────────────────────────────────
+          // ── Block selector ───────────────────────────────────────────────
           _blockSelector(),
 
           const SizedBox(height: 4),
 
-          // ── Members header ─────────────────────────────────────────────────
+          // ── Members header ───────────────────────────────────────────────
           if (_selectedBlock != null)
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 10, 16, 6),
@@ -257,9 +276,9 @@ class _AdminCreateChatScreenState extends State<AdminCreateChatScreen> {
                   const Text(
                     'All Contacts',
                     style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: _textDark,
+                      fontSize:      13,
+                      fontWeight:    FontWeight.w700,
+                      color:         _textDark,
                       letterSpacing: 0.1,
                     ),
                   ),
@@ -267,14 +286,18 @@ class _AdminCreateChatScreenState extends State<AdminCreateChatScreen> {
                   if (_residents.isNotEmpty)
                     GestureDetector(
                       onTap: () => setState(() {
-                        _selectedIds = _selectedIds.length == _residents.length
+                        _selectedIds =
+                        _selectedIds.length == _residents.length
                             ? {}
-                            : _residents.map((r) => r['id'] as String).toSet();
+                            : _residents
+                            .map((r) => r['id'] as String)
+                            .toSet();
                       }),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 5),
                         decoration: BoxDecoration(
-                          color: _primary.withOpacity(0.08),
+                          color:        _primary.withOpacity(0.08),
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Text(
@@ -282,8 +305,8 @@ class _AdminCreateChatScreenState extends State<AdminCreateChatScreen> {
                               ? 'Deselect all'
                               : 'Select all',
                           style: const TextStyle(
-                            color: _primary,
-                            fontSize: 12,
+                            color:      _primary,
+                            fontSize:   12,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -293,10 +316,10 @@ class _AdminCreateChatScreenState extends State<AdminCreateChatScreen> {
               ),
             ),
 
-          // ── Residents list ─────────────────────────────────────────────────
+          // ── Residents list ───────────────────────────────────────────────
           Expanded(child: _residentList()),
 
-          // ── Create button ──────────────────────────────────────────────────
+          // ── Create button ────────────────────────────────────────────────
           if (_selectedIds.isNotEmpty) _createButton(),
         ],
       ),
@@ -310,7 +333,9 @@ class _AdminCreateChatScreenState extends State<AdminCreateChatScreen> {
         .toList();
 
     return Container(
-      color: _surface,
+      // Full width
+      width:   double.infinity,
+      color:   _surface,
       padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -320,24 +345,25 @@ class _AdminCreateChatScreenState extends State<AdminCreateChatScreen> {
               Text(
                 'Chosen Contacts',
                 style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: _textMid,
+                  fontSize:      12,
+                  fontWeight:    FontWeight.w700,
+                  color:         _textMid,
                   letterSpacing: 0.3,
                 ),
               ),
               const SizedBox(width: 8),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: _primary,
+                  color:        _primary,
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
                   '${_selectedIds.length}',
                   style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
+                    color:      Colors.white,
+                    fontSize:   11,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -349,41 +375,45 @@ class _AdminCreateChatScreenState extends State<AdminCreateChatScreen> {
             height: 56,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
-              itemCount: selectedResidents.length,
+              physics:         const BouncingScrollPhysics(),
+              itemCount:       selectedResidents.length,
               itemBuilder: (context, i) {
-                final r = selectedResidents[i];
+                final r    = selectedResidents[i];
                 final name = r['full_name'] as String? ?? '?';
                 return Padding(
                   padding: const EdgeInsets.only(right: 10),
                   child: GestureDetector(
-                    onTap: () => setState(() => _selectedIds.remove(r['id'])),
+                    onTap: () =>
+                        setState(() => _selectedIds.remove(r['id'])),
                     child: Stack(
                       clipBehavior: Clip.none,
                       children: [
                         CircleAvatar(
-                          radius: 26,
+                          radius:          26,
                           backgroundColor: _avatarColor(name),
                           child: Text(
                             _initials(name),
                             style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 13,
+                              color:      Colors.white,
+                              fontSize:   13,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
                         ),
                         Positioned(
-                          top: -2,
+                          top:   -2,
                           right: -2,
                           child: Container(
-                            width: 18,
+                            width:  18,
                             height: 18,
                             decoration: BoxDecoration(
-                              color: _primary,
-                              shape: BoxShape.circle,
-                              border: Border.all(color: _surface, width: 1.5),
+                              color:  _primary,
+                              shape:  BoxShape.circle,
+                              border: Border.all(
+                                  color: _surface, width: 1.5),
                             ),
-                            child: const Icon(Icons.close, color: Colors.white, size: 10),
+                            child: const Icon(Icons.close,
+                                color: Colors.white, size: 10),
                           ),
                         ),
                       ],
@@ -400,8 +430,14 @@ class _AdminCreateChatScreenState extends State<AdminCreateChatScreen> {
 
   // ── Block selector ─────────────────────────────────────────────────────────
   Widget _blockSelector() {
+    final availableBlocks = _blocks
+        .where((b) => !_existingGroupBlocks.contains(b))
+        .toList();
+
     return Container(
-      color: _surface,
+      // KEY FIX: force full screen width so the white card never leaves a gap
+      width:   double.infinity,
+      color:   _surface,
       padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -409,9 +445,9 @@ class _AdminCreateChatScreenState extends State<AdminCreateChatScreen> {
           const Text(
             'Select Block',
             style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: _textMid,
+              fontSize:      12,
+              fontWeight:    FontWeight.w700,
+              color:         _textMid,
               letterSpacing: 0.3,
             ),
           ),
@@ -421,45 +457,84 @@ class _AdminCreateChatScreenState extends State<AdminCreateChatScreen> {
               'No blocks found.',
               style: TextStyle(color: _textLight, fontSize: 13),
             )
+          else if (availableBlocks.isEmpty)
+          // All blocks already have a group chat
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color:        _primary.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.check_circle_outline_rounded,
+                      color: _primary, size: 18),
+                ),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Text(
+                    'All blocks already have a group chat.\nManage members inside Chat Settings.',
+                    style: TextStyle(
+                      color:    _textMid,
+                      fontSize: 13,
+                      height:   1.5,
+                    ),
+                  ),
+                ),
+              ],
+            )
           else
+          // Horizontally scrollable chips with bouncy physics
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
+              physics:         const BouncingScrollPhysics(),
               child: Row(
-                children: _blocks.map((block) {
-                  final selected = _selectedBlock == block;
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: GestureDetector(
-                      onTap: () {
-                        setState(() => _selectedBlock = block);
-                        _loadResidents(block);
-                      },
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 180),
-                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
-                        decoration: BoxDecoration(
-                          color: selected ? _primary : _bg,
-                          borderRadius: BorderRadius.circular(22),
-                          border: Border.all(
-                            color: selected ? _primary : _border,
-                            width: 1.5,
+                children: [
+                  ...availableBlocks.map((block) {
+                    final selected = _selectedBlock == block;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() => _selectedBlock = block);
+                          _loadResidents(block);
+                        },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 18, vertical: 9),
+                          decoration: BoxDecoration(
+                            color: selected ? _primary : _bg,
+                            borderRadius: BorderRadius.circular(22),
+                            border: Border.all(
+                              color: selected ? _primary : _border,
+                              width: 1.5,
+                            ),
+                            boxShadow: selected
+                                ? [
+                              BoxShadow(
+                                color:      _primary.withOpacity(0.25),
+                                blurRadius: 8,
+                                offset:     const Offset(0, 3),
+                              ),
+                            ]
+                                : [],
                           ),
-                          boxShadow: selected
-                              ? [BoxShadow(color: _primary.withOpacity(0.25), blurRadius: 8, offset: const Offset(0, 3))]
-                              : [],
-                        ),
-                        child: Text(
-                          'Block $block',
-                          style: TextStyle(
-                            color: selected ? Colors.white : _textDark,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
+                          child: Text(
+                            'Block $block',
+                            style: TextStyle(
+                              color:      selected ? Colors.white : _textDark,
+                              fontWeight: FontWeight.w600,
+                              fontSize:   13,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  );
-                }).toList(),
+                    );
+                  }).toList(),
+                  // Extra trailing space so the last chip isn't clipped
+                  const SizedBox(width: 4),
+                ],
               ),
             ),
         ],
@@ -470,23 +545,64 @@ class _AdminCreateChatScreenState extends State<AdminCreateChatScreen> {
   // ── Resident list ──────────────────────────────────────────────────────────
   Widget _residentList() {
     if (_selectedBlock == null) {
+      final availableBlocks = _blocks
+          .where((b) => !_existingGroupBlocks.contains(b))
+          .toList();
+
+      if (_blocks.isNotEmpty && availableBlocks.isEmpty) {
+        return Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width:  72,
+                height: 72,
+                decoration: BoxDecoration(
+                  color: _border,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.check_circle_outline_rounded,
+                    size: 34, color: _textLight),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'All blocks have been set up',
+                style: TextStyle(
+                    color:      _textMid,
+                    fontSize:   14,
+                    fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Use Chat Settings to manage members',
+                style: TextStyle(color: _textLight, fontSize: 12),
+              ),
+            ],
+          ),
+        );
+      }
+
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              width: 72,
+              width:  72,
               height: 72,
               decoration: BoxDecoration(
                 color: _border,
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.apartment_outlined, size: 34, color: _textLight),
+              child: const Icon(Icons.apartment_outlined,
+                  size: 34, color: _textLight),
             ),
             const SizedBox(height: 16),
             const Text(
               'Select a block to see members',
-              style: TextStyle(color: _textMid, fontSize: 14, fontWeight: FontWeight.w500),
+              style: TextStyle(
+                  color:      _textMid,
+                  fontSize:   14,
+                  fontWeight: FontWeight.w500),
             ),
             const SizedBox(height: 4),
             const Text(
@@ -499,7 +615,8 @@ class _AdminCreateChatScreenState extends State<AdminCreateChatScreen> {
     }
 
     if (_loading) {
-      return const Center(child: CircularProgressIndicator(color: _primary));
+      return const Center(
+          child: CircularProgressIndicator(color: _primary));
     }
 
     if (_residents.isEmpty) {
@@ -508,15 +625,20 @@ class _AdminCreateChatScreenState extends State<AdminCreateChatScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              width: 72,
+              width:  72,
               height: 72,
-              decoration: BoxDecoration(color: _border, shape: BoxShape.circle),
-              child: const Icon(Icons.person_off_outlined, size: 34, color: _textLight),
+              decoration:
+              BoxDecoration(color: _border, shape: BoxShape.circle),
+              child: const Icon(Icons.person_off_outlined,
+                  size: 34, color: _textLight),
             ),
             const SizedBox(height: 16),
             const Text(
               'All residents are already\nin this group.',
-              style: TextStyle(color: _textMid, fontSize: 14, fontWeight: FontWeight.w500),
+              style: TextStyle(
+                  color:      _textMid,
+                  fontSize:   14,
+                  fontWeight: FontWeight.w500),
               textAlign: TextAlign.center,
             ),
           ],
@@ -525,13 +647,13 @@ class _AdminCreateChatScreenState extends State<AdminCreateChatScreen> {
     }
 
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+      padding:   const EdgeInsets.fromLTRB(16, 4, 16, 16),
       itemCount: _residents.length,
       itemBuilder: (context, i) {
-        final r = _residents[i];
-        final id = r['id'] as String;
-        final name = r['full_name'] as String? ?? 'Unknown';
-        final unit = r['unit_number'] as String? ?? '';
+        final r       = _residents[i];
+        final id      = r['id'] as String;
+        final name    = r['full_name'] as String? ?? 'Unknown';
+        final unit    = r['unit_number'] as String? ?? '';
         final checked = _selectedIds.contains(id);
 
         return GestureDetector(
@@ -540,10 +662,11 @@ class _AdminCreateChatScreenState extends State<AdminCreateChatScreen> {
           }),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 150),
-            margin: const EdgeInsets.only(bottom: 8),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+            margin:   const EdgeInsets.only(bottom: 8),
+            padding:  const EdgeInsets.symmetric(
+                horizontal: 14, vertical: 11),
             decoration: BoxDecoration(
-              color: _surface,
+              color:        _surface,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
                 color: checked ? _primary : Colors.transparent,
@@ -551,9 +674,9 @@ class _AdminCreateChatScreenState extends State<AdminCreateChatScreen> {
               ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
+                  color:      Colors.black.withOpacity(0.04),
                   blurRadius: 6,
-                  offset: const Offset(0, 2),
+                  offset:     const Offset(0, 2),
                 ),
               ],
             ),
@@ -563,13 +686,13 @@ class _AdminCreateChatScreenState extends State<AdminCreateChatScreen> {
                 Stack(
                   children: [
                     CircleAvatar(
-                      radius: 24,
+                      radius:          24,
                       backgroundColor: _avatarColor(name),
                       child: Text(
                         _initials(name),
                         style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
+                          color:      Colors.white,
+                          fontSize:   13,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -578,7 +701,8 @@ class _AdminCreateChatScreenState extends State<AdminCreateChatScreen> {
                       Positioned.fill(
                         child: CircleAvatar(
                           backgroundColor: _primary.withOpacity(0.85),
-                          child: const Icon(Icons.check, color: Colors.white, size: 18),
+                          child: const Icon(Icons.check,
+                              color: Colors.white, size: 18),
                         ),
                       ),
                   ],
@@ -593,21 +717,22 @@ class _AdminCreateChatScreenState extends State<AdminCreateChatScreen> {
                         name,
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                          color: checked ? _primary : _textDark,
+                          fontSize:   14,
+                          color:      checked ? _primary : _textDark,
                         ),
                       ),
                       const SizedBox(height: 2),
                       Text(
                         unit.isNotEmpty ? 'Unit $unit' : 'No unit',
-                        style: const TextStyle(fontSize: 12, color: _textLight),
+                        style: const TextStyle(
+                            fontSize: 12, color: _textLight),
                       ),
                     ],
                   ),
                 ),
-                // Status dot / indicator
+                // Status dot
                 Container(
-                  width: 8,
+                  width:  8,
                   height: 8,
                   decoration: BoxDecoration(
                     color: checked ? _primary : _border,
@@ -625,46 +750,45 @@ class _AdminCreateChatScreenState extends State<AdminCreateChatScreen> {
   // ── Create button ──────────────────────────────────────────────────────────
   Widget _createButton() {
     return Container(
+      width:   double.infinity,
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
       decoration: BoxDecoration(
-        color: _surface,
+        color:  _surface,
         border: Border(top: BorderSide(color: _border)),
       ),
-      child: Row(
-        children: [
-          Expanded(
-            child: ElevatedButton(
-              onPressed: _loading ? null : _createChat,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _primary,
-                minimumSize: const Size.fromHeight(52),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                elevation: 0,
-              ),
-              child: _loading
-                  ? const SizedBox(
-                height: 20,
-                width: 20,
-                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-              )
-                  : Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.group_add_outlined, size: 18, color: Colors.white),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Create Chat · ${_selectedIds.length} member${_selectedIds.length == 1 ? '' : 's'}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 15,
-                    ),
-                  ),
-                ],
+      child: ElevatedButton(
+        onPressed: _loading ? null : _createChat,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: _primary,
+          minimumSize:     const Size.fromHeight(52),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14)),
+          elevation: 0,
+        ),
+        child: _loading
+            ? const SizedBox(
+          height: 20,
+          width:  20,
+          child:  CircularProgressIndicator(
+              color: Colors.white, strokeWidth: 2),
+        )
+            : Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.group_add_outlined,
+                size: 18, color: Colors.white),
+            const SizedBox(width: 8),
+            Text(
+              'Create Chat · ${_selectedIds.length} '
+                  'member${_selectedIds.length == 1 ? '' : 's'}',
+              style: const TextStyle(
+                color:      Colors.white,
+                fontWeight: FontWeight.w600,
+                fontSize:   15,
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
