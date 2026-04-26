@@ -337,8 +337,42 @@ class EventService {
   // 7. AVAILABILITY & SUGGESTIONS (UPDATED)
   // ─────────────────────────────────────────────
 
+  // NEW HELPER: Checks if the Admin has manually blocked this facility
+  Future<bool> isBlockedByAdmin(String facilityId, String date, String startTime, String endTime) async {
+    try {
+      final response = await supabase
+          .from('facility_unavailable_slots')
+          .select()
+          .eq('facility_id', facilityId)
+          .eq('block_date', date);
+
+      final List blockedSlots = response as List;
+      final int newStart = _timeToMinutes(startTime);
+      final int newEnd = _timeToMinutes(endTime);
+
+      for (var slot in blockedSlots) {
+        final int blockStart = _timeToMinutes(slot['start_time'].toString());
+        final int blockEnd = _timeToMinutes(slot['end_time'].toString());
+
+        // Standard Overlap Logic
+        if (newStart < blockEnd && newEnd > blockStart) {
+          return true; // The time is blocked by an admin
+        }
+      }
+      return false;
+    } catch (e) {
+      debugPrint("Error checking admin blocks: $e");
+      return false;
+    }
+  }
+
   Future<bool> isFacilityAvailable(
       String location, String date, String startTime, String endTime) async {
+
+    // NOTE: In your Screen, you should call isBlockedByAdmin first.
+    // If you want this method to do EVERYTHING, you'd need to pass
+    // the facilityId here too. For now, this checks existing requests:
+
     final response = await supabase
         .from('event_requests')
         .select('start_time, end_time, requests!inner(status)')
@@ -348,7 +382,7 @@ class EventService {
 
     final int newStart = _timeToMinutes(startTime);
     final int newEnd = _timeToMinutes(endTime);
-    const int bufferMinutes = 120; // 2 hours
+    const int bufferMinutes = 120; // 2 hours cleaning buffer
 
     for (var event in response) {
       final int existStart = _timeToMinutes(event['start_time']);
@@ -362,64 +396,61 @@ class EventService {
     return true;
   }
 
-  /// NEW FUNCTION: Finds gaps in the schedule to suggest to the user
   Future<List<String>> getAvailableSlots({
+    required String facilityId, // Changed from location to facilityId for accuracy
     required String location,
     required String date,
     required String openTime,
     required String closeTime,
   }) async {
     try {
-      debugPrint("Checking slots for $location on $date in the 'events' table");
-
-      // 1. Query the 'events' table directly
-      final response = await supabase
+      // 1. Fetch Confirmed Events
+      final eventResponse = await supabase
           .from('events')
           .select('start_time, end_time')
           .eq('location', location)
-          .eq('event_date', date); // Confirm your column is 'event_date' or 'date'
+          .eq('event_date', date);
 
-      final activeEvents = response as List;
-      debugPrint("Found ${activeEvents.length} confirmed events.");
+      // 2. Fetch Admin Blocked Slots
+      final blockResponse = await supabase
+          .from('facility_unavailable_slots')
+          .select('start_time, end_time')
+          .eq('facility_id', facilityId)
+          .eq('block_date', date);
+
+      final List allBlocked = [...(eventResponse as List), ...(blockResponse as List)];
 
       int openMin = _timeToMinutes(openTime);
       int closeMin = _timeToMinutes(closeTime);
-      const int cleaningBuffer = 120; // 2 hours
+      const int cleaningBuffer = 120;
 
-      // 2. Map existing events into "Blocked" windows
-      List<Map<String, int>> blockedWindows = activeEvents.map((e) {
+      // Map everything into Blocked Windows
+      List<Map<String, int>> blockedWindows = allBlocked.map((e) {
         return {
           'start': _timeToMinutes(e['start_time'].toString()),
           'end': _timeToMinutes(e['end_time'].toString()) + cleaningBuffer,
         };
       }).toList();
 
-      // 3. Sort by start time
       blockedWindows.sort((a, b) => a['start']!.compareTo(b['start']!));
 
       List<String> suggestions = [];
       int currentPos = openMin;
 
       for (var window in blockedWindows) {
-        // Check if there is a gap of at least 1 hour
         if (window['start']! - currentPos >= 60) {
-          suggestions.add(
-              "${_minutesToDisplayTime(currentPos)} - ${_minutesToDisplayTime(window['start']!)}");
+          suggestions.add("${_minutesToDisplayTime(currentPos)} - ${_minutesToDisplayTime(window['start']!)}");
         }
         if (window['end']! > currentPos) {
           currentPos = window['end']!;
         }
       }
 
-      // 4. Check final gap until venue closing
       if (closeMin - currentPos >= 60) {
-        suggestions.add(
-            "${_minutesToDisplayTime(currentPos)} - ${_minutesToDisplayTime(closeMin)}");
+        suggestions.add("${_minutesToDisplayTime(currentPos)} - ${_minutesToDisplayTime(closeMin)}");
       }
 
-      debugPrint("Final Suggestions: $suggestions");
       return suggestions;
-
     } catch (e) {
       debugPrint("Error calculating slots: $e");
       return [];
