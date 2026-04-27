@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 
@@ -16,88 +17,173 @@ class _VisitorPassRequestScreenState
   final _client = Supabase.instance.client;
 
   // ── Form controllers ──────────────────────────────────────────────────────
-  final _nameCtrl   = TextEditingController();
-  final _icCtrl     = TextEditingController();
-  final _notesCtrl  = TextEditingController();
+  final _nameCtrl  = TextEditingController();
+  final _icCtrl    = TextEditingController();
+  final _notesCtrl = TextEditingController();
+
+  // ── Validation error strings (null = no error) ────────────────────────────
+  String? _nameError;
+  String? _icError;
+  String? _notesError;
+
+  // ── Touched flags ─────────────────────────────────────────────────────────
+  bool _nameTouched  = false;
+  bool _icTouched    = false;
+  bool _notesTouched = false;
+  bool _dateTouched  = false;
 
   // ── Form state ────────────────────────────────────────────────────────────
-  // Purpose options: visiting, delivery, contractor, event_guest
-  String   _purpose   = 'visiting';
-  DateTime _validDate = DateTime.now().add(const Duration(days: 1));
-  bool     _loading   = false;
+  String?   _purpose;
+  DateTime? _validDate;
+  bool      _loading = false;
 
   // ── Theme ─────────────────────────────────────────────────────────────────
-  static const Color _primary = Color(0xFF9A4B3C);
-  static const Color _bgPage  = Color(0xFFF5F1ED);
+  static const Color _primary      = Color(0xFF9A4B3C);
+  static const Color _bgPage       = Color(0xFFF5F1ED);
+  static const Color _errorColor   = Color(0xFFD32F2F);
+  static const Color _successColor = Color(0xFF388E3C);
 
-  // Purpose metadata — label, icon, description shown under the chip row
   static const _purposes = [
-    (
-    value: 'visiting',
-    label: 'Visiting',
-    icon: Icons.person_outline_rounded,
-    ),
-    (
-    value: 'delivery',
-    label: 'Delivery',
-    icon: Icons.local_shipping_outlined,
-    ),
-    (
-    value: 'contractor',
-    label: 'Contractor',
-    icon: Icons.build_outlined,
-    ),
-    (
-    value: 'event_guest',
-    label: 'Event Guest',
-    icon: Icons.celebration_outlined,
-    ),
+    (value: 'visiting',    label: 'Visiting',    icon: Icons.person_outline_rounded),
+    (value: 'delivery',    label: 'Delivery',    icon: Icons.local_shipping_outlined),
+    (value: 'contractor',  label: 'Contractor',  icon: Icons.build_outlined),
+    (value: 'event_guest', label: 'Event Guest', icon: Icons.celebration_outlined),
   ];
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
   @override
+  void initState() {
+    super.initState();
+    _nameCtrl.addListener(_validateName);
+    _icCtrl.addListener(_validateIC);
+    _notesCtrl.addListener(_validateNotes);
+  }
+
+  @override
   void dispose() {
+    _nameCtrl.removeListener(_validateName);
+    _icCtrl.removeListener(_validateIC);
+    _notesCtrl.removeListener(_validateNotes);
     _nameCtrl.dispose();
     _icCtrl.dispose();
     _notesCtrl.dispose();
     super.dispose();
   }
 
+  // ── Validators ────────────────────────────────────────────────────────────
+
+  // Doc 1's name validation (correct — allows spaces/punctuation)
+  void _validateName() {
+    if (!_nameTouched) return;
+    final val = _nameCtrl.text.trim();
+    setState(() {
+      if (val.isEmpty) {
+        _nameError = 'Visitor name is required.';
+      } else if (val.length < 3) {
+        _nameError = 'Name must be at least 3 characters.';
+      } else if (!RegExp(r"^[a-zA-Z\s'./-]+$").hasMatch(val)) {
+        _nameError = 'Name can only contain letters and basic punctuation.';
+      } else if (val.length > 80) {
+        _nameError = 'Name must not exceed 80 characters.';
+      } else {
+        _nameError = null;
+      }
+    });
+  }
+
+  // Doc 2's IC validation (stricter, specific error messages per format)
+  void _validateIC() {
+    if (!_icTouched) return;
+    final val = _icCtrl.text.trim().toUpperCase();
+    setState(() {
+      if (val.isEmpty) {
+        _icError = 'IC/Passport number is required.';
+      } else if (RegExp(r'^\d{12}$').hasMatch(val)) {
+        _icError = null; // MyKad: exactly 12 digits
+      } else if (RegExp(r'^[A-Z]\d{8}$').hasMatch(val)) {
+        _icError = null; // Passport: 1 letter + 8 digits
+      } else if (RegExp(r'^\d+$').hasMatch(val) && val.length != 12) {
+        _icError = 'MyKad must be exactly 12 digits (e.g. 901231071234).';
+      } else if (RegExp(r'^[A-Z]').hasMatch(val) &&
+          !RegExp(r'^[A-Z]\d{8}$').hasMatch(val)) {
+        _icError = 'Passport must be 1 letter + 8 digits (e.g. A12345678).';
+      } else {
+        _icError =
+        'Enter a valid MyKad (12 digits) or Passport (e.g. A12345678).';
+      }
+    });
+  }
+
+  void _validateNotes() {
+    if (!_notesTouched) return;
+    final val = _notesCtrl.text.trim();
+    setState(() {
+      _notesError = val.length > 200 ? '${val.length}/200 — too long.' : null;
+    });
+  }
+
+  // Doc 2's stricter _isFormValid (only MyKad or valid Passport accepted)
+  bool get _isFormValid {
+    final name  = _nameCtrl.text.trim();
+    final ic    = _icCtrl.text.trim();
+    final notes = _notesCtrl.text.trim();
+
+    final nameOk = name.length >= 3 &&
+        name.length <= 80 &&
+        RegExp(r"^[a-zA-Z\s'./-]+$").hasMatch(name);
+
+    final icOk = ic.isNotEmpty &&
+        (RegExp(r'^\d{12}$').hasMatch(ic) ||
+            RegExp(r'^[A-Z]\d{8}$').hasMatch(ic.toUpperCase()));
+
+    final purposeOk = _purpose != null;
+    final dateOk    = _validDate != null;
+    final notesOk   = notes.length <= 200;
+
+    return nameOk && icOk && purposeOk && dateOk && notesOk;
+  }
+
   // ── Submit ────────────────────────────────────────────────────────────────
 
   Future<void> _submit() async {
-    // Basic validation
-    if (_nameCtrl.text.trim().isEmpty) {
-      _snack('Please enter the visitor\'s name.');
-      return;
-    }
+    if (!_isFormValid) return;
 
     setState(() => _loading = true);
     try {
       final userId = _client.auth.currentUser!.id;
-
       await _client.from('visitor_passes').insert({
         'resident_id':  userId,
         'visitor_name': _nameCtrl.text.trim(),
-        'visitor_ic':
-        _icCtrl.text.trim().isEmpty ? null : _icCtrl.text.trim(),
+        'visitor_ic':   _icCtrl.text.trim().toUpperCase(), // normalise to uppercase
         'purpose':      _purpose,
-        'notes':
-        _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
-        'valid_date': DateFormat('yyyy-MM-dd').format(_validDate),
+        'notes':        _notesCtrl.text.trim().isEmpty
+            ? null
+            : _notesCtrl.text.trim(),
+        'valid_date': DateFormat('yyyy-MM-dd').format(_validDate!),
         'status':     'pending',
-        // qr_token is auto-generated by gen_random_uuid() default in Supabase
       });
 
       if (!mounted) return;
-      Navigator.pop(context, true); // true = refresh the list
+      Navigator.pop(context, true);
       _snack('Visitor pass requested! Awaiting admin approval.');
     } catch (e) {
       _snack('Error: $e');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  void _onDisabledTap() {
+    setState(() {
+      _nameTouched  = true;
+      _icTouched    = true;
+      _notesTouched = true;
+      _dateTouched  = true;
+    });
+    _validateName();
+    _validateIC();
+    _validateNotes();
   }
 
   void _snack(String msg) {
@@ -109,11 +195,11 @@ class _VisitorPassRequestScreenState
   // ── Date picker ───────────────────────────────────────────────────────────
 
   Future<void> _pickDate() async {
+    setState(() => _dateTouched = true);
     final picked = await showDatePicker(
       context:     context,
-      initialDate: _validDate,
-      firstDate:   DateTime.now(),
-      // Passes valid within the next 30 days
+      initialDate: _validDate ?? DateTime.now().add(const Duration(days: 1)),
+      firstDate:   DateTime.now().add(const Duration(days: 1)),
       lastDate:    DateTime.now().add(const Duration(days: 30)),
       builder: (context, child) => Theme(
         data: Theme.of(context).copyWith(
@@ -138,16 +224,14 @@ class _VisitorPassRequestScreenState
         title: const Text(
           'Request Visitor Pass',
           style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w700,
-              fontSize: 17),
+              color: Colors.white, fontWeight: FontWeight.w700, fontSize: 17),
         ),
-        backgroundColor:  _primary,
-        foregroundColor:  Colors.white,
-        elevation:        0,
-        centerTitle:      true,
+        backgroundColor: _primary,
+        foregroundColor: Colors.white,
+        elevation:       0,
+        centerTitle:     true,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
+          icon:      const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
           onPressed: () => Navigator.pop(context),
         ),
       ),
@@ -160,63 +244,181 @@ class _VisitorPassRequestScreenState
             _sectionLabel('Visitor Details'),
             const SizedBox(height: 10),
             _card(children: [
-              _textField(
-                controller:  _nameCtrl,
-                label:       'Visitor Full Name',
-                icon:        Icons.person_outline_rounded,
-                required:    true,
+              // Name field — Doc 1 formatters (letters + punctuation, limit 80)
+              _validatedField(
+                controller: _nameCtrl,
+                label:      'Visitor Full Name',
+                icon:       Icons.person_outline_rounded,
+                required:   true,
+                error:      _nameError,
+                isValid:    _nameTouched &&
+                    _nameError == null &&
+                    _nameCtrl.text.trim().isNotEmpty,
+                onChanged: (_) {
+                  _nameTouched = true;
+                  _validateName();
+                },
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r"[a-zA-Z\s'./-]")),
+                  LengthLimitingTextInputFormatter(80),
+                ],
+                hint: 'e.g. Ahmad bin Ali',
               ),
               const SizedBox(height: 14),
-              _textField(
+              // IC field — Doc 1 formatters (alphanumeric, limit 12) +
+              //            Doc 2 capitalisation & stricter validation
+              _validatedField(
                 controller: _icCtrl,
                 label:      'IC / Passport Number',
                 icon:       Icons.badge_outlined,
-                required:   false,
+                required:   true,
+                error:      _icError,
+                isValid:    _icTouched &&
+                    _icError == null &&
+                    _icCtrl.text.trim().isNotEmpty,
+                onChanged: (_) {
+                  _icTouched = true;
+                  _validateIC();
+                },
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9]')),
+                  LengthLimitingTextInputFormatter(12), // MyKad=12, Passport=9
+                ],
+                hint:               'e.g. 901231071234 or A12345678',
+                keyboardType:       TextInputType.text,
+                textCapitalization: TextCapitalization.characters,
               ),
             ]),
             const SizedBox(height: 20),
 
             // ── Purpose ──────────────────────────────────────────────
-            _sectionLabel('Purpose of Visit'),
+            _sectionLabel('Purpose of Visit *'),
             const SizedBox(height: 10),
             _card(children: [
               _purposeGrid(),
+              if (_purpose == null && _dateTouched) ...[
+                const SizedBox(height: 8),
+                Row(children: const [
+                  SizedBox(width: 4),
+                  Icon(Icons.info_outline, size: 12, color: _errorColor),
+                  SizedBox(width: 4),
+                  Text('Please select a purpose.',
+                      style: TextStyle(fontSize: 11, color: _errorColor)),
+                ]),
+              ],
               const SizedBox(height: 14),
-              _textField(
+              _validatedField(
                 controller: _notesCtrl,
                 label:      'Additional Notes',
                 icon:       Icons.notes_rounded,
                 required:   false,
+                error:      _notesError,
+                isValid:    false,
+                onChanged:  (_) {
+                  _notesTouched = true;
+                  _validateNotes();
+                },
                 maxLines:   2,
+                hint:       'Optional details…',
+                suffixText: '${_notesCtrl.text.length}/200',
+                inputFormatters: [
+                  LengthLimitingTextInputFormatter(200),
+                ],
               ),
             ]),
             const SizedBox(height: 20),
 
             // ── Visit date ───────────────────────────────────────────
-            _sectionLabel('Visit Date'),
+            _sectionLabel('Visit Date *'),
             const SizedBox(height: 10),
             _card(children: [
               _datePicker(),
-              const SizedBox(height: 10)
+              if (_validDate == null && _dateTouched) ...[
+                const SizedBox(height: 6),
+                Row(children: const [
+                  SizedBox(width: 4),
+                  Icon(Icons.info_outline, size: 12, color: _errorColor),
+                  SizedBox(width: 4),
+                  Text('Please select a visit date.',
+                      style: TextStyle(fontSize: 11, color: _errorColor)),
+                ]),
+              ] else ...[
+                const SizedBox(height: 6),
+                const Padding(
+                  padding: EdgeInsets.only(left: 4),
+                  child: Text(
+                    'Pass is valid only on the selected date.',
+                    style: TextStyle(fontSize: 11, color: Colors.black38),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 4),
             ]),
             const SizedBox(height: 28),
 
             // ── Submit ───────────────────────────────────────────────
-            _submitButton()
+            _submitButton(),
+
+            if (_dateTouched && !_isFormValid) ...[
+              const SizedBox(height: 14),
+              _missingFieldsHint(),
+            ],
           ],
         ),
       ),
     );
   }
 
+  // ── Missing fields hint ───────────────────────────────────────────────────
+
+  Widget _missingFieldsHint() {
+    final missing = <String>[];
+    final name = _nameCtrl.text.trim();
+    final ic   = _icCtrl.text.trim();
+
+    if (name.length < 3 || !RegExp(r"^[a-zA-Z\s'./-]+$").hasMatch(name))
+      missing.add('Visitor Name');
+    if (ic.isEmpty ||
+        (!RegExp(r'^\d{12}$').hasMatch(ic) &&
+            !RegExp(r'^[A-Z]\d{8}$').hasMatch(ic.toUpperCase())))
+      missing.add('IC / Passport');
+    if (_purpose == null)   missing.add('Purpose');
+    if (_validDate == null) missing.add('Visit Date');
+
+    if (missing.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color:        _errorColor.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(12),
+        border:       Border.all(color: _errorColor.withOpacity(0.2)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.checklist_rounded, size: 16, color: _errorColor),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Still required: ${missing.join(', ')}',
+              style: const TextStyle(fontSize: 12, color: _errorColor),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ── Sub-widgets ───────────────────────────────────────────────────────────
+
   Widget _sectionLabel(String label) {
     return Text(
       label,
       style: const TextStyle(
-          fontSize:   13,
-          fontWeight: FontWeight.w700,
-          color:      Colors.black54,
+          fontSize:      13,
+          fontWeight:    FontWeight.w700,
+          color:         Colors.black54,
           letterSpacing: 0.3),
     );
   }
@@ -241,48 +443,114 @@ class _VisitorPassRequestScreenState
     );
   }
 
-  Widget _textField({
+  Widget _validatedField({
     required TextEditingController controller,
     required String label,
     required IconData icon,
     required bool required,
+    required String? error,
+    required bool isValid,
+    required Function(String) onChanged,
     int maxLines = 1,
+    String? hint,
+    String? suffixText,
+    TextInputType keyboardType = TextInputType.text,
+    TextCapitalization textCapitalization = TextCapitalization.words,
+    List<TextInputFormatter> inputFormatters = const [],
   }) {
-    return TextFormField(
-      controller: controller,
-      maxLines:   maxLines,
-      style: const TextStyle(fontSize: 14, color: Colors.black87),
-      decoration: InputDecoration(
-        labelText: required ? '$label *' : label,
-        prefixIcon: Icon(icon, size: 18, color: _primary.withOpacity(0.7)),
-        alignLabelWithHint: maxLines > 1,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide:   const BorderSide(color: Colors.black12),
+    final borderColor = error != null
+        ? _errorColor
+        : isValid
+        ? _successColor
+        : Colors.black12;
+    final borderWidth = (error != null || isValid) ? 1.5 : 1.0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextField(
+          controller:         controller,
+          maxLines:           maxLines,
+          onChanged:          onChanged,
+          keyboardType:       keyboardType,
+          textCapitalization: textCapitalization,
+          inputFormatters:    inputFormatters,
+          style: const TextStyle(fontSize: 14, color: Colors.black87),
+          decoration: InputDecoration(
+            labelText: required ? '$label *' : label,
+            hintText:  hint,
+            hintStyle: const TextStyle(fontSize: 13, color: Colors.black26),
+            prefixIcon: Icon(icon,
+                size:  18,
+                color: error != null
+                    ? _errorColor
+                    : isValid
+                    ? _successColor
+                    : _primary.withOpacity(0.7)),
+            suffixIcon: error != null
+                ? const Icon(Icons.error_outline,
+                color: _errorColor, size: 18)
+                : isValid
+                ? const Icon(Icons.check_circle_outline,
+                color: _successColor, size: 18)
+                : suffixText != null
+                ? Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: Text(suffixText,
+                  style: const TextStyle(
+                      fontSize: 11, color: Colors.black38)),
+            )
+                : null,
+            suffixIconConstraints:
+            suffixText != null && error == null && !isValid
+                ? const BoxConstraints()
+                : null,
+            alignLabelWithHint: maxLines > 1,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide:   BorderSide(color: borderColor, width: borderWidth),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide:   BorderSide(color: borderColor, width: borderWidth),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide:   BorderSide(
+                  color: error != null ? _errorColor : _primary, width: 1.5),
+            ),
+            filled:    true,
+            fillColor: error != null
+                ? _errorColor.withOpacity(0.03)
+                : isValid
+                ? _successColor.withOpacity(0.03)
+                : Colors.grey.shade50,
+            contentPadding: EdgeInsets.symmetric(
+                horizontal: 14, vertical: maxLines > 1 ? 14 : 12),
+            isDense: true,
+          ),
         ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide:   const BorderSide(color: Colors.black12),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide:   const BorderSide(color: _primary, width: 1.5),
-        ),
-        filled:      true,
-        fillColor:   Colors.grey.shade50,
-        contentPadding: EdgeInsets.symmetric(
-            horizontal: 14, vertical: maxLines > 1 ? 14 : 12),
-        isDense: true,
-      ),
+        if (error != null) ...[
+          const SizedBox(height: 5),
+          Row(children: [
+            const SizedBox(width: 4),
+            const Icon(Icons.info_outline, size: 12, color: _errorColor),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Text(error,
+                  style: const TextStyle(fontSize: 11, color: _errorColor)),
+            ),
+          ]),
+        ],
+      ],
     );
   }
 
-  // 2x2 grid of purpose chips
   Widget _purposeGrid() {
     return GridView.count(
-      crossAxisCount: 2,
-      shrinkWrap:     true,
-      physics:        const NeverScrollableScrollPhysics(),
+      crossAxisCount:   2,
+      shrinkWrap:       true,
+      physics:          const NeverScrollableScrollPhysics(),
       crossAxisSpacing: 10,
       mainAxisSpacing:  10,
       childAspectRatio: 2.8,
@@ -294,36 +562,29 @@ class _VisitorPassRequestScreenState
             duration: const Duration(milliseconds: 180),
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: BoxDecoration(
-              color: isSelected
-                  ? _primary
-                  : Colors.grey.shade100,
+              color: isSelected ? _primary : Colors.grey.shade100,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
                 color: isSelected ? _primary : Colors.black12,
                 width: isSelected ? 1.5 : 1,
               ),
             ),
-            child: Row(
-              children: [
-                Icon(
-                  p.icon,
+            child: Row(children: [
+              Icon(p.icon,
                   size:  16,
-                  color: isSelected ? Colors.white : Colors.black45,
-                ),
-                const SizedBox(width: 7),
-                Expanded(
-                  child: Text(
-                    p.label,
-                    style: TextStyle(
+                  color: isSelected ? Colors.white : Colors.black45),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  p.label,
+                  style: TextStyle(
                       fontSize:   12,
                       fontWeight: FontWeight.w600,
-                      color:      isSelected ? Colors.white : Colors.black54,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                      color: isSelected ? Colors.white : Colors.black54),
+                  overflow: TextOverflow.ellipsis,
                 ),
-              ],
-            ),
+              ),
+            ]),
           ),
         );
       }).toList(),
@@ -331,32 +592,45 @@ class _VisitorPassRequestScreenState
   }
 
   Widget _datePicker() {
+    final hasDate = _validDate != null;
     return GestureDetector(
       onTap: _pickDate,
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color:        Colors.grey.shade50,
-          border:       Border.all(color: Colors.black12),
+          color: Colors.grey.shade50,
+          border: Border.all(
+            color: !hasDate && _dateTouched ? _errorColor : Colors.black12,
+            width: !hasDate && _dateTouched ? 1.5 : 1,
+          ),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(children: [
-          const Icon(Icons.calendar_today_rounded,
-              color: _primary, size: 18),
+          Icon(Icons.calendar_today_rounded,
+              color: !hasDate && _dateTouched ? _errorColor : _primary,
+              size:  18),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Visit Date',
-                    style: TextStyle(fontSize: 11, color: Colors.black45)),
+                Text(
+                  'Visit Date *',
+                  style: TextStyle(
+                      fontSize: 11,
+                      color: !hasDate && _dateTouched
+                          ? _errorColor
+                          : Colors.black45),
+                ),
                 const SizedBox(height: 2),
                 Text(
-                  DateFormat('EEEE, d MMMM yyyy').format(_validDate),
-                  style: const TextStyle(
-                      fontSize: 14,
+                  hasDate
+                      ? DateFormat('EEEE, d MMMM yyyy').format(_validDate!)
+                      : 'Tap to select a date',
+                  style: TextStyle(
+                      fontSize:   14,
                       fontWeight: FontWeight.w600,
-                      color:     Colors.black87),
+                      color: hasDate ? Colors.black87 : Colors.black38),
                 ),
               ],
             ),
@@ -366,11 +640,13 @@ class _VisitorPassRequestScreenState
             decoration: BoxDecoration(
                 color:        _primary.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(8)),
-            child: const Text('Change',
-                style: TextStyle(
-                    fontSize:   12,
-                    color:      _primary,
-                    fontWeight: FontWeight.w600)),
+            child: Text(
+              hasDate ? 'Change' : 'Pick',
+              style: const TextStyle(
+                  fontSize:   12,
+                  color:      _primary,
+                  fontWeight: FontWeight.w600),
+            ),
           ),
         ]),
       ),
@@ -378,16 +654,16 @@ class _VisitorPassRequestScreenState
   }
 
   Widget _submitButton() {
+    final enabled = _isFormValid && !_loading;
     return SizedBox(
-      width: double.infinity,
+      width:  double.infinity,
       height: 52,
       child: ElevatedButton(
-        onPressed: _loading ? null : _submit,
+        onPressed: _loading ? null : (enabled ? _submit : _onDisabledTap),
         style: ElevatedButton.styleFrom(
-          backgroundColor: _primary,
+          backgroundColor: enabled ? _primary : Colors.grey.shade400,
           foregroundColor: Colors.white,
-          disabledBackgroundColor: _primary.withOpacity(0.5),
-          elevation:  0,
+          elevation: 0,
           shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(14)),
         ),
@@ -397,13 +673,19 @@ class _VisitorPassRequestScreenState
             height: 22,
             child:  CircularProgressIndicator(
                 color: Colors.white, strokeWidth: 2.5))
-            : const Row(
+            : Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text('Submit Request',
+            Icon(
+              enabled
+                  ? Icons.send_rounded
+                  : Icons.lock_outline_rounded,
+              size: 18,
+            ),
+            const SizedBox(width: 8),
+            const Text('Submit Request',
                 style: TextStyle(
-                    fontSize:   15,
-                    fontWeight: FontWeight.w700)),
+                    fontSize: 15, fontWeight: FontWeight.w700)),
           ],
         ),
       ),
