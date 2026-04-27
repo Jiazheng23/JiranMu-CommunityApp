@@ -26,13 +26,13 @@ class _AdminDashboardState extends State<AdminDashboard> {
   int selectedIndex = 0;
   bool _sessionReady = false;
 
-  // GlobalKey so we can call refresh() on the chat screen when switching to it
   final GlobalKey<CommunityChatsListScreenState> _chatKey =
   GlobalKey<CommunityChatsListScreenState>();
 
   final ImagePicker _picker = ImagePicker();
   final supabase = Supabase.instance.client;
 
+  // navItems kept for FAB label reference only — nav is now BottomNavigationBar
   final List<Map<String, dynamic>> navItems = [
     {'icon': Icons.home_outlined, 'label': 'Dashboard'},
     {'icon': Icons.add_business_outlined, 'label': 'Create'},
@@ -51,7 +51,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
     if (mounted) setState(() => _sessionReady = true);
   }
 
-  // IndexedStack keeps each page alive so tabs preserve scroll position
   List<Widget> get pages => [
     const DashboardPage(),
     const CreateFacilityPage(),
@@ -60,7 +59,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
   ];
 
   void _onNavTap(int index) {
-    // Refresh chat list whenever the user switches to the message tab
     if (index == 2 && selectedIndex != 2) {
       _chatKey.currentState?.refresh();
     }
@@ -336,10 +334,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
           onPressed: () => showCreateAnnouncementSheet(context),
           backgroundColor: primaryColor,
           shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(18)),
+              borderRadius: BorderRadius.circular(40)),
           elevation: 4,
-          child:
-          const Icon(Icons.add, size: 30, color: Colors.white),
+          child: const Icon(Icons.add, size: 30, color: Colors.white),
         ),
       )
           : selectedIndex == 2
@@ -350,87 +347,54 @@ class _AdminDashboardState extends State<AdminDashboard> {
           onPressed: () => Navigator.push(
             context,
             MaterialPageRoute(
-                builder: (_) =>
-                const AdminCreateChatScreen()),
+                builder: (_) => const AdminCreateChatScreen()),
           ),
           backgroundColor: primaryColor,
           shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(60)),
           elevation: 4,
-          child: const Icon(Icons.add,
-              size: 30, color: Colors.white),
+          child: const Icon(Icons.add, size: 30, color: Colors.white),
         ),
       )
           : null,
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
 
-      bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(15),
-          child: Container(
-            height: 70,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(35),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF8B5E4A).withOpacity(0.1),
-                  blurRadius: 20,
-                  spreadRadius: 5,
-                  offset: const Offset(0, 5),
-                ),
-              ],
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: List.generate(
-                navItems.length,
-                    (index) => _buildNavItem(
-                  navItems[index]['icon'],
-                  navItems[index]['label'],
-                  index,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 
-  Widget _buildNavItem(IconData icon, String label, int index) {
-    final isSelected = selectedIndex == index;
-    return GestureDetector(
-      onTap: () => _onNavTap(index),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOutCubic,
-        padding:
-        const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      bottomNavigationBar: Container(
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         decoration: BoxDecoration(
-          color: isSelected
-              ? const Color(0xFF8B5E4A)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(25),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon,
-                color: isSelected
-                    ? Colors.white
-                    : Colors.grey.shade400,
-                size: 26),
-            if (isSelected)
-              Padding(
-                padding: const EdgeInsets.only(left: 8.0),
-                child: Text(label,
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13)),
-              ),
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.08),
+              blurRadius: 18,
+              offset: const Offset(0, 6),
+            ),
           ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: BottomNavigationBar(
+            currentIndex: selectedIndex,
+            onTap: _onNavTap,
+            type: BottomNavigationBarType.fixed,
+            backgroundColor: Colors.white,
+            selectedItemColor: primaryColor,
+            unselectedItemColor: Colors.black38,
+            selectedFontSize: 12,
+            unselectedFontSize: 12,
+            elevation: 0,
+            items: const [
+              BottomNavigationBarItem(
+                  icon: Icon(Icons.home_outlined), label: 'Dashboard'),
+              BottomNavigationBarItem(
+                  icon: Icon(Icons.add_business_outlined), label: 'Facility'),
+              BottomNavigationBarItem(
+                  icon: Icon(Icons.chat_bubble_outline), label: 'Message'),
+              BottomNavigationBarItem(
+                  icon: Icon(Icons.person_outline), label: 'Profile'),
+            ],
+          ),
         ),
       ),
     );
