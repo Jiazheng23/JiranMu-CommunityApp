@@ -59,11 +59,9 @@ class _AdminCreateChatScreenState extends State<AdminCreateChatScreen> {
           .toSet()
           .toList()
         ..sort();
-
       final existingGroups = await supabase
           .from('group_chats')
-          .select('block')
-          .eq('created_by', user.id);
+          .select('block');
       final existingBlocks = (existingGroups as List)
           .map((e) => e['block']?.toString() ?? '')
           .where((s) => s.isNotEmpty)

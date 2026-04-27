@@ -27,7 +27,7 @@ class _VisitorPassListScreenState extends State<VisitorPassListScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this); // ← 4 tabs
+    _tabController = TabController(length: 4, vsync: this);
     _loadPasses();
   }
 
@@ -47,12 +47,33 @@ class _VisitorPassListScreenState extends State<VisitorPassListScreen>
           .order('created_at', ascending: false);
 
       final all = List<Map<String, dynamic>>.from(res);
+
+      final today = DateTime.now();
+      final todayOnly = DateTime(today.year, today.month, today.day);
+
+      // Auto-expire approved passes whose valid_date is not today
+      final expiredApproved = all.where((p) {
+        if (p['status'] != 'approved') return false;
+        final validDate = DateTime.parse(p['valid_date']);
+        final validDateOnly =
+        DateTime(validDate.year, validDate.month, validDate.day);
+        return validDateOnly != todayOnly;
+      }).toList();
+
+      // Move expired passes to 'used' in Supabase
+      for (final pass in expiredApproved) {
+        await _client
+            .from('visitor_passes')
+            .update({'status': 'used'}).eq('id', pass['id']);
+        pass['status'] = 'used'; // update local map too
+      }
+
       setState(() {
-        _pending  = all.where((p) => p['status'] == 'pending').toList();
+        _pending = all.where((p) => p['status'] == 'pending').toList();
         _approved = all.where((p) => p['status'] == 'approved').toList();
         _rejected = all.where((p) => p['status'] == 'rejected').toList();
-        _used     = all.where((p) => p['status'] == 'used').toList();
-        _loading  = false;
+        _used = all.where((p) => p['status'] == 'used').toList();
+        _loading = false;
       });
     } catch (e) {
       setState(() => _loading = false);
@@ -143,7 +164,8 @@ class _VisitorPassListScreenState extends State<VisitorPassListScreen>
                 ),
                 child: Column(
                   children: [
-                    _infoRow(Icons.calendar_today,
+                    _infoRow(
+                        Icons.calendar_today,
                         DateFormat('d MMM yyyy')
                             .format(DateTime.parse(pass['valid_date']))),
                     if (pass['visitor_ic'] != null &&
@@ -210,7 +232,7 @@ class _VisitorPassListScreenState extends State<VisitorPassListScreen>
           indicatorColor: Colors.white,
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white60,
-          isScrollable: true,                        // ← needed for 4 tabs
+          isScrollable: true,
           tabAlignment: TabAlignment.start,
           tabs: [
             // ── Pending ──────────────────────────────
@@ -265,7 +287,7 @@ class _VisitorPassListScreenState extends State<VisitorPassListScreen>
                 ],
               ),
             ),
-            // ── History (used only) ───────────────────
+            // ── History ───────────────────────────────
             const Tab(text: 'History'),
           ],
         ),
@@ -325,7 +347,7 @@ class _VisitorPassListScreenState extends State<VisitorPassListScreen>
   }
 }
 
-// ─── Pass Card (unchanged) ────────────────────────────────────────────────────
+// ─── Pass Card ────────────────────────────────────────────────────────────────
 
 class _PassCard extends StatelessWidget {
   final Map<String, dynamic> pass;
@@ -341,14 +363,14 @@ class _PassCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final statusColors = {
-      'pending':  Colors.orange,
+      'pending': Colors.orange,
       'approved': Colors.green,
       'rejected': Colors.red,
-      'used':     Colors.grey,
+      'used': Colors.grey,
     };
-    final status      = pass['status'] as String;
+    final status = pass['status'] as String;
     final statusColor = statusColors[status] ?? Colors.grey;
-    final validDate   =
+    final validDate =
     DateFormat('d MMM, yyyy').format(DateTime.parse(pass['valid_date']));
     final purposeLabel =
     pass['purpose'] == 'event' ? 'Event' : 'Normal Visit';
